@@ -10,7 +10,7 @@
 import { useQueryClient } from '@tanstack/react-query';
 import { Image } from 'expo-image';
 import { router, useLocalSearchParams } from 'expo-router';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 import { DateField, dateLabel, TimeField, timeLabel } from '@/components/date-time';
 import { Icon } from '@/components/icons';
@@ -60,6 +60,8 @@ type Draft = {
   region: string;
   postalCode: string;
   zone: string;
+  /** The organizer chose the zone themselves, so the state-based guess leaves it alone. */
+  zonePicked: boolean;
   link: string;
   currency: string;
   currencyChosen: boolean;
@@ -85,6 +87,7 @@ const EMPTY: Draft = {
   region: '',
   postalCode: '',
   zone: '',
+  zonePicked: false,
   link: '',
   currency: '',
   currencyChosen: false,
@@ -155,6 +158,28 @@ export default function CreateEvent() {
   const patchTier = (key: string, p: Partial<Tier>) => setD((x) => ({ ...x, tiers: x.tiers.map((t) => (t.key === key ? { ...t, ...p } : t)) }));
   const cur = d.currency || 'USD';
 
+  // In countries with several zones, fill the zone in from the state ("Texas" → Central) or, with no state and no
+  // matching phone zone, the country's main zone. A zone the organizer picked themselves is never changed.
+  const zoneCountry = COUNTRY_ZONES[d.country] && !d.zonePicked ? d.country : '';
+  const zoneRegion = d.region.trim();
+  const zoneNow = d.zone;
+  useEffect(() => {
+    if (!zoneCountry || (!zoneRegion && zoneNow)) return;
+    let live = true;
+    const t = setTimeout(() => {
+      api<{ timezone: string | null }>(`/geo/timezone?country=${zoneCountry}${zoneRegion ? `&region=${encodeURIComponent(zoneRegion)}` : ''}`)
+        .then((r) => {
+          if (!live || !r.timezone || !COUNTRY_ZONES[zoneCountry]?.some((z) => z.id === r.timezone)) return;
+          setD((p) => (p.country === zoneCountry && !p.zonePicked && p.zone !== r.timezone ? { ...p, zone: r.timezone! } : p));
+        })
+        .catch(() => undefined);
+    }, 400);
+    return () => {
+      live = false;
+      clearTimeout(t);
+    };
+  }, [zoneCountry, zoneRegion, zoneNow]);
+
   const next = () => {
     const e = validate(step, d, today);
     if (Object.keys(e).length) {
@@ -182,6 +207,7 @@ export default function CreateEvent() {
       ...p,
       country: c,
       zone: COUNTRY_ZONES[c]?.some((z) => z.id === p.zone) ? p.zone : COUNTRY_ZONES[c]?.find((z) => z.id === deviceZone())?.id ?? '',
+      zonePicked: COUNTRY_ZONES[c]?.some((z) => z.id === p.zone) ? p.zonePicked : false,
       currency: p.currencyChosen ? p.currency : currencyForCountry(c),
     }));
   };
@@ -517,7 +543,7 @@ export default function CreateEvent() {
         title="Time zone"
         options={(COUNTRY_ZONES[d.country] ?? []).map((z) => ({ value: z.id, label: z.label, detail: z.id.split('/')[1]?.replace(/_/g, ' ') }))}
         value={d.zone}
-        onPick={(z) => set('zone', z)}
+        onPick={(z) => setD((p) => ({ ...p, zone: z, zonePicked: true }))}
         onClose={() => setSheet('')}
       />
     </OrgScreen>
