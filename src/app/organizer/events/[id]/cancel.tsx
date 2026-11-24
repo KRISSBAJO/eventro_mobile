@@ -84,7 +84,7 @@ export default function CancelEvent() {
   if (done) {
     const refunded = Object.entries(done.totalRefundedCents).filter(([, c]) => c > 0);
     return (
-      <OrgScreen title="Event cancelled" eyebrow={p.title} footer={<Button label="Back to the event" onPress={() => router.back()} />}>
+      <OrgScreen title="Event cancelled" eyebrow={p.title} footer={<Button label="Back to the event" onPress={() => (router.canGoBack() ? router.back() : router.replace({ pathname: '/organizer/events/[id]', params: { id } }))} />}>
         <Notice tone={done.failed.length ? 'warning' : 'success'} icon={done.failed.length ? 'alert' : 'check'} title={done.failed.length ? 'Some refunds didn’t go through' : 'Cancelled and refunded'}>
           {`${num(done.refunded)} ${done.refunded === 1 ? 'order' : 'orders'} refunded${refunded.length ? ` (${refunded.map(([c, v]) => money(v, c)).join(' + ')})` : ''}. ${num(done.ticketsVoided)} tickets voided${done.listingsCancelled ? `, ${num(done.listingsCancelled)} resale listings closed` : ''}.${done.failed.length ? ` ${num(done.failed.length)} refunds failed: open this screen again to retry them.` : ''}`}
         </Notice>
