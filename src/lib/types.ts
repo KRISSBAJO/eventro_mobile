@@ -1,4 +1,5 @@
 /** Shapes of the API responses the app uses (see eventro-be/src). Money is in minor units of `currency`. */
+import type { VenueListing } from './bookings';
 
 export type Role = 'FAN' | 'ORGANIZER' | 'ADMIN';
 export type User = { id: string; email: string; name: string; roles: Role[] };
@@ -265,6 +266,8 @@ export type VenuePage = {
   eventsHosted: number;
   layout: { sections: number; places: number } | null;
   events: { slug: string; title: string; subtitle: string; startsAt: string; imageUrl: string | null; category: Category; currency: string; fromCents: number }[];
+  /** Terms for hiring the venue on Eventro; null when it isn't taking bookings (see lib/bookings.ts) */
+  listing?: VenueListing | null;
 };
 
 export type TicketStatus = 'ACTIVE' | 'TRANSFER_PENDING' | 'LISTED' | 'CHECKED_IN' | 'VOID';

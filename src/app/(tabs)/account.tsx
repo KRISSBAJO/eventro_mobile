@@ -1,5 +1,9 @@
-/** Account: who you are, notifications, sales, signed-in devices, organizer tools, sign out, help and legal pages. */
+/**
+ * Account: who you are, notifications, sales, signed-in devices, organizer tools, venue bookings (for venue managers),
+ * sign out, help and legal pages.
+ */
 import Constants from 'expo-constants';
+import { LinearGradient } from 'expo-linear-gradient';
 import { router } from 'expo-router';
 import * as WebBrowser from 'expo-web-browser';
 import { ScrollView, StyleSheet, View } from 'react-native';
@@ -12,6 +16,7 @@ import { WEB_URL } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { haptic } from '@/lib/haptics';
 import { placeLabel, usePlace } from '@/lib/place';
+import { useMyVenues } from '@/lib/bookings';
 import { useHealth, useMyOrgs } from '@/lib/queries';
 import { pendingDoorScans } from '@/lib/door';
 import { colors, gutter, radius, space } from '@/theme';
@@ -25,6 +30,10 @@ export default function Account() {
   const insets = useSafeAreaInsets();
   const { user, signOut, endedNotice } = useAuth();
   const orgs = useMyOrgs(user?.id);
+  // Venue managers (an approved claim on a venue's page) answer booking requests here.
+  const venues = useMyVenues(user?.id);
+  const managed = venues.data?.managed ?? [];
+  const waiting = managed.reduce((n, m) => n + m.pendingBookings, 0);
   const { place } = usePlace();
   const health = useHealth();
   const ask = useConfirm();
@@ -56,9 +65,22 @@ export default function Account() {
 
   return (
     <ScrollView style={{ flex: 1, backgroundColor: colors.bg }} contentContainerStyle={{ paddingTop: insets.top + space.md, paddingHorizontal: gutter, paddingBottom: space.huge, gap: space.xl }}>
-      <Txt variant="h1" accessibilityRole="header">
-        Account
-      </Txt>
+      {/* Warm glow behind the top of the screen, like Discover (absolute offsets start at the padding edge, so this spans the full width) */}
+      <View style={styles.glowAnchor} pointerEvents="none">
+        <LinearGradient
+          colors={['rgba(255,77,61,0.16)', 'rgba(255,120,80,0.04)', 'rgba(15,10,11,0)']}
+          locations={[0, 0.5, 1]}
+          start={{ x: 0.15, y: 0 }}
+          end={{ x: 0.6, y: 1 }}
+          style={{ width: '100%', height: insets.top + 280 }}
+        />
+      </View>
+      <View style={styles.headRow}>
+        <LogoMark size={30} />
+        <Txt variant="h1" accessibilityRole="header">
+          Account
+        </Txt>
+      </View>
 
       {!user && endedNotice ? (
         <Notice tone="warning" icon="lock" title="You’ve been signed out">
@@ -69,9 +91,11 @@ export default function Account() {
       {user ? (
         <View style={styles.profile}>
           <View style={styles.avatar}>
-            <Txt variant="h3" color={colors.accentInk}>
+            <Txt variant="h2" color={colors.accentInk}>
               {initials || '?'}
             </Txt>
+            {/* Signed in */}
+            <View style={styles.avatarDot} />
           </View>
           <View style={{ flex: 1, gap: 2 }}>
             <Txt variant="title" numberOfLines={1}>
@@ -140,6 +164,18 @@ export default function Account() {
         </View>
       ) : null}
 
+      {user && managed.length ? (
+        <View style={styles.group}>
+          <Row
+            icon="building"
+            label="Venue bookings"
+            detail={waiting ? `${waiting} waiting` : managed.length === 1 ? managed[0].venue.name : `${managed.length} venues`}
+            tone={waiting ? 'accent' : undefined}
+            onPress={() => router.push('/venue-bookings')}
+          />
+        </View>
+      ) : null}
+
       <View style={styles.group}>
         <Row icon="help" label="Help centre" onPress={() => openWeb('/help')} />
         <Divider style={{ marginLeft: 62 }} />
@@ -171,8 +207,22 @@ export default function Account() {
 }
 
 const styles = StyleSheet.create({
-  profile: { flexDirection: 'row', alignItems: 'center', gap: space.lg, padding: space.lg, borderRadius: radius.card, borderWidth: 1, borderColor: colors.line, backgroundColor: colors.surface },
-  avatar: { width: 56, height: 56, borderRadius: 28, backgroundColor: colors.accent, alignItems: 'center', justifyContent: 'center' },
+  glowAnchor: { position: 'absolute', top: 0, left: 0, right: 0, overflow: 'hidden' },
+  headRow: { flexDirection: 'row', alignItems: 'center', gap: space.md },
+  profile: { flexDirection: 'row', alignItems: 'center', gap: space.lg, padding: space.xl, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.line, backgroundColor: colors.surface },
+  avatar: {
+    width: 68,
+    height: 68,
+    borderRadius: 34,
+    backgroundColor: colors.accent,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: colors.accent,
+    shadowOpacity: 0.4,
+    shadowRadius: 14,
+    shadowOffset: { width: 0, height: 4 },
+  },
+  avatarDot: { position: 'absolute', right: 1, bottom: 1, width: 15, height: 15, borderRadius: 8, backgroundColor: colors.success, borderWidth: 3, borderColor: colors.surface },
   signedOut: { gap: space.sm, padding: space.xl, borderRadius: radius.panel, borderWidth: 1, borderColor: colors.line, backgroundColor: colors.surface },
   group: { borderRadius: radius.card, borderWidth: 1, borderColor: colors.line, backgroundColor: colors.surface, overflow: 'hidden' },
 });

@@ -10,6 +10,7 @@ import * as WebBrowser from 'expo-web-browser';
 import { api, qs, WEB_URL } from './api';
 import { useAuth } from './auth';
 import { haptic } from './haptics';
+import type { EventBooking } from './bookings';
 import type { Attendee, Category, MyOrg } from './types';
 import { colors } from '@/theme';
 
@@ -65,6 +66,8 @@ export type OrgEvent = {
   online: boolean;
   imageUrl: string | null;
   hasSeatMap: boolean;
+  /** a venue booked on Eventro for this event, or null */
+  venueBooking?: EventBooking | null;
   ticketTypes: OrgTicketType[];
   sold: number;
   capacity: number;
@@ -99,6 +102,8 @@ export type OrgEventDetail = {
   ticketTypes: OrgTicketType[];
   media: { id: string; kind: 'image' | 'video' }[];
   previewToken?: string | null;
+  /** The venue booked on Eventro for this event: it can't be submitted for review until this is CONFIRMED */
+  venueBooking?: EventBooking | null;
 };
 
 /** GET /organizer/events/:id/stats */

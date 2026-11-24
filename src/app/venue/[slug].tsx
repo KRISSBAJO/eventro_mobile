@@ -1,4 +1,7 @@
-/** A venue (GET /venues/:slug): where it is, Open in Maps, what it's like, and what's on there next. */
+/**
+ * A venue (GET /venues/:slug): where it is, Open in Maps, what it's like, what's on there next and, when it's listed
+ * for hire on Eventro (`listing`), its terms and "Book this venue" (app/book-venue/[slug].tsx).
+ */
 import { useQuery } from '@tanstack/react-query';
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -6,6 +9,7 @@ import { router, useLocalSearchParams } from 'expo-router';
 import * as WebBrowser from 'expo-web-browser';
 import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { TermsCard } from '@/components/booking-ui';
 import { CompactEventCard } from '@/components/event-card';
 import { Icon } from '@/components/icons';
 import { Badge, Button, Card, EmptyState, ErrorState, FadeIn, IconButton, Skeleton, Txt } from '@/components/ui';
@@ -103,6 +107,13 @@ export default function VenueScreen() {
               {v.capacity ? <Stat label="Capacity" value={num(v.capacity)} /> : null}
               {v.layout ? <Stat label="Sections" value={String(v.layout.sections)} /> : null}
               {v.eventsHosted ? <Stat label="Events on Eventro" value={num(v.eventsHosted)} /> : null}
+            </View>
+          ) : null}
+
+          {v.listing ? (
+            <View style={{ gap: space.md }}>
+              <TermsCard listing={v.listing} />
+              <Button label="Book this venue" icon="calendar" onPress={() => router.push({ pathname: '/book-venue/[slug]', params: { slug: v.slug } })} />
             </View>
           ) : null}
 

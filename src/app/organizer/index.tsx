@@ -6,6 +6,7 @@
  *   GET /organizer/orgs/:orgId/events         events with ticket types and 60 days of daily sales (all roles)
  *   GET /organizer/orgs/:orgId/orders/recent  the last 8 paid orders (admins and managers)
  *   GET /organizer/orgs/:orgId/payouts        payout balance and account (admins)
+ * Venue bookings made on Eventro are listed in organizer/bookings.
  */
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Image } from 'expo-image';
@@ -221,6 +222,8 @@ function Dashboard({ org }: { org: MyOrg }) {
       ) : null}
 
       <Group>
+        <Row icon="building" label="Venue bookings" detail="Book on Eventro" onPress={() => router.push({ pathname: '/organizer/bookings', params: { orgId } })} />
+        <Divider style={{ marginLeft: 62 }} />
         <Row icon="users" label="Team" detail={admin ? 'Invite and roles' : 'View'} onPress={() => router.push({ pathname: '/organizer/team', params: { orgId } })} />
         {admin ? (
           <>
@@ -259,6 +262,9 @@ function EventRow({ e }: { e: OrgEvent }) {
         <View style={{ flexDirection: 'row', gap: 6, flexWrap: 'wrap' }}>
           <StatusBadge status={st} />
           <Badge label={`${num(e.sold)} / ${num(e.capacity)} sold`} />
+          {e.venueBooking && e.venueBooking.status !== 'CONFIRMED' && e.status !== 'CANCELLED' ? (
+            <Badge label={e.venueBooking.status === 'PENDING' ? 'Venue: waiting' : 'Venue: not available'} tone={e.venueBooking.status === 'PENDING' ? 'warning' : 'accent'} />
+          ) : null}
         </View>
       </View>
       <Icon name="chevronRight" size={18} color={colors.dim} />

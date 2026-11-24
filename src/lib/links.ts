@@ -5,6 +5,8 @@
  *   /tickets        → the wallet tab
  *   /events/<slug>  → /event/<slug>
  *   /gift/<token>   → /gift/<token>
+ *   /organizer/bookings/<id>       → the organization's venue booking
+ *   /venues/manage/bookings/<id>   → a booking at a venue this person manages
  *
  * src/app/tickets/[id].tsx and src/app/events/[slug].tsx redirect the same way, so eventro:// links opened from
  * outside the app land on the right screen too.
@@ -23,6 +25,10 @@ export function appPath(raw: string | null | undefined): Href | null {
   if (first === 'tickets' || first === 'ticket') return second ? { pathname: '/ticket/[id]', params: { id: second } } : '/tickets';
   if ((first === 'events' || first === 'event') && second) return { pathname: '/event/[slug]', params: { slug: second } };
   if (first === 'gift' && second) return { pathname: '/gift/[token]', params: { token: second } };
+  // Venue booking pushes: the organizer's side, and the venue manager's.
+  if (first === 'organizer' && second === 'bookings') return parts[2] ? { pathname: '/organizer/bookings/[id]', params: { id: parts[2] } } : '/organizer/bookings';
+  if (first === 'venues' && second === 'manage') return parts[2] === 'bookings' && parts[3] ? { pathname: '/venue-bookings/[id]', params: { id: parts[3] } } : '/venue-bookings';
+  if (first === 'venues' && second) return { pathname: '/venue/[slug]', params: { slug: second } };
   // "New sale" pushes open the event's organizer dashboard.
   if (first === 'organizer') return second === 'events' && parts[2] ? { pathname: '/organizer/events/[id]', params: { id: parts[2] } } : '/organizer';
   if (first === 'account') return '/account';

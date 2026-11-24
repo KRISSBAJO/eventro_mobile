@@ -7,14 +7,23 @@
  * then the website's upload endpoints and PUT …/events/:id/media, which makes it the cover) or one of the free stock
  * photos; online events need their stream link; seat maps are designed on the website after saving. The venue fields
  * are shared with Change venue (components/venue-fields.tsx).
+ *
+ * "Book a venue on Eventro" sits next to the organizer's own venue: search the venues taking bookings, request a
+ * time there (POST …/venue-bookings, held for 48 hours), and the event is saved with `venueBookingId`, in the
+ * venue's zone. It waits for the venue to confirm before it can be submitted (instant-book venues confirm at once),
+ * and its times have to sit inside the booking (doors included). "Your bookings" lists the organization's pending
+ * and confirmed bookings not used by an event yet: picking one uses it as it is (no new request) and fills the date
+ * and times from it. `?booking=<id>` (from a booking's "Use for an event") preselects one and keeps its organization.
  */
 import { useQueryClient } from '@tanstack/react-query';
 import { Image } from 'expo-image';
+import { LinearGradient } from 'expo-linear-gradient';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useMemo, useState, type ReactNode } from 'react';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, Pressable, StyleSheet, View } from 'react-native';
 import { DateField, dateLabel, TimeField, timeLabel } from '@/components/date-time';
 import { Icon, type IconName } from '@/components/icons';
+import { BookingBadge, BookingRequestForm, BookingRow, TermsCard, VenueSearch } from '@/components/booking-ui';
 import { CoverUpload } from '@/components/cover-upload';
 import { Label, OrgScreen, WebButton } from '@/components/org-ui';
 import { StockPicker } from '@/components/stock-picker';
@@ -34,13 +43,16 @@ import {
   wallIso,
   webPaths,
 } from '@/lib/organizer';
+import { isLiveBooking, rangeLabel, useBooking, useOrgBookings, type Booking, type ListingResult } from '@/lib/bookings';
 import { useMyOrgs } from '@/lib/queries';
 import type { UploadedCover } from '@/lib/media-upload';
 import { defaultCover } from '@/lib/stock-covers';
 import type { Category } from '@/lib/types';
 import { colors, font, radius, space, touch } from '@/theme';
 
-const STEPS = ['Basics', 'When and where', 'Tickets', 'Cover', 'Review'];
+const STEPS = ['Basics', 'When and where', 'Tickets', 'Cover photo', 'Review'];
+/** Short names for the Next button ("Next: Tickets"). */
+const SHORT = ['Basics', 'When & where', 'Tickets', 'Cover', 'Review'];
 const CATEGORIES = Object.keys(CATEGORY_NAME) as Category[];
 
 type Tier = { key: string; name: string; price: string; qty: string };
@@ -53,7 +65,13 @@ type Draft = {
   start: string;
   doors: string;
   end: string;
-  format: 'venue' | 'online';
+  /** their own venue, a venue booked on Eventro, or online */
+  format: 'venue' | 'book' | 'online';
+  /** "Book a venue on Eventro": the venue picked, and the booking requested there */
+  pick: ListingResult | null;
+  booking: Booking | null;
+  /** the booking was requested in this flow (so "another time" withdraws it), not one the org already had */
+  bookingNew: boolean;
   venue: string;
   address: string;
   city: string;
@@ -81,6 +99,9 @@ const EMPTY: Draft = {
   doors: '',
   end: '',
   format: 'venue',
+  pick: null,
+  booking: null,
+  bookingNew: false,
   venue: '',
   address: '',
   city: '',
@@ -112,6 +133,14 @@ function validate(step: number, d: Draft, today: string) {
     if (d.doors && d.start && d.doors > d.start) e.doors = 'Doors usually open before the start time.';
     if (d.format === 'venue') {
       Object.assign(e, placeErrors(d));
+    } else if (d.format === 'book') {
+      if (!d.booking) e.booking = d.pick ? `Request a time at ${d.pick.venue.name} first.` : 'Find a venue and request a time.';
+      else if (d.date && d.start) {
+        // The event, doors included, has to happen within the booking (wall-clock strings compare as times).
+        const first = wallIso(d.date, d.doors && d.doors < d.start ? d.doors : d.start);
+        const last = wallIso(d.date, d.end || d.start);
+        if (first < d.booking.startsAt || last > d.booking.endsAt) e.booking = `The event has to happen within your booking (${rangeLabel(d.booking.startsAt, d.booking.endsAt)}), doors included. Change the times, or request another time.`;
+      }
     } else if (!/^https?:\/\/\S+\.\S+/.test(d.link.trim())) {
       e.link = 'Add a full link, starting with https://';
     }
@@ -134,15 +163,28 @@ function validate(step: number, d: Draft, today: string) {
 }
 
 export default function CreateEvent() {
-  const params = useLocalSearchParams<{ orgId?: string; first?: string }>();
+  const params = useLocalSearchParams<{ orgId?: string; first?: string; booking?: string }>();
   const { user } = useAuth();
   const orgs = useMyOrgs(user?.id);
   const qc = useQueryClient();
   const editable = (orgs.data ?? []).filter((o) => canEdit(o.role));
   const [orgId, setOrgId] = useState<string | null>(null);
-  const org = editable.find((o) => o.org.id === (orgId ?? params.orgId)) ?? editable[0];
-
+  // A booking opened with "Use for an event" (?booking=<id>): the event belongs to the booking's organization.
+  const pre = useBooking('ORGANIZER', params.booking);
   const [d, setD] = useState<Draft>(EMPTY);
+  const lockedOrg = d.booking?.org.id ?? pre.data?.org.id;
+  const org = lockedOrg ? editable.find((o) => o.org.id === lockedOrg) : (editable.find((o) => o.org.id === (orgId ?? params.orgId)) ?? editable[0]);
+  // The organization's bookings that an event can use: pending or confirmed, and not used by another event.
+  const mine = useOrgBookings(org?.org.id);
+  const usable = (mine.data ?? []).filter((b) => isLiveBooking(b.status) && !b.event);
+
+  // Preselect the booking from the link once it has loaded (state adjusted during render, React's pattern for it).
+  const [preApplied, setPreApplied] = useState(false);
+  if (pre.data && !preApplied) {
+    setPreApplied(true);
+    if (isLiveBooking(pre.data.status) && !pre.data.event) setD((p) => withBooking(p, pre.data!, false));
+  }
+
   const [step, setStep] = useState(0);
   const [show, setShow] = useState(false);
   const [busy, setBusy] = useState<'' | 'draft' | 'submit'>('');
@@ -157,6 +199,18 @@ export default function CreateEvent() {
   const set = <K extends keyof Draft>(k: K, v: Draft[K]) => setD((p) => ({ ...p, [k]: v }));
   const patchTier = (key: string, p: Partial<Tier>) => setD((x) => ({ ...x, tiers: x.tiers.map((t) => (t.key === key ? { ...t, ...p } : t)) }));
   const cur = d.currency || 'USD';
+  /** Held at a booked venue that hasn't confirmed yet: it can be saved, not submitted. */
+  const waiting = d.format === 'book' && !!d.booking && d.booking.status !== 'CONFIRMED';
+
+  // "Book a venue on Eventro": picking a venue also sets the currency until the organizer picks one.
+  const pickVenue = (r: ListingResult | null) =>
+    setD((p) => ({ ...p, pick: r, booking: null, ...(r?.venue.country && !p.currencyChosen ? { currency: currencyForCountry(r.venue.country) } : {}) }));
+  /** Another time: the request already made is withdrawn, so the venue isn't left holding it. */
+  const rebook = () => {
+    const old = d.booking;
+    if (old && d.bookingNew) void api(`/organizer/venue-bookings/${encodeURIComponent(old.id)}/cancel`, { body: { reason: 'The organizer picked another time.' } }).catch(() => undefined);
+    setD((p) => ({ ...p, booking: null, bookingNew: false }));
+  };
 
   // The venue fields (and the state-based zone guess) live in VenueFields; a new country also sets the currency
   // until the organizer picks one.
@@ -201,7 +255,8 @@ export default function CreateEvent() {
     let id = created;
     try {
       if (!id) {
-        const zone = d.format === 'online' ? deviceZone() : d.zone;
+        // A booked venue brings its own zone.
+        const zone = d.format === 'online' ? deviceZone() : d.format === 'book' ? '' : d.zone;
         const ev = await api<{ id: string }>(`/organizer/orgs/${encodeURIComponent(org.org.id)}/events`, {
           body: {
             title: d.title.trim(),
@@ -215,7 +270,9 @@ export default function CreateEvent() {
             ...(d.end ? { endsAt: wallIso(d.date, d.end) } : {}),
             ...(d.format === 'online'
               ? { online: true, streamUrl: d.link.trim() }
-              : {
+              : d.format === 'book' && d.booking
+                ? { venueBookingId: d.booking.id }
+                : {
                   venue: {
                     name: d.venue.trim(),
                     address: d.address.trim(),
@@ -241,7 +298,8 @@ export default function CreateEvent() {
         await api(`/organizer/events/${encodeURIComponent(id)}/media`, { method: 'PUT', body: { items: [{ id: upload.id, kind: 'image' }] } });
         setCoverSet(true);
       }
-      if (submit) await api(`/organizer/events/${encodeURIComponent(id)}/submit`, { method: 'POST' });
+      // Waiting for a booked venue: saved as a draft; it's submitted once the venue confirms.
+      if (submit && !waiting) await api(`/organizer/events/${encodeURIComponent(id)}/submit`, { method: 'POST' });
       haptic.success();
       await qc.invalidateQueries({ queryKey: ['organizer'] });
       router.replace({ pathname: '/organizer/events/[id]', params: { id } });
@@ -269,18 +327,55 @@ export default function CreateEvent() {
     <View style={{ flexDirection: 'row', gap: space.md }}>
       <Button label="Back" variant="ghost" style={{ width: 96 }} onPress={back} disabled={!!busy} />
       {step < STEPS.length - 1 ? (
-        <Button label="Next" iconRight="arrowRight" style={{ flex: 1 }} onPress={next} />
+        <NextButton label={`Next: ${SHORT[step + 1]}`} onPress={next} />
       ) : (
-        <Button label="Submit for review" style={{ flex: 1 }} loading={busy === 'submit'} disabled={!!busy} onPress={() => void save(true)} />
+        <NextButton label={waiting ? 'Save and wait for the venue' : 'Submit for review'} icon={waiting ? 'clock' : 'send'} loading={busy === 'submit'} disabled={!!busy} onPress={() => void save(true)} />
       )}
     </View>
   );
 
+  // What the event card will look like, for the cover and review steps.
+  const lowest = d.tiers.map((t) => parseMoney(t.price)).filter((p): p is number => p !== null).sort((a, b) => a - b)[0];
+  const preview: PreviewProps = {
+    cover: d.cover,
+    title: d.title.trim() || 'Your event name',
+    subtitle: d.subtitle.trim(),
+    category: d.category ? CATEGORY_NAME[d.category] : '',
+    date: d.date,
+    time: d.start ? timeLabel(d.start) : '',
+    place:
+      d.format === 'online'
+        ? 'Online'
+        : d.format === 'book' && d.booking
+          ? [d.booking.venue.name, d.booking.venue.city].filter(Boolean).join(' · ')
+          : [d.venue.trim(), d.city.trim()].filter(Boolean).join(' · ') || 'Venue to be announced',
+    online: d.format === 'online',
+    price: lowest === undefined ? '' : lowest === 0 ? 'Free' : money(buyerPrice(lowest, d.feeMode), cur),
+  };
+  /** Earlier steps can be revisited from the progress bar; later ones go through Next (so each step is checked). */
+  const jump = (i: number) => {
+    if (i >= step) return;
+    haptic.select();
+    setShow(false);
+    setStep(i);
+  };
+
   return (
-    <OrgScreen title={STEPS[step]} eyebrow={`Create event · step ${step + 1} of ${STEPS.length}`} footer={footer}>
-      <View style={styles.progress} accessibilityLabel={`Step ${step + 1} of ${STEPS.length}`}>
+    // Keyed by step so each step opens scrolled to the top (the form's state lives here, not in the screen).
+    <OrgScreen key={step} title={STEPS[step]} eyebrow={`Create event · step ${step + 1} of ${STEPS.length}`} footer={footer}>
+      <View style={styles.progress} accessibilityRole="tablist" accessibilityLabel={`Step ${step + 1} of ${STEPS.length}: ${STEPS[step]}`}>
         {STEPS.map((s, i) => (
-          <View key={s} style={[styles.dot, i <= step && { backgroundColor: colors.accent }]} />
+          <Pressable
+            key={s}
+            accessibilityRole="tab"
+            accessibilityLabel={`${STEPS[i]}${i < step ? ', done. Go back to it' : i === step ? ', current step' : ''}`}
+            accessibilityState={{ selected: i === step, disabled: i > step }}
+            disabled={i >= step}
+            hitSlop={{ top: 12, bottom: 12 }}
+            onPress={() => jump(i)}
+            style={styles.segHit}>
+            <View style={[styles.dot, i < step && styles.dotDone, i === step && styles.dotNow]} />
+          </Pressable>
         ))}
       </View>
       {params.first && step === 0 ? (
@@ -329,55 +424,140 @@ export default function CreateEvent() {
 
       {step === 1 ? (
         <>
-          <DateField label="Date" value={d.date} onChange={(v) => set('date', v)} min={today} error={errors.date} />
-          <View style={styles.row2}>
-            <TimeField label="Starts" value={d.start} onChange={(v) => set('start', v)} error={errors.start} />
-            <TimeField label="Doors open" value={d.doors} onChange={(v) => set('doors', v)} optional error={errors.doors} />
-          </View>
-          <View style={styles.row2}>
-            <TimeField label="Ends" value={d.end} onChange={(v) => set('end', v)} optional error={errors.end} />
-            <View style={{ flex: 1 }} />
-          </View>
-
-          <View style={{ gap: space.sm }}>
-            <Txt variant="smallStrong" color={colors.muted}>
-              Where
-            </Txt>
-            <View style={styles.wrap}>
-              <Chip label="At a venue" icon="pin" active={d.format === 'venue'} onPress={() => set('format', 'venue')} />
-              <Chip label="Online" icon="stream" active={d.format === 'online'} onPress={() => set('format', 'online')} />
+          <Section
+            icon="calendar"
+            title="Date & schedule"
+            sub={d.format === 'book' && d.booking ? `Inside your booking: ${rangeLabel(d.booking.startsAt, d.booking.endsAt)}, doors included.` : 'Doors and the end time are optional.'}>
+            <DateField label="Date" value={d.date} onChange={(v) => set('date', v)} min={today} error={errors.date} />
+            <View style={styles.row2}>
+              <TimeField label="Starts" value={d.start} onChange={(v) => set('start', v)} error={errors.start} />
+              <TimeField label="Doors open" value={d.doors} onChange={(v) => set('doors', v)} optional error={errors.doors} />
             </View>
-          </View>
+            <View style={styles.row2}>
+              <TimeField label="Ends" value={d.end} onChange={(v) => set('end', v)} optional error={errors.end} />
+              <View style={{ flex: 1 }} />
+            </View>
+            {d.date && d.start ? (
+              <View style={styles.whenPill}>
+                <Icon name="clock" size={14} color={colors.accent} />
+                <Txt variant="smallStrong" numberOfLines={1} style={{ flexShrink: 1 }}>
+                  {dateLabel(d.date)} · {d.doors ? `doors ${timeLabel(d.doors)}, ` : ''}starts {timeLabel(d.start)}
+                  {d.end ? ` · ends ${timeLabel(d.end)}` : ''}
+                </Txt>
+              </View>
+            ) : null}
+          </Section>
+
+          <Section icon="pin" title="Where is it happening?" sub="At your own venue, a venue you hire on Eventro, or online.">
+            <View style={styles.formats} accessibilityRole="radiogroup">
+              <FormatTile icon="pin" label="My venue" sub="Your own place" on={d.format === 'venue'} onPress={() => set('format', 'venue')} />
+              <FormatTile icon="building" label="Book one" sub="Hire on Eventro" on={d.format === 'book'} onPress={() => set('format', 'book')} />
+              <FormatTile icon="stream" label="Online" sub="Live stream" on={d.format === 'online'} onPress={() => set('format', 'online')} />
+            </View>
           {d.format === 'venue' ? (
             <VenueFields value={d} onChange={patchPlace} errors={errors} />
+          ) : d.format === 'book' ? (
+            <View style={{ gap: space.lg }}>
+              <Txt variant="small" color={colors.muted}>
+                Venues listed for hire. You request a time; the venue confirms within 48 hours, and the event waits for that before it can be submitted.
+              </Txt>
+              {d.booking ? (
+                <View style={{ gap: space.md }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.sm }}>
+                    <Txt variant="title" style={{ flex: 1 }} numberOfLines={1}>
+                      {d.booking.venue.name}
+                    </Txt>
+                    <BookingBadge status={d.booking.status} />
+                  </View>
+                  <Txt variant="small" color={colors.muted}>
+                    {rangeLabel(d.booking.startsAt, d.booking.endsAt)} · {d.booking.code}
+                  </Txt>
+                  <Notice tone={d.booking.status === 'CONFIRMED' ? 'success' : 'warning'} icon={d.booking.status === 'CONFIRMED' ? 'check' : 'clock'}>
+                    {d.booking.status === 'CONFIRMED'
+                      ? 'Confirmed by the venue. You can submit the event for review when it’s ready.'
+                      : 'Waiting for the venue to confirm. The event is saved with this booking and can be submitted for review once they confirm.'}
+                  </Notice>
+                  <Button label={d.bookingNew ? 'Request a different time' : 'Use another booking or venue'} variant="ghost" size="md" onPress={rebook} />
+                </View>
+              ) : d.pick ? (
+                <View style={{ gap: space.lg }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.sm }}>
+                    <Txt variant="title" style={{ flex: 1 }} numberOfLines={1}>
+                      {d.pick.venue.name}
+                    </Txt>
+                    <Pressable accessibilityRole="button" accessibilityLabel="Pick another venue" onPress={() => pickVenue(null)} hitSlop={8}>
+                      <Txt variant="smallStrong" color={colors.accent}>
+                        Change
+                      </Txt>
+                    </Pressable>
+                  </View>
+                  <TermsCard listing={d.pick.listing} compact />
+                  {org ? (
+                    <BookingRequestForm
+                      key={d.pick.venue.id}
+                      venue={d.pick.venue}
+                      listing={d.pick.listing}
+                      orgs={editable}
+                      fixedOrgId={org.org.id}
+                      defaults={{ date: d.date || undefined, start: (d.doors && d.start && d.doors < d.start ? d.doors : d.start) || undefined, end: d.end || undefined }}
+                      onBooked={(b) => setD((p) => ({ ...p, booking: b, bookingNew: true, ...(p.date ? {} : { date: b.startsAt.slice(0, 10) }) }))}
+                    />
+                  ) : null}
+                </View>
+              ) : (
+                <>
+                  {usable.length ? (
+                    <View style={{ gap: space.sm }}>
+                      <Label>Your bookings</Label>
+                      <Txt variant="small" color={colors.muted}>
+                        Already booked a venue on Eventro? Use it for this event; its date and times fill in.
+                      </Txt>
+                      {usable.map((b) => (
+                        <BookingRow key={b.id} b={b} side="ORGANIZER" code onPress={() => setD((p) => withBooking(p, b, false))} />
+                      ))}
+                      <Label>Or find a venue</Label>
+                    </View>
+                  ) : null}
+                  <VenueSearch date={d.date || undefined} onPick={pickVenue} />
+                </>
+              )}
+              {errors.booking ? (
+                <Txt variant="small" color={colors.accentHi}>
+                  {errors.booking}
+                </Txt>
+              ) : null}
+            </View>
           ) : (
             <>
               <Field label="Stream link" placeholder="https://" keyboardType="url" autoCapitalize="none" autoCorrect={false} value={d.link} onChangeText={(v) => set('link', v)} error={errors.link} hint="Only people with a ticket see it." />
-              <Txt variant="small" color={colors.dim}>
-                Times are in your time zone{deviceZone() ? ` (${deviceZone().replace(/_/g, ' ')})` : ''}.
-              </Txt>
+              <View style={styles.zoneNote}>
+                <Icon name="globe" size={14} color={colors.dim} />
+                <Txt variant="small" color={colors.dim} style={{ flex: 1 }}>
+                  Times are in your time zone{deviceZone() ? ` (${deviceZone().replace(/_/g, ' ')})` : ''}.
+                </Txt>
+              </View>
             </>
           )}
+          </Section>
         </>
       ) : null}
 
       {step === 2 ? (
         <>
-          <View style={{ gap: space.sm }}>
-            <Txt variant="smallStrong" color={colors.muted}>
-              Currency fans pay in
-            </Txt>
+          <Section icon="cash" title="Currency fans pay in" sub={PAYSTACK.has(cur) ? 'Fans pay with card, bank transfer or USSD through Paystack.' : 'Fans pay by card. Fans abroad also see an approximate price in their currency.'}>
             <View style={styles.wrap}>
               {CURRENCIES.map((c) => (
                 <Chip key={c.code} label={c.code} accessibilityLabel={c.name} active={d.currency === c.code} onPress={() => setD((p) => ({ ...p, currency: c.code, currencyChosen: true }))} />
               ))}
             </View>
-            <Txt variant="small" color={errors.currency ? colors.accentHi : colors.dim}>
-              {errors.currency ??
-                (PAYSTACK.has(cur) ? 'Fans pay with card, bank transfer or USSD through Paystack.' : 'Fans pay by card. Fans abroad also see an approximate price in their currency.')}
-            </Txt>
-          </View>
+            {errors.currency ? (
+              <Txt variant="small" color={colors.accentHi}>
+                {errors.currency}
+              </Txt>
+            ) : null}
+          </Section>
 
+          <Section icon="ticket" title="Ticket types" sub="Top tier first: fans see them in this order. Set 0 for a free ticket.">
           {errors.tiers ? (
             <Txt variant="small" color={colors.accentHi}>
               {errors.tiers}
@@ -426,19 +606,14 @@ export default function CreateEvent() {
             disabled={d.tiers.length >= 20}
             onPress={() => setD((p) => ({ ...p, tiers: [...p.tiers, { key: `t${Date.now()}`, name: '', price: '', qty: '' }] }))}
           />
+          </Section>
 
-          <View style={{ gap: space.sm }}>
-            <Txt variant="smallStrong" color={colors.muted}>
-              Eventro’s 3.5% fee
-            </Txt>
+          <Section icon="receipt" title="Eventro’s 3.5% fee" sub={d.feeMode === 'BUYER' ? 'Added to your price, so you get your price in full.' : 'Fans pay your price; the fee comes out of it.'}>
             <View style={styles.wrap}>
               <Chip label="Fans pay it" active={d.feeMode === 'BUYER'} onPress={() => set('feeMode', 'BUYER')} />
               <Chip label="I absorb it" active={d.feeMode === 'ORGANIZER'} onPress={() => set('feeMode', 'ORGANIZER')} />
             </View>
-            <Txt variant="small" color={colors.dim}>
-              {d.feeMode === 'BUYER' ? 'Added to your price, so you get your price in full.' : 'Fans pay your price; the fee comes out of it.'}
-            </Txt>
-          </View>
+          </Section>
           <Notice tone="plain" icon="seat" title="Reserved seating?">
             Save the event first, then design its seat map on the website. Ticket quantities follow the map.
           </Notice>
@@ -447,23 +622,25 @@ export default function CreateEvent() {
 
       {step === 3 ? (
         <>
-          <View style={styles.cover}>{d.cover ? <Image source={{ uri: d.cover }} style={StyleSheet.absoluteFill} contentFit="cover" /> : null}</View>
+          <CardPreview {...preview} />
           {errors.cover ? (
             <Txt variant="small" color={colors.accentHi}>
               {errors.cover}
             </Txt>
           ) : null}
-          <Label>Your own photo</Label>
-          <CoverUpload
-            full={upload && d.cover === upload.url ? 'Upload a different photo' : undefined}
-            onUploaded={(c) => {
-              setUpload(c);
-              setCoverSet(false);
-              set('cover', c.url);
-            }}
-          />
-          <Label>No photos yet? Pick one of ours</Label>
-          <StockPicker category={d.category ? CATEGORY_NAME[d.category] : 'Concerts'} value={d.cover} onPick={(c) => set('cover', c)} />
+          <Section icon="download" title="Your own photo" sub="From your phone’s photos. It replaces the cover on the card above.">
+            <CoverUpload
+              full={upload && d.cover === upload.url ? 'Upload a different photo' : undefined}
+              onUploaded={(c) => {
+                setUpload(c);
+                setCoverSet(false);
+                set('cover', c.url);
+              }}
+            />
+          </Section>
+          <Section icon="sparkle" title="Or pick one of ours" sub="Free photos, sorted by category. Tap one to try it on the card above.">
+            <StockPicker category={d.category ? CATEGORY_NAME[d.category] : 'Concerts'} value={d.cover} onPick={(c) => set('cover', c)} />
+          </Section>
           <Txt variant="small" color={colors.dim}>
             More photos and videos can be added from the event’s page on the website.
           </Txt>
@@ -472,15 +649,30 @@ export default function CreateEvent() {
 
       {step === 4 ? (
         <>
-          <View style={styles.cover}>{d.cover ? <Image source={{ uri: d.cover }} style={StyleSheet.absoluteFill} contentFit="cover" /> : null}</View>
+          <CardPreview {...preview} />
           <View style={styles.card}>
-            <Txt variant="h3">{d.title.trim()}</Txt>
-            {d.subtitle.trim() ? <Txt color={colors.muted}>{d.subtitle.trim()}</Txt> : null}
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.md }}>
+              <View style={styles.sectionIcon}>
+                <Icon name="check" size={16} color={colors.accent} />
+              </View>
+              <View style={{ flex: 1, gap: 2 }}>
+                <Txt variant="title">Check the details</Txt>
+                <Txt variant="small" color={colors.muted}>
+                  Tap a line to change it.
+                </Txt>
+              </View>
+            </View>
             <ReviewLine icon="tag" text={d.category ? CATEGORY_NAME[d.category] : ''} onEdit={() => setStep(0)} />
             <ReviewLine icon="calendar" text={`${dateLabel(d.date)} · ${timeLabel(d.start)}${d.doors ? ` (doors ${timeLabel(d.doors)})` : ''}${d.end ? ` to ${timeLabel(d.end)}` : ''}`} onEdit={() => setStep(1)} />
             <ReviewLine
               icon={d.format === 'online' ? 'stream' : 'pin'}
-              text={d.format === 'online' ? 'Online event' : [d.venue, d.address, d.city, d.region, d.postalCode, d.country ? countryName(d.country) : ''].filter((x) => x.trim()).join(', ')}
+              text={
+                d.format === 'online'
+                  ? 'Online event'
+                  : d.format === 'book' && d.booking
+                    ? `${d.booking.venue.name}, ${d.booking.venue.city} · booked on Eventro (${d.booking.status === 'CONFIRMED' ? 'confirmed' : 'waiting for the venue'})`
+                    : [d.venue, d.address, d.city, d.region, d.postalCode, d.country ? countryName(d.country) : ''].filter((x) => x.trim()).join(', ')
+              }
               onEdit={() => setStep(1)}
             />
             {d.tiers.map((t) => {
@@ -488,7 +680,11 @@ export default function CreateEvent() {
               return <ReviewLine key={t.key} icon="ticket" text={`${t.name.trim()} · ${base ? `${money(buyerPrice(base, d.feeMode), cur)} all-in` : 'Free'} · ${Number(t.qty).toLocaleString('en-US')}`} onEdit={() => setStep(2)} />;
             })}
           </View>
-          {editable.length > 1 ? (
+          {d.format === 'book' && d.booking ? (
+            <Txt variant="small" color={colors.dim}>
+              Booked for {d.booking.org.name}, so the event is created there too.
+            </Txt>
+          ) : editable.length > 1 ? (
             <View style={{ gap: space.sm }}>
               <Txt variant="smallStrong" color={colors.muted}>
                 Organizer
@@ -503,14 +699,42 @@ export default function CreateEvent() {
           <Txt variant="small" color={colors.dim}>
             Eventro reviews every event before it goes on sale, usually within a day. You can keep editing while it’s in review.
           </Txt>
+          {waiting ? (
+            <Notice tone="warning" icon="clock" title="Waiting for the venue">
+              {`It’s saved as a draft with your booking at ${d.booking!.venue.name}. Submit it for review from its page once the venue confirms; you’ll get an email and a notification.`}
+            </Notice>
+          ) : null}
           {error ? <Notice icon="alert">{error}</Notice> : null}
-          {!created ? <Button label="Save as draft" variant="ghost" loading={busy === 'draft'} disabled={!!busy} onPress={() => void save(false)} /> : <Button label="Open the draft" variant="ghost" onPress={() => router.replace({ pathname: '/organizer/events/[id]', params: { id: created } })} />}
+          {waiting && !created ? null : !created ? <Button label="Save as draft" variant="ghost" loading={busy === 'draft'} disabled={!!busy} onPress={() => void save(false)} /> : <Button label="Open the draft" variant="ghost" onPress={() => router.replace({ pathname: '/organizer/events/[id]', params: { id: created } })} />}
           <WebButton label="Create it on the web instead" path={webPaths.create} />
         </>
       ) : null}
 
     </OrgScreen>
   );
+}
+
+/**
+ * Use an existing booking for the event: it's held there, on the booking's date, starting when the booking starts
+ * and ending when it ends (when that's the same day). Doors are cleared: they'd fall before the booking.
+ */
+function withBooking(p: Draft, b: Booking, made: boolean): Draft {
+  const date = b.startsAt.slice(0, 10);
+  const start = b.startsAt.slice(11, 16);
+  const end = b.endsAt.slice(0, 10) === date ? b.endsAt.slice(11, 16) : '';
+  return {
+    ...p,
+    format: 'book',
+    pick: null,
+    booking: b,
+    bookingNew: made,
+    date,
+    start,
+    end,
+    // Doors before the booking starts wouldn't fit inside it.
+    doors: '',
+    ...(b.venue.country && !p.currencyChosen ? { currency: currencyForCountry(b.venue.country) } : {}),
+  };
 }
 
 const swap = <T,>(list: T[], i: number, j: number) => {
@@ -550,6 +774,132 @@ function ReviewLine({ icon, text, onEdit }: { icon: 'tag' | 'calendar' | 'pin' |
         Edit
       </Txt>
     </Pressable>
+  );
+}
+
+/** One of the three ways to say where the event happens. */
+function FormatTile({ icon, label, sub, on, onPress }: { icon: IconName; label: string; sub: string; on: boolean; onPress: () => void }) {
+  return (
+    <Pressable
+      accessibilityRole="radio"
+      accessibilityState={{ selected: on }}
+      accessibilityLabel={`${label}: ${sub}`}
+      onPress={() => {
+        haptic.select();
+        onPress();
+      }}
+      style={({ pressed }) => [styles.format, on && styles.formatOn, pressed && { transform: [{ scale: 0.97 }] }]}>
+      <View style={[styles.formatIcon, on && { backgroundColor: 'rgba(255,255,255,0.18)', borderColor: 'rgba(255,255,255,0.3)' }]}>
+        <Icon name={icon} size={18} color={on ? colors.accentInk : colors.accent} />
+      </View>
+      <Txt variant="smallStrong" color={on ? colors.accentInk : colors.text} numberOfLines={1}>
+        {label}
+      </Txt>
+      <Txt variant="tiny" color={on ? 'rgba(255,255,255,0.85)' : colors.muted} numberOfLines={1}>
+        {sub}
+      </Txt>
+    </Pressable>
+  );
+}
+
+/** The footer's main action: a warm gradient pill naming where it goes next. */
+function NextButton({ label, onPress, icon = 'arrowRight', loading, disabled }: { label: string; onPress: () => void; icon?: IconName; loading?: boolean; disabled?: boolean }) {
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      accessibilityState={{ disabled: !!disabled, busy: !!loading }}
+      disabled={disabled}
+      onPress={onPress}
+      style={({ pressed }) => [styles.next, (disabled || loading) && { opacity: 0.7 }, pressed && { transform: [{ scale: 0.98 }] }]}>
+      <LinearGradient colors={[colors.accent, '#ff7a45']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={StyleSheet.absoluteFill} />
+      {loading ? <ActivityIndicator color={colors.accentInk} /> : null}
+      <Txt variant="bodyStrong" color={colors.accentInk} numberOfLines={1} style={{ flexShrink: 1 }}>
+        {label}
+      </Txt>
+      {/* In a View so it paints above the gradient on web */}
+      {loading ? null : (
+        <View>
+          <Icon name={icon} size={18} color={colors.accentInk} />
+        </View>
+      )}
+    </Pressable>
+  );
+}
+
+type PreviewProps = { cover: string; title: string; subtitle: string; category: string; date: string; time: string; place: string; online: boolean; price: string };
+
+/** The event as fans will see it on Discover, updated live as the organizer fills the form in. */
+function CardPreview({ cover, title, subtitle, category, date, time, place, online, price }: PreviewProps) {
+  const day = date ? new Date(`${date}T00:00:00Z`) : null;
+  return (
+    <View style={{ gap: space.sm }}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+        <View style={styles.liveDot} />
+        <Txt variant="eyebrow" color={colors.muted}>
+          Live preview · how fans see it
+        </Txt>
+      </View>
+      <View style={styles.previewCard} accessibilityLabel={`Preview: ${title}${date ? `, ${dateLabel(date)}` : ''}${time ? ` at ${time}` : ''}, ${place}${price ? `, from ${price}` : ''}`}>
+        <View style={styles.previewMedia}>
+          {cover ? <Image source={{ uri: cover }} style={StyleSheet.absoluteFill} contentFit="cover" transition={250} /> : null}
+          <LinearGradient colors={[colors.fade0, colors.fade]} locations={[0.4, 1]} style={StyleSheet.absoluteFill} />
+          <View style={styles.previewTop}>
+            {day ? (
+              <View style={styles.previewDate}>
+                <Txt variant="eyebrow" color={colors.accent} style={{ fontSize: 10, lineHeight: 12 }}>
+                  {day.toLocaleString('en-US', { month: 'short', timeZone: 'UTC' })}
+                </Txt>
+                <Txt variant="h3" style={{ lineHeight: 21 }}>
+                  {day.getUTCDate()}
+                </Txt>
+              </View>
+            ) : (
+              <View />
+            )}
+            {category ? (
+              <View style={styles.previewBadge}>
+                <Txt variant="tiny">{category}</Txt>
+              </View>
+            ) : null}
+          </View>
+          <View style={styles.previewText}>
+            <Txt variant="h3" numberOfLines={1}>
+              {title}
+            </Txt>
+            {subtitle ? (
+              <Txt variant="small" color="rgba(247,242,242,0.8)" numberOfLines={1}>
+                {subtitle}
+              </Txt>
+            ) : null}
+          </View>
+        </View>
+        <View style={styles.previewMeta}>
+          <View style={{ flex: 1, gap: 4 }}>
+            <Txt variant="smallStrong" numberOfLines={1}>
+              {date ? dateLabel(date) : 'Date to come'}
+              {time ? ` · ${time}` : ''}
+            </Txt>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+              <Icon name={online ? 'stream' : 'pin'} size={13} color={colors.dim} />
+              <Txt variant="small" color={colors.muted} numberOfLines={1} style={{ flex: 1 }}>
+                {place}
+              </Txt>
+            </View>
+          </View>
+          {price ? (
+            <View style={{ alignItems: 'flex-end' }}>
+              <Txt variant="eyebrow" color={colors.dim} style={{ fontSize: 10, lineHeight: 12 }}>
+                {price === 'Free' ? 'Tickets' : 'From'}
+              </Txt>
+              <Txt variant="price" color={colors.accent}>
+                {price}
+              </Txt>
+            </View>
+          ) : null}
+        </View>
+      </View>
+    </View>
   );
 }
 
@@ -621,7 +971,39 @@ const styles = StyleSheet.create({
   tile: { height: 46, borderRadius: radius.md, borderWidth: 1, borderColor: colors.line2, backgroundColor: colors.surface, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 6 },
   tileOn: { backgroundColor: colors.accent, borderColor: colors.accent, shadowColor: colors.accent, shadowOpacity: 0.45, shadowRadius: 10, shadowOffset: { width: 0, height: 4 } },
   tileCheck: { position: 'absolute', top: 5, right: 5, width: 14, height: 14, borderRadius: 7, backgroundColor: colors.accentInk, alignItems: 'center', justifyContent: 'center' },
-  dot: { flex: 1, height: 4, borderRadius: 2, backgroundColor: colors.surface2 },
+  segHit: { flex: 1, paddingVertical: 4 },
+  dot: { height: 5, borderRadius: 3, backgroundColor: colors.surface2 },
+  dotDone: { backgroundColor: colors.accent, opacity: 0.55 },
+  dotNow: { backgroundColor: colors.accent, shadowColor: colors.accent, shadowOpacity: 0.8, shadowRadius: 6, shadowOffset: { width: 0, height: 0 } },
+  whenPill: { flexDirection: 'row', alignItems: 'center', gap: 6, alignSelf: 'flex-start', maxWidth: '100%', paddingHorizontal: 12, height: 34, borderRadius: radius.pill, borderWidth: 1, borderColor: colors.accentLine, backgroundColor: colors.accentSoft },
+  zoneNote: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  formats: { flexDirection: 'row', gap: space.sm },
+  format: { flex: 1, alignItems: 'center', gap: 4, paddingVertical: space.md, paddingHorizontal: 4, borderRadius: radius.md, borderWidth: 1, borderColor: colors.line2, backgroundColor: colors.surface },
+  formatOn: { backgroundColor: colors.accent, borderColor: colors.accent, shadowColor: colors.accent, shadowOpacity: 0.45, shadowRadius: 10, shadowOffset: { width: 0, height: 4 } },
+  formatIcon: { width: 34, height: 34, borderRadius: 11, alignItems: 'center', justifyContent: 'center', marginBottom: 2, backgroundColor: colors.accentSoft, borderWidth: 1, borderColor: colors.accentLine },
+  next: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: space.sm,
+    height: 54,
+    paddingHorizontal: space.lg,
+    borderRadius: radius.pill,
+    overflow: 'hidden',
+    shadowColor: colors.accent,
+    shadowOpacity: 0.45,
+    shadowRadius: 14,
+    shadowOffset: { width: 0, height: 6 },
+  },
+  liveDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: colors.success },
+  previewCard: { borderRadius: radius.lg, borderWidth: 1, borderColor: colors.line2, backgroundColor: colors.surface, overflow: 'hidden' },
+  previewMedia: { aspectRatio: 16 / 9, backgroundColor: colors.surface2 },
+  previewTop: { position: 'absolute', top: 12, left: 12, right: 12, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
+  previewDate: { width: 44, paddingVertical: 5, borderRadius: 12, backgroundColor: colors.glass, borderWidth: 1, borderColor: 'rgba(255,255,255,0.16)', alignItems: 'center' },
+  previewBadge: { paddingHorizontal: 10, height: 26, borderRadius: 13, justifyContent: 'center', backgroundColor: colors.glass, borderWidth: 1, borderColor: 'rgba(255,255,255,0.16)' },
+  previewText: { position: 'absolute', left: 14, right: 14, bottom: 12, gap: 1 },
+  previewMeta: { flexDirection: 'row', alignItems: 'flex-end', gap: space.md, paddingVertical: space.md, paddingHorizontal: 14, borderTopWidth: 1, borderTopColor: colors.line },
   wrap: { flexDirection: 'row', flexWrap: 'wrap', gap: space.sm },
   row2: { flexDirection: 'row', gap: space.md },
   tier: { gap: space.sm, padding: space.md, borderRadius: radius.card, borderWidth: 1, borderColor: colors.line, backgroundColor: colors.surface },

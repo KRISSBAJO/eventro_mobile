@@ -6,6 +6,10 @@
  * saving ("Times stay 8:00 PM, now in Central time"). On a published event with tickets sold, the confirm sheet says
  * every ticket holder will be emailed. Online, cancelled and ended events can't move; the API also refuses events
  * with seats already sold on their seat map, and that message is shown as it comes.
+ *
+ * An event held at a venue booked on Eventro (a pending or confirmed booking) can't move until the booking is
+ * cancelled or let go of (DELETE /organizer/events/:id/venue-booking); the API answers 409 VENUE_BOOKED otherwise.
+ * A booking that fell through is let go of by the move itself.
  */
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { router, useLocalSearchParams } from 'expo-router';
@@ -16,7 +20,8 @@ import { timeLabel } from '@/components/date-time';
 import { OrgScreen, WebButton } from '@/components/org-ui';
 import { Button, ErrorState, Notice, Skeleton, Txt } from '@/components/ui';
 import { countryPatch, EMPTY_PLACE, placeBody, placeErrors, VenueFields, type VenuePlace } from '@/components/venue-fields';
-import { api, errorText } from '@/lib/api';
+import { api, ApiError, errorText } from '@/lib/api';
+import { isLiveBooking } from '@/lib/bookings';
 import { useAuth } from '@/lib/auth';
 import { num } from '@/lib/format';
 import { haptic } from '@/lib/haptics';
@@ -85,6 +90,9 @@ function Mover({ e }: { e: OrgEventDetail }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [moved, setMoved] = useState<Moved | null>(null);
+  /** Held at a venue booked on Eventro (until let go of here). */
+  const [booked, setBooked] = useState(() => isLiveBooking(e.venueBooking?.status));
+  const [letting, setLetting] = useState(false);
   const [now] = useState(() => Date.now());
   const sold = e.ticketTypes.reduce((s, t) => s + t.sold, 0);
   const published = e.status === 'PUBLISHED';
@@ -144,9 +152,32 @@ function Mover({ e }: { e: OrgEventDetail }) {
       await Promise.all([qc.invalidateQueries({ queryKey: ['organizer'] }), qc.invalidateQueries({ queryKey: ['event', e.slug] })]);
     } catch (err) {
       haptic.error();
+      if (err instanceof ApiError && err.code === 'VENUE_BOOKED') setBooked(true);
       setError(errorText(err));
     } finally {
       setBusy(false);
+    }
+  };
+
+  const letGo = async () => {
+    const yes = await confirm({
+      title: 'Let go of the venue booking?',
+      message: `The event will no longer be tied to booking ${e.venueBooking?.code ?? ''}. The booking itself stays: cancel it from its page if you won’t use the venue, so the venue can offer the time to others.`,
+      confirmLabel: 'Let go of it',
+    });
+    if (!yes) return;
+    setLetting(true);
+    setError('');
+    try {
+      await api(`/organizer/events/${encodeURIComponent(e.id)}/venue-booking`, { method: 'DELETE' });
+      haptic.success();
+      setBooked(false);
+      await qc.invalidateQueries({ queryKey: ['organizer'] });
+    } catch (err) {
+      haptic.error();
+      setError(errorText(err));
+    } finally {
+      setLetting(false);
     }
   };
 
@@ -181,7 +212,7 @@ function Mover({ e }: { e: OrgEventDetail }) {
   }
 
   return (
-    <OrgScreen title="Change venue" eyebrow={e.title} footer={blocked ? undefined : <Button label={published && sold > 0 ? 'Move and tell buyers' : 'Move event'} loading={busy} onPress={() => void save()} />}>
+    <OrgScreen title="Change venue" eyebrow={e.title} footer={blocked || booked ? undefined : <Button label={published && sold > 0 ? 'Move and tell buyers' : 'Move event'} loading={busy} onPress={() => void save()} />}>
       {e.venue ? (
         <View style={{ gap: 2 }}>
           <Txt variant="small" color={colors.dim}>
@@ -197,6 +228,15 @@ function Mover({ e }: { e: OrgEventDetail }) {
         <Notice tone="plain" icon="alert">
           {blocked}
         </Notice>
+      ) : booked ? (
+        <>
+          <Notice tone="warning" icon="building" title="Booked on Eventro">
+            {`This event is held at ${e.venue?.name ?? 'its venue'} through booking ${e.venueBooking?.code ?? ''}. To move it, cancel the booking, or let go of it here if you’re not using it.`}
+          </Notice>
+          {e.venueBooking ? <Button label="Open the booking" variant="ghost" size="md" onPress={() => router.push({ pathname: '/organizer/bookings/[id]', params: { id: e.venueBooking!.id } })} /> : null}
+          <Button label="Let go of the booking" variant="subtle" size="md" loading={letting} onPress={() => void letGo()} />
+          {error ? <Notice icon="alert">{error}</Notice> : null}
+        </>
       ) : (
         <>
           <Txt variant="small" color={colors.dim}>

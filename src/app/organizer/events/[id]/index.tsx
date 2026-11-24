@@ -2,6 +2,10 @@
  * One event's dashboard: live numbers (GET /organizer/events/:id/stats: sales by ticket type, revenue, check-ins and
  * 30 days of sales), quick actions (scan, pause / resume sales, share the link, edit), attendees, promo codes,
  * price drops, the seat map (on the web) and, for org admins, cancelling. Drafts are submitted for review here.
+ *
+ * An event held at a venue booked on Eventro (`venueBooking`) shows the booking's status; it can't be submitted
+ * until the venue confirms (the API answers 409 VENUE_BOOKING_PENDING), and a booking that fell through
+ * (VENUE_BOOKING_UNAVAILABLE) needs another venue, or the venue kept without the booking.
  */
 import { useQueryClient } from '@tanstack/react-query';
 import { Image } from 'expo-image';
@@ -9,10 +13,12 @@ import { router, useLocalSearchParams } from 'expo-router';
 import { useState } from 'react';
 import { Platform, Share, StyleSheet, View } from 'react-native';
 import { useConfirm } from '@/components/confirm';
+import { BookingBadge } from '@/components/booking-ui';
 import { ActionTile, Group, Label, OrgScreen, Progress, SalesBars, StatTile, StatusBadge, TileRow, WebButton } from '@/components/org-ui';
 import { Button, Divider, EmptyState, ErrorState, Notice, Row, Skeleton, Txt } from '@/components/ui';
 import { api, errorText } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
+import { localMoment, rangeLabel } from '@/lib/bookings';
 import { money, num, when } from '@/lib/format';
 import { haptic } from '@/lib/haptics';
 import {
@@ -41,7 +47,7 @@ export default function EventDashboard() {
   const drops = usePriceDrops(id, editor);
   const qc = useQueryClient();
   const confirm = useConfirm();
-  const [busy, setBusy] = useState<'' | 'pause' | 'submit'>('');
+  const [busy, setBusy] = useState<'' | 'pause' | 'submit' | 'detach'>('');
   const [error, setError] = useState('');
   const [note, setNote] = useState('');
 
@@ -76,6 +82,33 @@ export default function EventDashboard() {
   const canPause = editor && e.status === 'PUBLISHED' && st !== 'Ended';
   const recentDays = (s?.daily ?? []).slice(-30);
   const anySales = recentDays.some((x) => x.tickets > 0);
+  const vb = e.venueBooking ?? null;
+  /** Held at a booked venue that hasn't confirmed (or fell through): submitting is refused. */
+  const held = !!vb && vb.status !== 'CONFIRMED';
+  const venueName = e.venue?.name ?? 'The venue';
+  const openBooking = () => vb && router.push({ pathname: '/organizer/bookings/[id]', params: { id: vb.id } });
+
+  const detach = async () => {
+    const yes = await confirm({
+      title: 'Keep the venue without the booking?',
+      message: `The event stays at ${venueName}, no longer tied to booking ${vb?.code ?? ''} on Eventro. Only do this if you’ve arranged the venue another way.`,
+      confirmLabel: 'Keep the venue',
+    });
+    if (!yes) return;
+    setError('');
+    setBusy('detach');
+    try {
+      await api(`/organizer/events/${encodeURIComponent(e.id)}/venue-booking`, { method: 'DELETE' });
+      haptic.success();
+      setNote('The event is no longer tied to the booking.');
+      await changed();
+    } catch (err) {
+      haptic.error();
+      setError(errorText(err));
+    } finally {
+      setBusy('');
+    }
+  };
 
   const pause = async () => {
     setError('');
@@ -132,7 +165,15 @@ export default function EventDashboard() {
       title={e.title}
       eyebrow={`${d.short} · ${d.time}`}
       onRefresh={refresh}
-      footer={draft && editor ? <Button label={e.status === 'REJECTED' ? 'Submit again for review' : 'Submit for review'} icon="send" loading={busy === 'submit'} onPress={() => void submit()} /> : undefined}>
+      footer={
+        draft && editor ? (
+          held ? (
+            <Button label={vb!.status === 'PENDING' ? 'Waiting for the venue to confirm' : 'Pick another venue to submit'} icon="building" variant="ghost" onPress={vb!.status === 'PENDING' ? openBooking : () => router.push({ pathname: '/organizer/events/[id]/venue', params: { id: e.id } })} />
+          ) : (
+            <Button label={e.status === 'REJECTED' ? 'Submit again for review' : 'Submit for review'} icon="send" loading={busy === 'submit'} onPress={() => void submit()} />
+          )
+        ) : undefined
+      }>
       <View style={styles.head}>
         <View style={styles.cover}>{e.imageUrl ? <Image source={{ uri: e.imageUrl }} style={StyleSheet.absoluteFill} contentFit="cover" /> : null}</View>
         <View style={{ flex: 1, gap: 6 }}>
@@ -161,6 +202,39 @@ export default function EventDashboard() {
         <Notice tone="accent" icon="alert" title="Cancelled">
           This event is no longer on sale. Buyers were refunded and emailed.
         </Notice>
+      ) : null}
+      {vb && !cancelled ? (
+        <View style={[styles.card, held && { borderColor: vb.status === 'PENDING' ? 'rgba(245,165,36,0.35)' : colors.accentLine }]}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.sm }}>
+            <Label>Venue booked on Eventro</Label>
+            <View style={{ flex: 1 }} />
+            <BookingBadge status={vb.status} />
+          </View>
+          <View style={{ gap: 2 }}>
+            <Txt variant="bodyStrong">{venueName}</Txt>
+            <Txt variant="small" color={colors.muted}>
+              {rangeLabel(vb.startsAt, vb.endsAt)} · {vb.code}
+            </Txt>
+          </View>
+          <Txt variant="small" color={colors.muted}>
+            {vb.status === 'PENDING'
+              ? `Waiting for ${venueName} to confirm (they have until ${localMoment(vb.holdUntil)}). The event stays on hold: you can submit it for review once they confirm.`
+              : vb.status === 'CONFIRMED'
+                ? `Confirmed${vb.quotedCents !== null && vb.currency ? ` at ${money(vb.quotedCents, vb.currency)}` : ''}. You pay the venue directly; Eventro doesn’t take this payment.`
+                : vb.status === 'CANCELLED'
+                  ? `${venueName} booking ${vb.code} was cancelled${vb.cancelReason ? `: “${vb.cancelReason}”` : '.'} ${e.status === 'PUBLISHED' ? 'The event is still on sale here: move it to another venue, or talk to the venue, and tell your ticket holders.' : 'Pick another venue or time before you submit.'}`
+                  : `Booking ${vb.code} ${vb.status === 'DECLINED' ? `was declined${vb.declineReason ? `: “${vb.declineReason}”` : '.'}` : 'expired: the venue didn’t answer in time.'} Pick another venue or time before you submit.`}
+          </Txt>
+          <View style={{ flexDirection: 'row', gap: space.sm, flexWrap: 'wrap' }}>
+            <Button label="Open booking" variant="subtle" size="sm" iconRight="chevronRight" onPress={openBooking} />
+            {editor && held && vb.status !== 'PENDING' ? (
+              <>
+                <Button label="Change venue" variant="ghost" size="sm" onPress={() => router.push({ pathname: '/organizer/events/[id]/venue', params: { id: e.id } })} />
+                <Button label="Keep this venue" variant="ghost" size="sm" loading={busy === 'detach'} onPress={() => void detach()} />
+              </>
+            ) : null}
+          </View>
+        </View>
       ) : null}
       {note ? (
         <Notice tone="success" icon="check">
