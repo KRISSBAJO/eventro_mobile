@@ -1,4 +1,4 @@
-/** Account: who you are, notifications, sales, signed-in devices, sign out, help and legal pages. */
+/** Account: who you are, notifications, sales, signed-in devices, organizer tools, sign out, help and legal pages. */
 import Constants from 'expo-constants';
 import { router } from 'expo-router';
 import * as WebBrowser from 'expo-web-browser';
@@ -10,7 +10,8 @@ import { WEB_URL } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { haptic } from '@/lib/haptics';
 import { placeLabel, usePlace } from '@/lib/place';
-import { useHealth } from '@/lib/queries';
+import { useHealth, useMyOrgs } from '@/lib/queries';
+import { pendingDoorScans } from '@/lib/door';
 import { colors, gutter, radius, space } from '@/theme';
 
 const openWeb = (path: string) => {
@@ -21,6 +22,7 @@ const openWeb = (path: string) => {
 export default function Account() {
   const insets = useSafeAreaInsets();
   const { user, signOut, endedNotice } = useAuth();
+  const orgs = useMyOrgs(user?.id);
   const { place } = usePlace();
   const health = useHealth();
 
@@ -29,7 +31,9 @@ export default function Account() {
       haptic.firm();
       void signOut();
     };
-    const warn = '';
+    // Door scans made offline and not synced yet are deleted with everything else this phone kept.
+    const pending = await pendingDoorScans();
+    const warn = pending ? ` ${pending} door scan${pending === 1 ? '' : 's'} on this phone haven’t synced yet and will be lost.` : '';
     if (Platform.OS === 'web') {
       if (globalThis.confirm?.(`Sign out of Eventro on this device?${warn}`) ?? true) go();
       return;
@@ -119,6 +123,11 @@ export default function Account() {
         </View>
       ) : null}
 
+      {user && orgs.data?.length ? (
+        <View style={styles.group}>
+          <Row icon="scan" label="Organizer tools" detail="Door scanner" onPress={() => router.push('/organizer')} />
+        </View>
+      ) : null}
 
       <View style={styles.group}>
         <Row icon="help" label="Help centre" onPress={() => openWeb('/help')} />

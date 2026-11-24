@@ -22,6 +22,27 @@ Scan the QR code with Expo Go on your phone. The phone and the computer must be 
 The web build (`npx expo start --web --port 8090`) is for quick checks in a browser; the API allows that origin in
 development.
 
+## Phase 2: sign-in, notifications, offline tickets, door scanning
+
+- **Sign-in** is a device session: a 1-hour access token and a rotating refresh token in secure storage. The API
+  client refreshes before the token runs out and after a 401, one refresh at a time (`src/lib/api.ts`). Account →
+  Signed-in devices lists and signs out sessions.
+- **Push notifications** (`src/lib/push.ts`) need a development build on Android (Expo Go removed remote push in
+  SDK 53) and an EAS project id: run `npx eas-cli@latest init` once, which writes `extra.eas.projectId` to the app
+  config. Without it the app explains why notifications can't be turned on. Permission is asked after a first purchase
+  and from Account → Notifications, never at launch. Tapping a notification opens its `data.path`.
+- **Door codes work offline**: tickets carry a QR seed and the phone makes the rotating code itself
+  (`src/lib/door-code.ts`, HMAC-SHA256 in `src/lib/hmac.ts`). Saved tickets and door packs are AES-GCM encrypted
+  with a key in the keychain (`src/lib/vault.ts`) and wiped on sign-out.
+- **Transfers, resale and gifts** from the ticket screen; Sales & payouts; gift links open `/gift/<token>`.
+- **Organizer tools** (team members only): a door scanner with camera QR scanning, offline mode with a downloaded
+  guest list and sync, manual lookup. The web preview has no camera: type or paste codes instead.
+- **Links**: `eventro://tickets/<id>`, `eventro://events/<slug>`, `eventro://gift/<token>`,
+  `eventro://reset-password?token=…` (and the same paths on the web build).
+
+Camera scanning and push need a phone; camera works in Expo Go, remote push needs a development build
+(`npx expo run:android|ios` or `eas build --profile development`).
+
 ## Checks
 
 ```bash
@@ -32,7 +53,8 @@ npx expo lint
 ## Layout
 
 - `src/app/` screens (Expo Router): tabs for Discover, Search, Tickets and Account; `event/[slug]`, `checkout/[holdId]`,
-  `ticket/[id]`, `place` and the sign-in screens.
+  `ticket/[id]`, `transfer/[id]`, `sell/[id]`, `resale`, `gift/[token]`, `devices`, `notifications`, `organizer`,
+  `door/[eventId]`, `place` and the sign-in screens; `tickets/[id]` and `events/[slug]` redirect website paths.
 - `src/lib/` API client, session, place, data hooks (React Query), formatting.
 - `src/components/` the small design system, event cards, QR code.
 - `src/theme.ts` colours, spacing, radii and fonts in one place.
