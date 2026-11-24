@@ -23,6 +23,8 @@ export function appPath(raw: string | null | undefined): Href | null {
   if (first === 'tickets' || first === 'ticket') return second ? { pathname: '/ticket/[id]', params: { id: second } } : '/tickets';
   if ((first === 'events' || first === 'event') && second) return { pathname: '/event/[slug]', params: { slug: second } };
   if (first === 'gift' && second) return { pathname: '/gift/[token]', params: { token: second } };
+  // "New sale" pushes open the event's organizer dashboard.
+  if (first === 'organizer') return second === 'events' && parts[2] ? { pathname: '/organizer/events/[id]', params: { id: parts[2] } } : '/organizer';
   if (first === 'account') return '/account';
   if (!first) return '/';
   return null;

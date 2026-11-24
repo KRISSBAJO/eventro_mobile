@@ -11,6 +11,8 @@ import { Icon } from '@/components/icons';
 import { Button, Divider, EmptyState, ErrorState, IconButton, Notice, Skeleton, Txt } from '@/components/ui';
 import { api, errorText } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
+import { canEdit } from '@/lib/organizer';
+import { useMyOrgs } from '@/lib/queries';
 import { haptic } from '@/lib/haptics';
 import { enablePush, pushBlocker, pushPermission } from '@/lib/push';
 import type { NotifyPrefs } from '@/lib/types';
@@ -23,6 +25,8 @@ const CHOICES: { key: keyof NotifyPrefs; title: string; body: string }[] = [
   { key: 'priceDrops', title: 'Price drops', body: 'When events you’re watching get cheaper.' },
   { key: 'marketing', title: 'News and offers', body: 'Now and then: events we think you’ll like. Off unless you turn it on.' },
 ];
+/** Organizers (admins and managers) only. */
+const SALES = { key: 'sales' as const, title: 'Sales', body: 'A notification for each new sale on your events.' };
 
 export default function Notifications() {
   const insets = useSafeAreaInsets();
@@ -35,6 +39,9 @@ export default function Notifications() {
   const [result, setResult] = useState<{ ok: boolean; text: string } | null>(null);
   const [saveError, setSaveError] = useState('');
   const blocker = pushBlocker();
+  // "Sales" is for people who run events (admins and managers of an organization).
+  const orgs = useMyOrgs(user?.id);
+  const choices = orgs.data?.some((o) => canEdit(o.role)) ? [...CHOICES, SALES] : CHOICES;
 
   const turnOn = async () => {
     setBusy(true);
@@ -121,7 +128,7 @@ export default function Notifications() {
             <ErrorState compact message={errorText(prefs.error)} onRetry={() => prefs.refetch()} />
           ) : prefs.data ? (
             <View style={styles.group}>
-              {CHOICES.map((c, i) => (
+              {choices.map((c, i) => (
                 <View key={c.key}>
                   {i > 0 ? <Divider style={{ marginLeft: space.lg }} /> : null}
                   <View style={styles.row}>
@@ -133,7 +140,7 @@ export default function Notifications() {
                     </View>
                     <Switch
                       accessibilityLabel={c.title}
-                      value={prefs.data[c.key]}
+                      value={prefs.data[c.key] ?? true}
                       onValueChange={(v) => void toggle(c.key, v)}
                       trackColor={{ false: colors.surface2, true: colors.accent }}
                       thumbColor="#ffffff"

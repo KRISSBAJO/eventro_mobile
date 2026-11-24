@@ -75,6 +75,37 @@ development.
 Camera scanning and push need a phone; camera works in Expo Go, remote push needs a development build
 (`npx expo run:android|ios` or `eas build --profile development`).
 
+## Phase 4: organizer tools
+
+Account → Organizer tools runs an event day to day from the phone; the website stays the place for the seat-map
+designer, branding and bank details (those screens show "Open on the web", using `EXPO_PUBLIC_WEB_URL`). Data and
+roles are in `src/lib/organizer.ts`; the API's roles decide what shows: admins everything, managers events, promos
+and sales (no payouts, team changes or cancelling), door staff only the door list.
+
+- **Home** (`organizer/index`): an organization switcher when there are several, tickets sold, revenue in the
+  org's currency (other currencies converted with `/fx/rates`, marked ≈), upcoming events, next payout, recent
+  orders and every event with its status. Pull to refresh. Door staff get the door list as before.
+- **Event dashboard** (`organizer/events/[id]`): live stats (sold, checked in, revenue and what you get, 30 days of
+  sales as bars, each ticket type), Scan / Pause or Resume sales / Share link / Edit, attendees with search and
+  manual check-in and undo (`…/attendees`), promo codes (`…/promos`), price-drop watchers, seat map (web), submit
+  for review, and for admins Cancel (`…/cancel`: the refund numbers from `cancel-preview`, a reason, and the event
+  name typed again; a last confirm sheet repeats the numbers).
+- **Edit** (`…/edit`) and **Create** (`organizer/create`, five steps, save as draft or submit): the website's
+  endpoints and rules. Prices in Edit are what fans pay (all-in) and are converted back with the fee mode; times
+  are the venue's wall-clock time stored as UTC. Countries with several time zones (US, CA, AU) ask for one. The
+  venue can't be changed (support does it, as on the website). Covers come from the website's free stock photos
+  (`src/lib/stock-covers.ts`, same Unsplash ids; picker in `src/components/stock-picker.tsx`); there is no image
+  picker installed, so uploads stay on the website. Dates and times use small built-in sheets
+  (`src/components/date-time.tsx`), not a native picker.
+- **Payouts** (`organizer/payouts`, admins, read-only) and **Team** (`organizer/team`: invite with a role, change
+  role, remove with the confirm sheet). The app never asks for bank details.
+- **Sell tickets** (`organizer/start`): accounts without an organization create one (the name, as on the website).
+- **New-sale pushes**: the API sends "New sale" to an org's admins and managers when an order is paid; tapping it
+  opens the event dashboard (`/organizer/events/<id>`). Account → Notifications has a Sales switch for organizers.
+
+Typed routes: the dev server's watcher on Windows can write nested new routes into `.expo/types/router.d.ts` with
+backslashes (they then fail `tsc`). Restarting `npx expo start` regenerates the file correctly.
+
 ## Checks
 
 ```bash
@@ -86,7 +117,7 @@ npx expo lint
 
 - `src/app/` screens (Expo Router): tabs for Discover, Search, Tickets and Account; `event/[slug]`, `seats/[slug]`,
   `checkout/[holdId]`, `saved`, `orders`, `order/[id]`, `venue/[slug]`, `category/[category]`, `city/[city]`,
-  `ticket/[id]`, `transfer/[id]`, `sell/[id]`, `resale`, `gift/[token]`, `devices`, `notifications`, `organizer`,
+  `ticket/[id]`, `transfer/[id]`, `sell/[id]`, `resale`, `gift/[token]`, `devices`, `notifications`, `organizer/*` (organizer tools),
   `door/[eventId]`, `place` and the sign-in screens; `tickets/[id]` and `events/[slug]` redirect website paths.
 - `src/lib/` API client, session, place, data hooks (React Query), formatting.
 - `src/components/` the small design system, event cards, QR code.

@@ -132,7 +132,11 @@ export default function Account() {
 
       {user && orgs.data?.length ? (
         <View style={styles.group}>
-          <Row icon="scan" label="Organizer tools" detail="Door scanner" onPress={() => router.push('/organizer')} />
+          <Row icon="scan" label="Organizer tools" detail={orgs.data.every((o) => o.role === 'DOOR') ? 'Door scanner' : 'Events and sales'} onPress={() => router.push('/organizer')} />
+        </View>
+      ) : user && orgs.data ? (
+        <View style={styles.group}>
+          <Row icon="ticket" label="Sell tickets" detail="Become an organizer" onPress={() => router.push('/organizer/start')} />
         </View>
       ) : null}
 

@@ -59,7 +59,12 @@ export default function RootLayout() {
                   <Stack.Screen name="resale" />
                   <Stack.Screen name="devices" />
                   <Stack.Screen name="notifications" />
-                  <Stack.Screen name="organizer" />
+                  <Stack.Screen name="organizer/index" />
+                  <Stack.Screen name="organizer/create" options={{ gestureEnabled: false }} />
+                  <Stack.Screen name="organizer/start" />
+                  <Stack.Screen name="organizer/events/[id]/index" />
+                  <Stack.Screen name="organizer/events/[id]/edit" />
+                  <Stack.Screen name="organizer/events/[id]/cancel" options={{ presentation: 'modal' }} />
                   <Stack.Screen name="door/[eventId]" options={{ gestureEnabled: false }} />
                   <Stack.Screen name="seats/[slug]" />
                   <Stack.Screen name="saved" />

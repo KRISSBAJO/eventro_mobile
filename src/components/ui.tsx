@@ -380,7 +380,7 @@ const styles = StyleSheet.create({
   empty: { alignItems: 'center', gap: space.sm, paddingVertical: space.huge, paddingHorizontal: space.xxl },
   emptyIcon: { width: 52, height: 52, borderRadius: 26, backgroundColor: colors.accentSoft, alignItems: 'center', justifyContent: 'center', marginBottom: space.sm },
   inputWrap: { flexDirection: 'row', alignItems: 'center', minHeight: 52, borderRadius: radius.md, borderWidth: 1, borderColor: colors.line2, backgroundColor: colors.surface },
-  input: { flex: 1, minHeight: 50, paddingHorizontal: space.lg, color: colors.text, ...type.body, lineHeight: undefined, outlineWidth: 0 },
+  input: { flex: 1, minWidth: 0, minHeight: 50, paddingHorizontal: space.lg, color: colors.text, ...type.body, lineHeight: undefined, outlineWidth: 0 },
   eye: { width: touch, height: touch, alignItems: 'center', justifyContent: 'center' },
   stepper: { flexDirection: 'row', alignItems: 'center', gap: 4, borderWidth: 1, borderColor: colors.line2, borderRadius: radius.pill, padding: 3 },
   stepBtn: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },

@@ -356,7 +356,7 @@ export type DeviceSession = {
 };
 
 /** GET/PATCH /me/notify-prefs */
-export type NotifyPrefs = { orders: boolean; tickets: boolean; priceDrops: boolean; reminders: boolean; marketing: boolean };
+export type NotifyPrefs = { orders: boolean; tickets: boolean; priceDrops: boolean; reminders: boolean; marketing: boolean; /** organizers: new sales (older APIs leave it out: on) */ sales?: boolean };
 
 /** POST /tickets/:id/listing */
 export type Listed = { listingId: string; feeCents: number; royaltyCents: number; payoutCents: number; capCents: number | null; listCents: number };
@@ -408,7 +408,7 @@ export type Gift = {
 
 /* ---------- organizer ---------- */
 
-export type MemberRole = 'ADMIN' | 'EDITOR' | 'FINANCE' | 'DOOR' | string;
+export type MemberRole = 'ADMIN' | 'MANAGER' | 'DOOR' | string;
 
 /** GET /organizer/orgs */
 export type MyOrg = { role: MemberRole; org: { id: string; name: string } };
