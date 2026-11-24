@@ -266,7 +266,7 @@ export function Field({ label, error, hint, secure, style, inputStyle, ...input 
       <Txt variant="smallStrong" color={colors.muted}>
         {label}
       </Txt>
-      <View style={[styles.inputWrap, focused && { borderColor: colors.text }, !!error && { borderColor: colors.accent }]}>
+      <View style={[styles.inputWrap, focused && focusRing, !!error && { borderColor: colors.accent }]}>
         <TextInput
           placeholderTextColor={colors.dim}
           selectionColor={colors.accent}
@@ -363,7 +363,7 @@ export function TextArea({
       <Txt variant="smallStrong" color={colors.muted}>
         {label}
       </Txt>
-      <View style={[styles.areaWrap, focused && { borderColor: colors.text }, dragging && { borderColor: colors.accent }, !!error && { borderColor: colors.accent }]}>
+      <View style={[styles.areaWrap, (focused || dragging) && focusRing, !!error && { borderColor: colors.accent }]}>
         <TextInput
           multiline
           value={value}
@@ -464,6 +464,19 @@ export function Row({ icon, label, detail, onPress, tone }: { icon: IconName; la
 /** The native animation driver doesn't exist on web. */
 const NATIVE_DRIVER = Platform.OS !== 'web';
 
+/** On web, hides the browser's own focus outline, which would draw over the focus ring below. */
+export const NO_OUTLINE = (Platform.OS === 'web' ? { outlineStyle: 'none' } : {}) as TextStyle;
+
+/** The field being typed in: an orange edge with a soft orange glow, like the buttons. */
+export const focusRing: ViewStyle = {
+  borderColor: colors.accent,
+  shadowColor: colors.accent,
+  shadowOpacity: 0.45,
+  shadowRadius: 10,
+  shadowOffset: { width: 0, height: 0 },
+  elevation: 0,
+};
+
 const styles = StyleSheet.create({
   btn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, borderRadius: radius.pill },
   btnPrimary: { backgroundColor: colors.accent },
@@ -490,13 +503,14 @@ const styles = StyleSheet.create({
   notice: { flexDirection: 'row', gap: space.md, padding: space.md + 2, borderRadius: radius.md, borderWidth: 1, alignItems: 'flex-start' },
   empty: { alignItems: 'center', gap: space.sm, paddingVertical: space.huge, paddingHorizontal: space.xxl },
   emptyIcon: { width: 52, height: 52, borderRadius: 26, backgroundColor: colors.accentSoft, alignItems: 'center', justifyContent: 'center', marginBottom: space.sm },
-  areaWrap: { borderRadius: radius.md, borderWidth: 1, borderColor: colors.line2, backgroundColor: colors.surface, overflow: 'hidden' },
-  area: { paddingHorizontal: space.lg, paddingTop: space.lg, paddingBottom: space.sm, color: colors.text, ...type.body, outlineWidth: 0 },
+  // No overflow clipping, so the focus glow shows on iOS too (nothing inside has a background to clip).
+  areaWrap: { borderRadius: radius.md, borderWidth: 1, borderColor: colors.fieldLine, backgroundColor: colors.field },
+  area: { paddingHorizontal: space.lg, paddingTop: space.lg, paddingBottom: space.sm, color: colors.text, ...type.body, outlineWidth: 0, ...NO_OUTLINE },
   areaFoot: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingLeft: space.lg, paddingRight: space.sm, height: 30, borderTopWidth: 1, borderTopColor: colors.line },
   grip: { width: 44, height: 30, alignItems: 'center', justifyContent: 'center', gap: 3 },
   gripBar: { width: 22, height: 2, borderRadius: 1, backgroundColor: colors.dim },
-  inputWrap: { flexDirection: 'row', alignItems: 'center', minHeight: 52, borderRadius: radius.md, borderWidth: 1, borderColor: colors.line2, backgroundColor: colors.surface },
-  input: { flex: 1, minWidth: 0, minHeight: 50, paddingHorizontal: space.lg, color: colors.text, ...type.body, lineHeight: undefined, outlineWidth: 0 },
+  inputWrap: { flexDirection: 'row', alignItems: 'center', minHeight: 52, borderRadius: radius.md, borderWidth: 1, borderColor: colors.fieldLine, backgroundColor: colors.field },
+  input: { flex: 1, minWidth: 0, minHeight: 50, paddingHorizontal: space.lg, color: colors.text, ...type.body, lineHeight: undefined, outlineWidth: 0, ...NO_OUTLINE },
   eye: { width: touch, height: touch, alignItems: 'center', justifyContent: 'center' },
   stepper: { flexDirection: 'row', alignItems: 'center', gap: 4, borderWidth: 1, borderColor: colors.line2, borderRadius: radius.pill, padding: 3 },
   stepBtn: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },

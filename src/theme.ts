@@ -22,6 +22,10 @@ export const colors = {
   bg2: '#140d0f',
   surface: '#1a1214',
   surface2: '#22181b',
+  /** Inside of text fields, pickers and search boxes: near black, so they read clearly as places to type. */
+  field: '#060304',
+  /** A field's border: a touch brighter than line2, so the well's edge shows on dark cards. */
+  fieldLine: 'rgba(255,228,232,0.18)',
   line: 'rgba(255,228,232,0.08)',
   line2: 'rgba(255,228,232,0.14)',
   text: '#f7f2f2',

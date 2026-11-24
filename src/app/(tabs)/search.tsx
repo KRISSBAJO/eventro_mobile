@@ -7,7 +7,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { CompactCardSkeleton, CompactEventCard } from '@/components/event-card';
 import { Icon } from '@/components/icons';
 import { OptionSheet, type SheetOption } from '@/components/option-sheet';
-import { Chip, EmptyState, ErrorState, Txt } from '@/components/ui';
+import { Chip, EmptyState, ErrorState, focusRing, NO_OUTLINE, Txt } from '@/components/ui';
 import { errorText, isOffline } from '@/lib/api';
 import { BROWSE_CATEGORIES, CATEGORY_NAME, DATE_RANGES, currencyForCountry, currencySymbol, flag, num, type DateRange } from '@/lib/format';
 import { haptic } from '@/lib/haptics';
@@ -46,6 +46,7 @@ export default function Search() {
   const [f, setF] = useState<SearchFilters>(NO_FILTERS);
   const [text, setText] = useState('');
   const [sheet, setSheet] = useState<Sheet>(null);
+  const [typing, setTyping] = useState(false);
   const input = useRef<ComponentRef<typeof TextInput>>(null);
 
   // Arriving from Discover (a category chip, "See all"): start from those filters (adjusting state while rendering).
@@ -144,7 +145,7 @@ export default function Search() {
         <Txt variant="h1" accessibilityRole="header">
           Search
         </Txt>
-        <View style={styles.searchBox}>
+        <View style={[styles.searchBox, typing && focusRing]}>
           <Icon name="search" size={19} color={colors.muted} />
           <TextInput
             ref={input}
@@ -157,6 +158,8 @@ export default function Search() {
             returnKeyType="search"
             autoCorrect={false}
             accessibilityLabel="Search events"
+            onFocus={() => setTyping(true)}
+            onBlur={() => setTyping(false)}
             style={styles.searchInput}
           />
           {text ? (
@@ -279,10 +282,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: space.lg,
     borderRadius: radius.pill,
     borderWidth: 1,
-    borderColor: colors.line2,
-    backgroundColor: colors.surface,
+    borderColor: colors.fieldLine,
+    backgroundColor: colors.field,
   },
-  searchInput: { flex: 1, height: 50, color: colors.text, ...type.body, lineHeight: undefined, outlineWidth: 0 },
+  searchInput: { flex: 1, height: 50, color: colors.text, ...type.body, lineHeight: undefined, outlineWidth: 0, ...NO_OUTLINE },
   chips: { gap: space.sm, paddingHorizontal: space.sm },
   filter: {
     flexDirection: 'row',

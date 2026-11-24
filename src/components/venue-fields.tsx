@@ -162,5 +162,5 @@ export function Pick({ label, value, placeholder, error, hint, onPress }: { labe
 
 const styles = StyleSheet.create({
   row2: { flexDirection: 'row', gap: space.md },
-  pick: { flexDirection: 'row', alignItems: 'center', gap: space.sm, minHeight: 52, paddingHorizontal: space.lg, borderRadius: radius.md, borderWidth: 1, borderColor: colors.line2, backgroundColor: colors.surface },
+  pick: { flexDirection: 'row', alignItems: 'center', gap: space.sm, minHeight: 52, paddingHorizontal: space.lg, borderRadius: radius.md, borderWidth: 1, borderColor: colors.fieldLine, backgroundColor: colors.field },
 });
