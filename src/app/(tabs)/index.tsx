@@ -11,7 +11,7 @@ import { useAuth } from '@/lib/auth';
 import { BROWSE_CATEGORIES, CATEGORY_NAME, countryName, distanceLabel, firstName, greeting } from '@/lib/format';
 import { haptic } from '@/lib/haptics';
 import { nearestCountry, placeLabel, preciseLocation, rankNear, usePlace } from '@/lib/place';
-import { useAllEvents, useEventsBetween, useEventsNear } from '@/lib/queries';
+import { useAllEvents, useEventsBetween, useEventsNear, useTrendingEvents } from '@/lib/queries';
 import { colors, gutter, radius, space } from '@/theme';
 
 const SHOW = 8;
@@ -23,6 +23,7 @@ export default function Discover() {
   const all = useAllEvents();
   const near = useEventsNear(place?.lat, place?.lng);
   const weekend = useEventsBetween('weekend');
+  const popular = useTrendingEvents();
   const [refreshing, setRefreshing] = useState(false);
   const [locating, setLocating] = useState(false);
   const [locError, setLocError] = useState('');
@@ -35,13 +36,17 @@ export default function Discover() {
   const shown = [...local, ...(local.length < 4 ? online : [])].slice(0, SHOW);
   const shownSlugs = new Set(shown.map((r) => r.event.slug));
   const distances = Object.fromEntries(shown.map((r) => [r.event.slug, r.distanceKm]));
-  const comingUp = events.filter((e) => !shownSlugs.has(e.slug)).slice(0, 10);
+  // Most tickets sold in the last two weeks (soonest first when nothing has sold lately, or the API can't rank).
+  const railSource = popular.data?.items ?? (popular.isPending ? [] : events);
+  const comingUp = railSource.filter((e) => !shownSlugs.has(e.slug)).slice(0, 10);
+  const trending = popular.trending;
+  const railLoading = popular.isPending || (!!popular.error && all.isPending);
   const whereName = place ? (inCity.length && place.city ? place.city : place.source === 'precise' && !inCity.length ? countryName(place.country) : place.city && inCity.length ? place.city : countryName(place.country)) : '';
   const nearest = inCity[0]?.distanceKm ?? null;
 
   const refresh = async () => {
     setRefreshing(true);
-    await Promise.all([all.refetch(), weekend.refetch(), place?.lat !== undefined ? near.refetch() : null]);
+    await Promise.all([all.refetch(), weekend.refetch(), popular.refetch(), place?.lat !== undefined ? near.refetch() : null]);
     setRefreshing(false);
   };
 
@@ -182,12 +187,16 @@ export default function Discover() {
       ) : null}
 
       {/* Coming up */}
-      {all.isPending || comingUp.length ? (
+      {railLoading || comingUp.length ? (
         <View style={{ marginTop: space.xxxl }}>
           <View style={{ paddingHorizontal: gutter }}>
-            <SectionHeader eyebrow="Trending" title="On sale now" action="See all" onAction={() => browse({})} />
+            {trending ? (
+              <SectionHeader eyebrow="Trending" title="Popular right now" action="See all" onAction={() => browse({ sort: 'popular' })} />
+            ) : (
+              <SectionHeader eyebrow="Coming up" title="On sale now" action="See all" onAction={() => browse({})} />
+            )}
           </View>
-          <Rail events={comingUp} loading={all.isPending} />
+          <Rail events={comingUp} loading={railLoading} />
         </View>
       ) : null}
 

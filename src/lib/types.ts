@@ -43,6 +43,10 @@ export type EventCard = {
   /** lowest all-in price */
   fromCents: number;
   distanceKm?: number | null;
+  /** paid tickets sold in the last 14 days (what sort=popular ranks by) */
+  soldRecent?: number;
+  /** with ?currency=: fromCents converted to that currency (approximate, for display) */
+  fromCentsIn?: { currency: string; cents: number };
 };
 
 export type EventPage = { total: number; page: number; pageSize: number; items: EventCard[] };
@@ -218,6 +222,8 @@ export type Ticket = {
     slug: string;
     title: string;
     subtitle: string;
+    /** the event's currency (what it's priced, listed and paid out in) */
+    currency?: string;
     status: string;
     cancelledAt: string | null;
     cancelReason: string | null;
@@ -253,7 +259,7 @@ export type MyTickets = { tickets: Ticket[]; incomingTransfers: IncomingTransfer
 export type QrToken = { token: string; expiresInMs: number };
 
 export type Health = { ok: boolean; payments: 'mock' | 'live'; stripe: boolean; paystack: boolean };
-export type GeoMe = { country: string | null; countryName: string | null; city: string | null; source: string };
+export type GeoMe = { country: string | null; countryName: string | null; city: string | null; currency?: string | null; source: string };
 
 /** GET /me/sessions */
 export type DeviceSession = {
@@ -296,7 +302,7 @@ export type MyListing = {
   paidOutAt: string | null;
   payoutNote: string | null;
   event: { slug: string; title: string; startsAt: string };
-  ticket: { id: string; section: string | null; row: string | null; seat: number | null; ticketType: { name: string } };
+  ticket: { id: string; section: string | null; sectionName?: string | null; row: string | null; seat: number | null; ticketType: { name: string } };
 };
 export type MyResale = { listings: MyListing[]; totals: { owedCents: number; paidCents: number } };
 
@@ -325,19 +331,20 @@ export type MemberRole = 'ADMIN' | 'EDITOR' | 'FINANCE' | 'DOOR' | string;
 /** GET /organizer/orgs */
 export type MyOrg = { role: MemberRole; org: { id: string; name: string } };
 
-/** GET /organizer/orgs/:orgId/events (the fields the door needs) */
-export type OrgEvent = {
+/** GET /organizer/orgs/:orgId/door-events: 2 days back to 60 days ahead, soonest first */
+export type DoorEvent = {
   id: string;
   slug: string;
   title: string;
-  status: string;
   startsAt: string;
+  doorsAt: string | null;
   timezone: string | null;
-  imageUrl: string | null;
-  online: boolean;
   venue: { name: string; city: string | null } | null;
-  sold: number;
-  capacity: number;
+  online: boolean;
+  status: string;
+  /** non-void tickets (the door pack has the same ones) */
+  ticketsIssued: number;
+  checkedIn: number;
 };
 
 /** POST /organizer/events/:id/check-in */
@@ -346,7 +353,10 @@ export type CheckInAnswer = {
   result: 'ok' | 'duplicate' | 'invalid' | 'wrong-event' | 'expired-code';
   message: string;
   ticket?: DoorTicket;
+  /* duplicate: the first scan */
   checkedInAt?: string | null;
+  checkedInBy?: { id: string; name: string | null } | null;
+  checkedInDevice?: string | null;
 };
 
 /** GET /organizer/events/:id/door-pack */

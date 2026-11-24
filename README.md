@@ -37,6 +37,14 @@ development.
 - **Transfers, resale and gifts** from the ticket screen; Sales & payouts; gift links open `/gift/<token>`.
 - **Organizer tools** (team members only): a door scanner with camera QR scanning, offline mode with a downloaded
   guest list and sync, manual lookup. The web preview has no camera: type or paste codes instead.
+- **Paystack** opens in an auth session (`WebBrowser.openAuthSessionAsync(url, 'eventro://')`). Orders are created
+  with `returnTo: 'app'`, so after paying, the website's return page confirms the payment and hands back to
+  `eventro://tickets`, which closes the browser; the app still verifies (and polls) the order itself.
+- **Discover's "Trending" rail** uses `GET /events?sort=popular` (tickets sold in the last 14 days) and only says
+  "Trending" when something has sold lately. **Search's price filter** is in the visitor's currency
+  (`currency=` with `maxPrice`); the API converts each event's price, and results show "≈" the converted price.
+- **Door scanner**: the event picker uses `GET /organizer/orgs/:id/door-events`; "N of M checked in" counts non-void
+  tickets online and offline; a repeat scan says "Already scanned at 7:42 PM by Sam (other device)".
 - **Links**: `eventro://tickets/<id>`, `eventro://events/<slug>`, `eventro://gift/<token>`,
   `eventro://reset-password?token=…` (and the same paths on the web build).
 

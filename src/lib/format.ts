@@ -40,6 +40,15 @@ export function money(cents: number, currency = 'USD', opts: { decimals?: boolea
 
 export const currencySymbol = (currency = 'USD') => SYMBOL[currency.toUpperCase()] ?? currency.toUpperCase();
 
+const LOCAL_CURRENCY: Record<string, string> = { US: 'USD', GB: 'GBP', CA: 'CAD', AU: 'AUD', NG: 'NGN', GH: 'GHS', KE: 'KES', ZA: 'ZAR' };
+const EURO = new Set(['AT', 'BE', 'CY', 'DE', 'EE', 'ES', 'FI', 'FR', 'GR', 'HR', 'IE', 'IT', 'LT', 'LU', 'LV', 'MT', 'NL', 'PT', 'SI', 'SK']);
+
+/** The visitor's currency for a country, among the ones events are priced in (US dollars otherwise); as the API's. */
+export function currencyForCountry(country: string | null | undefined) {
+  const c = (country ?? '').toUpperCase();
+  return LOCAL_CURRENCY[c] ?? (EURO.has(c) ? 'EUR' : 'USD');
+}
+
 /* ---------- dates ---------- */
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];

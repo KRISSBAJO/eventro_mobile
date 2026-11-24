@@ -115,7 +115,8 @@ function Stat({ label, value }: { label: string; value: string }) {
 function ListingRow({ l, first, busy, onUnlist }: { l: MyListing; first: boolean; busy: boolean; onUnlist: () => void }) {
   const [label, tone] = LISTING_CHIP[l.status] ?? ['Listed', 'accent'];
   const pay = payoutLabel(l);
-  const seat = [l.ticket.section ? `Section ${l.ticket.section}` : '', l.ticket.row ? `Row ${l.ticket.row}` : '', l.ticket.seat ? `Seat ${l.ticket.seat}` : ''].filter(Boolean).join(' · ');
+  const section = l.ticket.sectionName ?? (l.ticket.section ? `Section ${l.ticket.section}` : '');
+  const seat = [section, l.ticket.row ? `Row ${l.ticket.row}` : '', l.ticket.seat ? `Seat ${l.ticket.seat}` : ''].filter(Boolean).join(' · ');
   return (
     <View style={[styles.row, !first && { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.line2 }]}>
       <Pressable accessibilityRole="link" onPress={() => router.push({ pathname: '/event/[slug]', params: { slug: l.event.slug } })}>

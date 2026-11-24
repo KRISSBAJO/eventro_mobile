@@ -3,7 +3,7 @@ import { useInfiniteQuery, useQuery, useQueryClient } from '@tanstack/react-quer
 import { useEffect, useState } from 'react';
 import { api, ApiError, isOffline, qs } from './api';
 import { dateRange, type DateRange } from './format';
-import type { Category, EventDetail, EventPage, EventResale, Health, MyOrg, MyResale, MyTickets } from './types';
+import type { Category, DoorEvent, EventDetail, EventPage, EventResale, Health, MyOrg, MyResale, MyTickets } from './types';
 import { readVault, writeVault } from './vault';
 
 /** Every upcoming public event (the catalog is small); used for near-you, place options and rails. */
@@ -25,6 +25,19 @@ export function useEventsNear(lat?: number, lng?: number) {
   });
 }
 
+/**
+ * Trending: most paid tickets in the last 14 days, ties soonest first (GET /events?sort=popular).
+ * `trending` is false when nothing has sold lately (the list is then simply soonest first).
+ */
+export function useTrendingEvents() {
+  const q = useQuery({
+    queryKey: ['events', 'popular'],
+    queryFn: () => api<EventPage>(`/events${qs({ sort: 'popular', pageSize: 30 })}`),
+    staleTime: 2 * 60_000,
+  });
+  return { ...q, trending: (q.data?.items[0]?.soldRecent ?? 0) > 0 };
+}
+
 export function useEventsBetween(range: DateRange) {
   const { from, to } = dateRange(range);
   return useQuery({
@@ -40,12 +53,14 @@ export type SearchFilters = {
   country: string;
   city: string;
   date: DateRange;
-  /** whole units of the event currency; the API compares the lowest price against it */
+  /** whole units of `currency`; the API converts each event's lowest price into it before comparing */
   maxPrice: number | null;
-  sort: 'date' | 'price-asc' | 'price-desc';
+  /** the visitor's currency (ISO), sent with maxPrice */
+  currency: string;
+  sort: 'date' | 'price-asc' | 'price-desc' | 'popular';
 };
 
-export const NO_FILTERS: SearchFilters = { q: '', category: '', country: '', city: '', date: 'any', maxPrice: null, sort: 'date' };
+export const NO_FILTERS: SearchFilters = { q: '', category: '', country: '', city: '', date: 'any', maxPrice: null, currency: 'USD', sort: 'date' };
 
 const PAGE = 20;
 
@@ -59,6 +74,7 @@ export function useEventSearch(f: SearchFilters) {
     from,
     to,
     maxPrice: f.maxPrice ?? undefined,
+    currency: f.maxPrice !== null ? f.currency : undefined,
     sort: f.sort === 'date' ? undefined : f.sort,
   };
   return useInfiniteQuery({
@@ -164,6 +180,17 @@ export function useEventResale(slug: string | undefined) {
 export function useRefreshWallet() {
   const qc = useQueryClient();
   return () => Promise.all([qc.invalidateQueries({ queryKey: ['me', 'tickets'] }), qc.invalidateQueries({ queryKey: ['me', 'resale'] })]);
+}
+
+/** The door scanner's events for one organization (GET /organizer/orgs/:id/door-events): light, with check-in counts. */
+export function useDoorEvents(orgId: string | undefined, opts: { refetchMs?: number | false } = {}) {
+  return useQuery({
+    queryKey: ['organizer', 'door-events', orgId],
+    queryFn: () => api<DoorEvent[]>(`/organizer/orgs/${encodeURIComponent(orgId!)}/door-events`),
+    enabled: !!orgId,
+    refetchInterval: opts.refetchMs ?? false,
+    retry: 0,
+  });
 }
 
 /** Organizations this account is on the team of (GET /organizer/orgs); empty for most fans. */

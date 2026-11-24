@@ -100,6 +100,12 @@ export function CompactEventCard({ e }: { e: Ev }) {
           From
         </Txt>
         <Txt variant="title">{money(e.fromCents, e.currency)}</Txt>
+        {/* With a price filter in the visitor's currency, the API converts the price too (approximate). */}
+        {e.fromCentsIn && e.fromCentsIn.currency !== e.currency ? (
+          <Txt variant="tiny" color={colors.muted} accessibilityLabel={`about ${money(e.fromCentsIn.cents, e.fromCentsIn.currency)}`}>
+            ≈ {money(e.fromCentsIn.cents, e.fromCentsIn.currency)}
+          </Txt>
+        ) : null}
       </View>
     </Pressable>
   );

@@ -2,7 +2,9 @@
  * Checkout for a hold (POST /holds made on the event screen): held seats and countdown, contact details,
  * ticket protection and promo codes, the all-in total, then payment:
  *   mock      test mode: POST /orders, then POST /orders/:id/pay
- *   paystack  Paystack's page in the in-app browser, then POST /orders/:id/verify until it's paid
+ *   paystack  Paystack's page in an auth session (returnTo: 'app'): after paying, the website's return page confirms
+ *             the payment and hands back to eventro://tickets, which closes the browser; then POST /orders/:id/verify
+ *             until it's paid (also the fallback when the fan closes the browser themselves)
  *   stripe    Stripe's PaymentSheet in the app (needs a publishable key), then verify; otherwise the website's checkout
  * A failed or cancelled payment keeps the seats held, so the fan can try again.
  */
@@ -26,6 +28,19 @@ import type { Hold, Order, OrderCreated, Quote } from '@/lib/types';
 import { colors, gutter, radius, space } from '@/theme';
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/** The website's return page sends app buyers here once their payment is confirmed (eventro://tickets). */
+const APP_RETURN = 'eventro://';
+const NATIVE = Platform.OS !== 'web';
+
+/**
+ * Paystack's payment page. On a phone it's an auth session that closes by itself when the website hands back to
+ * eventro://; the web build (no app to return to) just opens it.
+ */
+const openPaystack = (url: string) =>
+  NATIVE
+    ? WebBrowser.openAuthSessionAsync(url, APP_RETURN, { toolbarColor: colors.bg, controlsColor: colors.accent, dismissButtonStyle: 'close' })
+    : WebBrowser.openBrowserAsync(url, { toolbarColor: colors.bg, controlsColor: colors.accent, dismissButtonStyle: 'close' });
 
 type Phase = 'form' | 'paying' | 'waiting' | 'done';
 
@@ -148,6 +163,8 @@ export default function Checkout() {
   };
 
   const check = async () => {
+    // Already confirming (the browser just closed and the pay flow is checking): don't report "not seen yet" over it.
+    if (verifying.current) return;
     setPayError('');
     try {
       const o = order ? await confirmPaid(order.orderId, 3) : await webCheckoutStatus();
@@ -188,7 +205,15 @@ export default function Checkout() {
       const created =
         order ??
         (await api<OrderCreated>('/orders', {
-          body: { holdId: h.id, email: email.trim().toLowerCase(), name: name.trim(), protection, ...(promo ? { promoCode: promo } : {}) },
+          body: {
+            holdId: h.id,
+            email: email.trim().toLowerCase(),
+            name: name.trim(),
+            protection,
+            ...(promo ? { promoCode: promo } : {}),
+            // Paystack sends the fan back to the website; with this, the website hands them back to the app.
+            ...(NATIVE && provider === 'paystack' ? { returnTo: 'app' } : {}),
+          },
         }));
       setOrder(created);
 
@@ -198,7 +223,7 @@ export default function Checkout() {
       }
       if (created.provider === 'paystack' && created.redirectUrl) {
         setPhase('waiting');
-        await WebBrowser.openBrowserAsync(created.redirectUrl, { toolbarColor: colors.bg, controlsColor: colors.accent, dismissButtonStyle: 'close' });
+        await openPaystack(created.redirectUrl);
         const o = await confirmPaid(created.orderId);
         if (o) finish(o);
         else setPayError('We haven’t seen your payment yet. If you paid, give it a moment and check again. Your seats are still held.');
@@ -464,6 +489,11 @@ export default function Checkout() {
               variant="ghost"
               size="md"
               onPress={() => {
+                if (order?.provider === 'paystack' && order.redirectUrl) {
+                  // Back from the auth session: check straight away (the AppState listener may not fire on iOS).
+                  void openPaystack(order.redirectUrl).then(() => check());
+                  return;
+                }
                 const url = order?.redirectUrl ?? `${WEB_URL}/checkout?hold=${encodeURIComponent(h.id)}`;
                 void WebBrowser.openBrowserAsync(url, { toolbarColor: colors.bg, controlsColor: colors.accent });
               }}

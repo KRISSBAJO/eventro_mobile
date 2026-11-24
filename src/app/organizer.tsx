@@ -1,9 +1,9 @@
 /**
  * Account → Organizer tools: the events of every organization this account is on the team of
- * (GET /organizer/orgs, then …/orgs/:id/events). Pick one to open its door scanner.
+ * (GET /organizer/orgs, then the light …/orgs/:id/door-events: 2 days back to 60 days ahead, with check-in counts).
+ * Pick one to open its door scanner.
  */
 import { useQuery } from '@tanstack/react-query';
-import { Image } from 'expo-image';
 import { router } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { Pressable, RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
@@ -16,19 +16,19 @@ import { savedDoorEvents, sweepEndedDoors } from '@/lib/door';
 import { isPast, when } from '@/lib/format';
 import { haptic } from '@/lib/haptics';
 import { useMyOrgs } from '@/lib/queries';
-import type { OrgEvent } from '@/lib/types';
+import type { DoorEvent } from '@/lib/types';
 import { colors, gutter, radius, space } from '@/theme';
 
-const ROLE: Record<string, string> = { ADMIN: 'Admin', EDITOR: 'Editor', FINANCE: 'Finance', DOOR: 'Door staff' };
+const ROLE: Record<string, string> = { ADMIN: 'Admin', MANAGER: 'Manager', EDITOR: 'Editor', FINANCE: 'Finance', DOOR: 'Door staff' };
 
 export default function OrganizerTools() {
   const insets = useSafeAreaInsets();
   const { user } = useAuth();
   const orgs = useMyOrgs(user?.id);
   const events = useQuery({
-    queryKey: ['organizer', 'events', user?.id, (orgs.data ?? []).map((o) => o.org.id).join(',')],
+    queryKey: ['organizer', 'door-events', user?.id, (orgs.data ?? []).map((o) => o.org.id).join(',')],
     queryFn: async () => {
-      const lists = await Promise.all((orgs.data ?? []).map(async (o) => ({ org: o, events: await api<OrgEvent[]>(`/organizer/orgs/${encodeURIComponent(o.org.id)}/events`) })));
+      const lists = await Promise.all((orgs.data ?? []).map(async (o) => ({ org: o, events: await api<DoorEvent[]>(`/organizer/orgs/${encodeURIComponent(o.org.id)}/door-events`) })));
       return lists;
     },
     enabled: !!orgs.data?.length,
@@ -82,7 +82,8 @@ export default function OrganizerTools() {
         <EmptyState icon="users" title="You’re not on an organizer team" body="When an organizer adds you to their team, their events show up here." />
       ) : (
         (events.data ?? []).map(({ org, events: list }) => {
-          const live = list.filter((e) => e.status !== 'DRAFT' && !isPast(e.startsAt, 12)).sort((a, b) => a.startsAt.localeCompare(b.startsAt));
+          // The API sends 2 days back to 60 days ahead, soonest first; the scanner is for events not over yet.
+          const live = list.filter((e) => !isPast(e.startsAt, 12));
           return (
             <View key={org.org.id} style={{ gap: space.sm }}>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.sm }}>
@@ -108,7 +109,14 @@ export default function OrganizerTools() {
                         router.push({ pathname: '/door/[eventId]', params: { eventId: e.id } });
                       }}
                       style={({ pressed }) => [styles.event, pressed && { backgroundColor: colors.surface2 }]}>
-                      <Image source={e.imageUrl ? { uri: e.imageUrl } : null} style={styles.thumb} contentFit="cover" />
+                      <View style={styles.thumb}>
+                        <Txt variant="eyebrow" color={colors.accent} style={{ fontSize: 10, lineHeight: 12 }}>
+                          {d.month}
+                        </Txt>
+                        <Txt variant="h3" style={{ lineHeight: 22 }}>
+                          {d.day}
+                        </Txt>
+                      </View>
                       <View style={{ flex: 1, gap: 2 }}>
                         <Txt variant="bodyStrong" numberOfLines={1}>
                           {e.title}
@@ -118,7 +126,7 @@ export default function OrganizerTools() {
                           {e.venue ? ` · ${e.venue.name}` : e.online ? ' · Online' : ''}
                         </Txt>
                         <View style={{ flexDirection: 'row', gap: 6, marginTop: 2 }}>
-                          <Badge label={`${e.sold} sold`} />
+                          <Badge label={e.checkedIn ? `${e.checkedIn} of ${e.ticketsIssued} in` : `${e.ticketsIssued} ticket${e.ticketsIssued === 1 ? '' : 's'}`} />
                           {e.status !== 'PUBLISHED' ? <Badge label={e.status === 'CANCELLED' ? 'Cancelled' : e.status.toLowerCase()} tone="warning" /> : null}
                           {saved.includes(e.id) ? <Badge label="Offline list saved" tone="success" /> : null}
                         </View>
@@ -138,5 +146,5 @@ export default function OrganizerTools() {
 
 const styles = StyleSheet.create({
   event: { flexDirection: 'row', alignItems: 'center', gap: space.md, padding: space.md, borderRadius: radius.card, borderWidth: 1, borderColor: colors.line, backgroundColor: colors.surface },
-  thumb: { width: 56, height: 56, borderRadius: radius.md, backgroundColor: colors.surface2 },
+  thumb: { width: 56, height: 56, borderRadius: radius.md, backgroundColor: colors.surface2, alignItems: 'center', justifyContent: 'center' },
 });

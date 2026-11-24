@@ -43,11 +43,11 @@ import {
 } from '@/lib/door';
 import { localStamp, when } from '@/lib/format';
 import { haptic } from '@/lib/haptics';
+import { useDoorEvents } from '@/lib/queries';
 import type { Attendee, CheckInAnswer } from '@/lib/types';
 import { colors, font, gutter, radius, space } from '@/theme';
 
-type Stats = { sold: number; checkedIn: number };
-type EventInfo = { id: string; title: string; startsAt: string; status: string };
+type EventInfo = { id: string; orgId: string; title: string; startsAt: string; status: string };
 
 const TONE: Record<Verdict['tone'], { bg: string; icon: IconName }> = {
   admit: { bg: '#178a4c', icon: 'check' },
@@ -112,19 +112,21 @@ export default function Door() {
 
   const online = mode === 'online' && !autoOffline;
   const info = useQuery({ queryKey: ['organizer', 'event', eventId], queryFn: () => api<EventInfo>(`/organizer/events/${encodeURIComponent(eventId)}`), enabled: !!user && !!eventId, retry: 1 });
-  const stats = useQuery({
-    queryKey: ['organizer', 'stats', eventId],
-    queryFn: () => api<Stats>(`/organizer/events/${encodeURIComponent(eventId)}/stats?days=1`),
-    enabled: !!user && !!eventId && online,
-    refetchInterval: online ? 15_000 : false,
-    retry: 0,
-  });
+  // "N of M checked in" counts non-void tickets both ways: online from the door list (GET …/door-events),
+  // offline from the downloaded pack (which holds the same tickets).
+  const orgId = user ? info.data?.orgId : undefined;
+  const doorEvents = useDoorEvents(online ? orgId : undefined, { refetchMs: online ? 15_000 : false });
+  const live = doorEvents.data?.find((e) => e.id === eventId);
+  const refetchDoor = doorEvents.refetch;
+  const refreshCounts = useCallback(() => {
+    if (orgId) void refetchDoor();
+  }, [orgId, refetchDoor]);
 
   const pack = store.pack;
   const title = info.data?.title ?? pack?.title ?? 'Door';
   const startsAt = info.data?.startsAt ?? pack?.startsAt;
   const packIn = pack ? pack.tickets.filter((t) => t.status === 'CHECKED_IN' || store.localIn[t.id]).length : 0;
-  const counter = online && stats.data ? { n: stats.data.checkedIn, of: stats.data.sold } : pack ? { n: packIn, of: pack.tickets.length } : stats.data ? { n: stats.data.checkedIn, of: stats.data.sold } : null;
+  const counter = online && live ? { n: live.checkedIn, of: live.ticketsIssued } : pack ? { n: packIn, of: pack.tickets.length } : live ? { n: live.checkedIn, of: live.ticketsIssued } : null;
 
   /* ---------- results ---------- */
 
@@ -166,7 +168,7 @@ export default function Door() {
         const a = await api<CheckInAnswer>(`/organizer/events/${encodeURIComponent(eventId)}/check-in`, { body: { code: value, deviceId }, timeoutMs: 8000 });
         if (a.result === 'ok' && a.ticket) setStore(markPack(storeRef.current, a.ticket.id, new Date().toISOString(), deviceId));
         show(verdictOf(a, deviceId, storeRef.current.pack));
-        void stats.refetch();
+        refreshCounts();
       } catch (e) {
         if (isOffline(e) && storeRef.current.pack) {
           // No signal: carry on against the downloaded list; the scan syncs later.
@@ -182,7 +184,7 @@ export default function Door() {
         setBusy(false);
       }
     },
-    [autoOffline, checkOffline, deviceId, eventId, mode, setStore, show, stats],
+    [autoOffline, checkOffline, deviceId, eventId, mode, refreshCounts, setStore, show],
   );
 
   const undo = async () => {
@@ -202,7 +204,7 @@ export default function Door() {
       setLastAdmit(null);
       haptic.select();
       setNote({ tone: 'plain', text: `Undone: ${lastAdmit.name} is no longer checked in.` });
-      void stats.refetch();
+      refreshCounts();
     } catch (e) {
       setNote({ tone: 'accent', text: `Couldn’t undo. ${errorText(e)}` });
     }
@@ -234,7 +236,7 @@ export default function Door() {
         const r = await syncDoor(storeRef.current, deviceId);
         setStore(r.store);
         setAutoOffline(false);
-        void stats.refetch();
+        refreshCounts();
         if (!quiet || r.conflicts.length) {
           if (r.conflicts.length) haptic.warning();
           setNote({
@@ -248,7 +250,7 @@ export default function Door() {
         setSyncing(false);
       }
     },
-    [deviceId, setStore, stats],
+    [deviceId, refreshCounts, setStore],
   );
 
   // Queued scans go up on their own every 20 seconds when the API can be reached.

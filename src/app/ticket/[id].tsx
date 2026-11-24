@@ -25,7 +25,7 @@ import { haptic } from '@/lib/haptics';
 import { useMyResale, useMyTickets, useRefreshWallet } from '@/lib/queries';
 import { blockedLine, blockers, breakdown, fmt, RESALE_FEE_PERMILLE, rulesOf, transferExpiry } from '@/lib/resale';
 import { readJson, writeJson } from '@/lib/storage';
-import { seatLine, ticketState } from '@/lib/tickets';
+import { seatLine, ticketCurrency, ticketState } from '@/lib/tickets';
 import type { QrToken, Ticket } from '@/lib/types';
 import { colors, font, gutter, radius, space } from '@/theme';
 
@@ -199,7 +199,7 @@ function TicketCard({ t, offline, feePermille, userId }: { t: Ticket; offline: b
               {state.key === 'listed' ? (
                 <>
                   <Txt variant="small" color={held ? '#b26b00' : colors.inkMuted} style={{ textAlign: 'center' }}>
-                    {held ? 'A buyer is checking out with it right now.' : net !== null ? `You’ll receive ${rules.royaltyPermille === undefined ? 'about ' : ''}${fmt(net, t.order.currency)} when it sells.` : 'We’ll pay you when it sells.'}
+                    {held ? 'A buyer is checking out with it right now.' : net !== null ? `You’ll receive ${rules.royaltyPermille === undefined ? 'about ' : ''}${fmt(net, ticketCurrency(t))} when it sells.` : 'We’ll pay you when it sells.'}
                   </Txt>
                   <Txt variant="small" color={colors.inkMuted} style={{ textAlign: 'center' }}>
                     Your QR code is off while it’s listed.

@@ -8,9 +8,9 @@ import { Icon } from '@/components/icons';
 import { OptionSheet, type SheetOption } from '@/components/option-sheet';
 import { Chip, EmptyState, ErrorState, Txt } from '@/components/ui';
 import { errorText, isOffline } from '@/lib/api';
-import { BROWSE_CATEGORIES, CATEGORY_NAME, DATE_RANGES, currencySymbol, flag, num, type DateRange } from '@/lib/format';
+import { BROWSE_CATEGORIES, CATEGORY_NAME, DATE_RANGES, currencyForCountry, currencySymbol, flag, num, type DateRange } from '@/lib/format';
 import { haptic } from '@/lib/haptics';
-import { placeOptions } from '@/lib/place';
+import { placeOptions, usePlace } from '@/lib/place';
 import { NO_FILTERS, useAllEvents, useEventSearch, type SearchFilters } from '@/lib/queries';
 import type { Category } from '@/lib/types';
 import { colors, gutter, radius, space, type } from '@/theme';
@@ -21,15 +21,27 @@ const SORTS: SheetOption<SearchFilters['sort']>[] = [
   { value: 'date', label: 'Soonest first' },
   { value: 'price-asc', label: 'Price: low to high' },
   { value: 'price-desc', label: 'Price: high to low' },
+  { value: 'popular', label: 'Trending' },
 ];
 
-/** Price steps in whole units of the currency most events in the current place use. */
-const PRICE_STEPS: Record<string, number[]> = { NGN: [5000, 10000, 25000, 50000], KES: [1000, 2500, 5000, 10000], GHS: [100, 250, 500, 1000], ZAR: [200, 500, 1000, 2000] };
+/**
+ * Price steps in whole units of the visitor's currency. The API converts every event's price into that currency
+ * (approximately) before comparing, so a naira show and a dollar show can be filtered together.
+ */
+const PRICE_STEPS: Record<string, number[]> = {
+  NGN: [5000, 10000, 25000, 50000],
+  KES: [1000, 2500, 5000, 10000],
+  GHS: [100, 250, 500, 1000],
+  ZAR: [200, 500, 1000, 2000],
+};
+const SORT_VALUES = SORTS.map((s) => s.value);
 
 export default function Search() {
   const insets = useSafeAreaInsets();
   // `at` makes each visit from Discover distinct, so tapping the same chip twice still resets the filters.
-  const p = useLocalSearchParams<{ category?: string; country?: string; city?: string; date?: string; q?: string; at?: string }>();
+  const p = useLocalSearchParams<{ category?: string; country?: string; city?: string; date?: string; q?: string; sort?: string; at?: string }>();
+  const { place } = usePlace();
+  const visitorCurrency = currencyForCountry(place?.country);
   const [f, setF] = useState<SearchFilters>(NO_FILTERS);
   const [text, setText] = useState('');
   const [sheet, setSheet] = useState<Sheet>(null);
@@ -48,6 +60,7 @@ export default function Search() {
         city: p.city ?? '',
         date: DATE_RANGES.some((d) => d.id === p.date) ? (p.date as DateRange) : 'any',
         q: p.q ?? '',
+        sort: SORT_VALUES.includes(p.sort as SearchFilters['sort']) ? (p.sort as SearchFilters['sort']) : 'date',
       });
       setText(p.q ?? '');
     }
@@ -63,10 +76,10 @@ export default function Search() {
   const all = useAllEvents();
   const places = placeOptions(all.data?.items ?? []);
   const country = places.find((c) => c.code === f.country);
-  const currencies = new Set((all.data?.items ?? []).filter((e) => !f.country || e.country === f.country).map((e) => e.currency));
-  const cur = currencies.size === 1 ? [...currencies][0] : 'USD';
-  const steps = PRICE_STEPS[cur] ?? [25, 50, 100, 200];
-  const sym = currencies.size === 1 ? currencySymbol(cur) : '';
+  // Prices are picked in the visitor's currency; a chosen limit keeps the currency it was picked in.
+  const steps = PRICE_STEPS[visitorCurrency] ?? [25, 50, 100, 200];
+  const sym = currencySymbol(visitorCurrency);
+  const limitLabel = f.maxPrice !== null ? `Under ${currencySymbol(f.currency)}${num(f.maxPrice)}` : 'Any price';
 
   const items = search.data?.pages.flatMap((p) => p.items) ?? [];
   const total = search.data?.pages[0]?.total ?? 0;
@@ -91,7 +104,7 @@ export default function Search() {
         <Filter label={country ? `${flag(country.code)} ${country.name}` : 'Anywhere'} on={!!f.country} onPress={() => setSheet('country')} />
         {country ? <Filter label={f.city || 'Any city'} on={!!f.city} onPress={() => setSheet('city')} /> : null}
         <Filter label={dateLabel} on={f.date !== 'any'} onPress={() => setSheet('date')} />
-        <Filter label={f.maxPrice !== null ? `Under ${sym}${num(f.maxPrice)}` : 'Any price'} on={f.maxPrice !== null} onPress={() => setSheet('price')} />
+        <Filter label={limitLabel} on={f.maxPrice !== null} onPress={() => setSheet('price')} />
         <Filter label={SORTS.find((s) => s.value === f.sort)!.label} on={f.sort !== 'date'} onPress={() => setSheet('sort')} icon="sliders" />
       </ScrollView>
       <View style={styles.countRow}>
@@ -199,10 +212,10 @@ export default function Search() {
       <OptionSheet visible={sheet === 'date'} title="When" value={f.date} options={DATE_RANGES.map((d) => ({ value: d.id, label: d.label }))} onPick={(v) => set({ date: v })} onClose={() => setSheet(null)} />
       <OptionSheet
         visible={sheet === 'price'}
-        title="Price (lowest ticket, all-in)"
-        value={f.maxPrice}
+        title={`Price (lowest ticket, all-in, in ${visitorCurrency})`}
+        value={f.currency === visitorCurrency ? f.maxPrice : null}
         options={[{ value: null, label: 'Any price' }, ...steps.map((n) => ({ value: n, label: `Under ${sym}${num(n)}` }))]}
-        onPick={(v) => set({ maxPrice: v })}
+        onPick={(v) => set({ maxPrice: v, currency: visitorCurrency })}
         onClose={() => setSheet(null)}
       />
       <OptionSheet visible={sheet === 'sort'} title="Sort by" value={f.sort} options={SORTS} onPick={(v) => set({ sort: v })} onClose={() => setSheet(null)} />

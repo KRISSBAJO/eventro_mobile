@@ -90,15 +90,21 @@ export function clock(iso: string | null | undefined) {
 
 const view = (t: DoorPackTicket): DoorTicket => ({ id: t.id, holderName: t.holderName, ticketType: t.ticketType, section: t.sectionName ?? t.section, row: t.row, seat: t.seat });
 
+/** "Already scanned at 7:42 PM by Sam (other device)." from the API's answer (the pack fills in for older APIs). */
+export function firstScanText(a: Pick<CheckInAnswer, 'checkedInAt' | 'checkedInBy' | 'checkedInDevice'>, deviceId: string, fromPack?: DoorPackTicket) {
+  const at = a.checkedInAt ?? fromPack?.checkedInAt;
+  if (!at) return 'This ticket was already checked in.';
+  const device = a.checkedInDevice !== undefined ? a.checkedInDevice : (fromPack?.checkedInDevice ?? null);
+  const by = a.checkedInBy?.name ? ` by ${a.checkedInBy.name.trim().split(/\s+/)[0]}` : '';
+  return `Already scanned at ${clock(at)}${by}${device === deviceId ? ' on this device' : ' (other device)'}.`;
+}
+
 /** Online: what the API said about a scan. */
 export function verdictOf(a: CheckInAnswer, deviceId: string, pack: DoorPack | null): Verdict {
   const fromPack = a.ticket ? pack?.tickets.find((t) => t.id === a.ticket!.id) : undefined;
   const ticket = a.ticket ? { ...a.ticket, section: fromPack?.sectionName ?? a.ticket.section } : null;
   if (a.result === 'ok') return { tone: 'admit', title: 'Admit', ticket, undo: a.ticket ? { ticketId: a.ticket.id, offline: false } : undefined };
-  if (a.result === 'duplicate') {
-    const here = fromPack?.checkedInDevice === deviceId;
-    return { tone: 'already', title: 'Already scanned', ticket, detail: a.checkedInAt ? `Already scanned at ${clock(a.checkedInAt)}${here ? ' on this device' : ''}.` : 'This ticket was already checked in.' };
-  }
+  if (a.result === 'duplicate') return { tone: 'already', title: 'Already scanned', ticket, detail: firstScanText(a, deviceId, fromPack) };
   return { tone: 'invalid', title: 'Not valid', ticket, detail: a.message };
 }
 

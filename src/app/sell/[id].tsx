@@ -14,7 +14,7 @@ import { currencySymbol, money } from '@/lib/format';
 import { haptic } from '@/lib/haptics';
 import { useEventResale, useMyTickets, useRefreshWallet } from '@/lib/queries';
 import { blockers, breakdown, capCentsOf, fmt, pct, presets, RESALE_FEE_PERMILLE, rulesOf, vsFace } from '@/lib/resale';
-import { seatLine } from '@/lib/tickets';
+import { seatLine, ticketCurrency } from '@/lib/tickets';
 import type { Listed } from '@/lib/types';
 import { colors, font, radius, space } from '@/theme';
 
@@ -40,7 +40,7 @@ export default function Sell() {
     );
   }
 
-  const currency = t.order.currency;
+  const currency = ticketCurrency(t);
   const faceCents = t.ticketType.priceCents;
   const feePermille = wallet.data?.resaleFeePermille ?? RESALE_FEE_PERMILLE;
   const rules = rulesOf(t.event, learnedCap);
