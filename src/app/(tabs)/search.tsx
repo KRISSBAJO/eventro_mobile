@@ -1,4 +1,5 @@
 /** Search: text with debounce, categories, place, dates, price and sort, with paged results. */
+import { LinearGradient } from 'expo-linear-gradient';
 import { useLocalSearchParams } from 'expo-router';
 import { useEffect, useRef, useState, type ComponentRef } from 'react';
 import { ActivityIndicator, FlatList, Pressable, RefreshControl, ScrollView, StyleSheet, TextInput, View } from 'react-native';
@@ -108,8 +109,14 @@ export default function Search() {
         <Filter label={SORTS.find((s) => s.value === f.sort)!.label} on={f.sort !== 'date'} onPress={() => setSheet('sort')} icon="sliders" />
       </ScrollView>
       <View style={styles.countRow}>
-        <Txt variant="smallStrong" color={colors.muted} accessibilityLiveRegion="polite">
+        <Txt variant="smallStrong" accessibilityLiveRegion="polite" numberOfLines={1} style={{ flexShrink: 1 }}>
           {search.isPending ? 'Searching…' : `${total} event${total === 1 ? '' : 's'}`}
+          {search.isPending ? null : (
+            <Txt variant="small" color={colors.muted}>
+              {' · '}
+              {f.city ? `in ${f.city}` : f.country ? `in ${country?.name ?? f.country}` : 'everywhere'}
+            </Txt>
+          )}
         </Txt>
         {active ? (
           <Pressable accessibilityRole="button" onPress={clearAll} hitSlop={10}>
@@ -124,6 +131,15 @@ export default function Search() {
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.bg, paddingTop: insets.top + space.md }}>
+      {/* Warm glow behind the top of the screen, like Discover */}
+      <LinearGradient
+        pointerEvents="none"
+        colors={['rgba(255,77,61,0.16)', 'rgba(255,120,80,0.04)', 'rgba(15,10,11,0)']}
+        locations={[0, 0.5, 1]}
+        start={{ x: 0.15, y: 0 }}
+        end={{ x: 0.6, y: 1 }}
+        style={[styles.glow, { height: insets.top + 260 }]}
+      />
       <View style={{ paddingHorizontal: gutter, gap: space.lg, paddingBottom: space.md }}>
         <Txt variant="h1" accessibilityRole="header">
           Search
@@ -154,7 +170,18 @@ export default function Search() {
               }}>
               <Icon name="close" size={18} color={colors.muted} />
             </Pressable>
-          ) : null}
+          ) : (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Sort results"
+              hitSlop={10}
+              onPress={() => {
+                haptic.select();
+                setSheet('sort');
+              }}>
+              <Icon name="sliders" size={18} color={f.sort !== 'date' ? colors.accent : colors.muted} />
+            </Pressable>
+          )}
         </View>
       </View>
 
@@ -243,6 +270,7 @@ function Filter({ label, on, onPress, icon }: { label: string; on: boolean; onPr
 }
 
 const styles = StyleSheet.create({
+  glow: { position: 'absolute', top: 0, left: 0, right: 0 },
   searchBox: {
     flexDirection: 'row',
     alignItems: 'center',

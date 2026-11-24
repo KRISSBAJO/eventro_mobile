@@ -4,7 +4,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useState } from 'react';
 import { Pressable, RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Icon, LogoMark } from '@/components/icons';
+import { Icon, LogoMark, type IconName } from '@/components/icons';
 import { Rail } from '@/components/rail';
 import { Button, Chip, ErrorState, FadeIn, Notice, SectionHeader, Skeleton, Txt } from '@/components/ui';
 import { errorText, isOffline } from '@/lib/api';
@@ -24,6 +24,18 @@ const WHEN_PILLS = [
   { id: 'week', label: 'This week', icon: 'clock' },
   { id: 'month', label: 'This month', icon: 'calendar' },
 ] as const;
+
+/** Each browse category's icon and tint on Discover. */
+const CATEGORY_LOOK: Partial<Record<string, { icon: IconName; color: string }>> = {
+  CONCERTS: { icon: 'music', color: '#a78bfa' },
+  SPORTS: { icon: 'trophy', color: '#34d399' },
+  COMEDY: { icon: 'smile', color: '#fbbf24' },
+  THEATER: { icon: 'mask', color: '#f472b6' },
+  FESTIVALS: { icon: 'flag', color: '#fb923c' },
+  FAMILY: { icon: 'users', color: '#38bdf8' },
+  FAITH: { icon: 'sun', color: '#2dd4bf' },
+  NIGHTLIFE: { icon: 'moon', color: '#818cf8' },
+};
 
 const initialsOf = (name: string) =>
   name
@@ -69,6 +81,9 @@ export default function Discover() {
     const t = new Date(r.event.startsAt).getTime();
     return t - openedAt < 7 * 86_400_000;
   }).length;
+  // Events per category: near you when there are any, else everything on sale.
+  const catCounts: Partial<Record<string, number>> = {};
+  for (const e of local.length ? local.map((r) => r.event) : events) catCounts[e.category] = (catCounts[e.category] ?? 0) + 1;
 
   const refresh = async () => {
     setRefreshing(true);
@@ -134,11 +149,13 @@ export default function Discover() {
             accessibilityLabel={user ? 'Your account' : 'Sign in'}
             onPress={() => router.navigate(user ? '/account' : '/sign-in')}
             hitSlop={6}
-            style={({ pressed }) => [styles.avatar, pressed && { opacity: 0.8 }]}>
+            style={({ pressed }) => [styles.avatar, !user && styles.avatarOut, pressed && { opacity: 0.8 }]}>
             {user ? (
-              <Txt variant="smallStrong" color={colors.accentInk}>
-                {initialsOf(user.name)}
-              </Txt>
+              <>
+                <Txt variant="smallStrong">{initialsOf(user.name)}</Txt>
+                {/* Signed in */}
+                <View style={styles.avatarDot} />
+              </>
             ) : (
               <Icon name="user" size={17} color={colors.text} />
             )}
@@ -148,9 +165,9 @@ export default function Discover() {
 
       {/* Greeting and a headline about where you are */}
       <FadeIn style={{ paddingHorizontal: gutter, marginTop: space.xxl, gap: space.sm }}>
-        <Txt variant="small" color={colors.muted}>
+        <Txt variant="eyebrow" color={colors.muted}>
           {greeting()}
-          {user ? `, ${firstName(user.name)}` : ''}
+          {user ? `, ${firstName(user.name)} 👋` : ''}
         </Txt>
         <Txt variant="hero" accessibilityRole="header">
           {headlineCity ? (
@@ -195,19 +212,25 @@ export default function Discover() {
 
       {/* When: straight to results */}
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.whenRow}>
-        {WHEN_PILLS.map((w) => (
-          <Pressable
-            key={w.id}
-            accessibilityRole="button"
-            onPress={() => {
-              haptic.tap();
-              browse({ date: w.id, ...(place?.city && place.source !== 'precise' ? { country: place.country, city: place.city } : place ? { country: place.country } : {}) });
-            }}
-            style={({ pressed }) => [styles.whenPill, pressed && { backgroundColor: colors.surface2, borderColor: colors.text }]}>
-            <Icon name={w.icon} size={14} color={colors.accent} />
-            <Txt variant="smallStrong">{w.label}</Txt>
-          </Pressable>
-        ))}
+        {WHEN_PILLS.map((w, i) => {
+          // The first pill ("Tonight") is the featured one.
+          const hot = i === 0;
+          return (
+            <Pressable
+              key={w.id}
+              accessibilityRole="button"
+              onPress={() => {
+                haptic.tap();
+                browse({ date: w.id, ...(place?.city && place.source !== 'precise' ? { country: place.country, city: place.city } : place ? { country: place.country } : {}) });
+              }}
+              style={({ pressed }) => [styles.whenPill, hot && styles.whenHot, pressed && (hot ? { opacity: 0.85 } : { backgroundColor: colors.surface2, borderColor: colors.text })]}>
+              <Icon name={w.icon} size={14} color={hot ? colors.accentInk : colors.accent} />
+              <Txt variant="smallStrong" color={hot ? colors.accentInk : colors.text}>
+                {w.label}
+              </Txt>
+            </Pressable>
+          );
+        })}
       </ScrollView>
 
       {/* Near you */}
@@ -269,9 +292,33 @@ export default function Discover() {
       <View style={{ marginTop: space.xxxl, paddingHorizontal: gutter }}>
         <SectionHeader eyebrow="Browse" title="What are you into?" />
         <View style={styles.cats}>
-          {BROWSE_CATEGORIES.map((c) => (
-            <Chip key={c} label={CATEGORY_NAME[c]} onPress={() => router.push({ pathname: '/category/[category]', params: { category: c } })} />
-          ))}
+          {BROWSE_CATEGORIES.map((c) => {
+            const look = CATEGORY_LOOK[c] ?? { icon: 'tag' as IconName, color: colors.accent };
+            const n = catCounts[c] ?? 0;
+            return (
+              <Pressable
+                key={c}
+                accessibilityRole="link"
+                accessibilityLabel={`${CATEGORY_NAME[c]}, ${n ? `${n} ${n === 1 ? 'event' : 'events'}` : 'browse'}`}
+                onPress={() => {
+                  haptic.select();
+                  router.push({ pathname: '/category/[category]', params: { category: c } });
+                }}
+                style={({ pressed }) => [styles.catTile, { backgroundColor: `${look.color}10`, borderColor: `${look.color}26` }, pressed && { transform: [{ scale: 0.97 }] }]}>
+                <View style={[styles.catIcon, { backgroundColor: `${look.color}22`, borderColor: `${look.color}40` }]}>
+                  <Icon name={look.icon} size={19} color={look.color} />
+                </View>
+                <View style={{ flex: 1, gap: 2 }}>
+                  <Txt variant="smallStrong" numberOfLines={1}>
+                    {CATEGORY_NAME[c]}
+                  </Txt>
+                  <Txt variant="tiny" color={colors.muted} numberOfLines={1}>
+                    {n ? `${n} ${n === 1 ? 'event' : 'events'}` : 'Browse'}
+                  </Txt>
+                </View>
+              </Pressable>
+            );
+          })}
         </View>
       </View>
 
@@ -330,7 +377,9 @@ export default function Discover() {
 const styles = StyleSheet.create({
   glow: { position: 'absolute', top: 0, left: 0, right: 0 },
   header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: gutter, gap: space.md, minHeight: 44 },
-  avatar: { width: 38, height: 38, borderRadius: 19, backgroundColor: colors.accent, alignItems: 'center', justifyContent: 'center' },
+  avatar: { width: 40, height: 40, borderRadius: 20, backgroundColor: colors.surface2, borderWidth: 2, borderColor: colors.accent, alignItems: 'center', justifyContent: 'center' },
+  avatarOut: { borderColor: colors.line2, backgroundColor: colors.surface },
+  avatarDot: { position: 'absolute', top: -1, right: -1, width: 11, height: 11, borderRadius: 6, backgroundColor: colors.success, borderWidth: 2, borderColor: colors.bg },
   locChip: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -362,5 +411,8 @@ const styles = StyleSheet.create({
   },
   invite: { gap: space.sm, padding: space.xl, borderRadius: radius.panel, borderWidth: 1, borderColor: colors.line, backgroundColor: colors.surface },
   inviteIcon: { width: 44, height: 44, borderRadius: 22, backgroundColor: colors.accent, alignItems: 'center', justifyContent: 'center', marginBottom: space.xs },
+  whenHot: { backgroundColor: colors.accent, borderColor: colors.accent, shadowColor: colors.accent, shadowOpacity: 0.4, shadowRadius: 10, shadowOffset: { width: 0, height: 4 } },
   cats: { flexDirection: 'row', flexWrap: 'wrap', gap: space.sm },
+  catTile: { flexBasis: '47%', flexGrow: 1, flexDirection: 'row', alignItems: 'center', gap: space.md, padding: space.md, borderRadius: radius.card, borderWidth: 1 },
+  catIcon: { width: 42, height: 42, borderRadius: 13, alignItems: 'center', justifyContent: 'center', borderWidth: 1 },
 });

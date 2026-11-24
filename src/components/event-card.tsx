@@ -6,7 +6,7 @@ import { Pressable, StyleSheet, View } from 'react-native';
 import { haptic } from '@/lib/haptics';
 import { CATEGORY_NAME, cityOnly, distanceLabel, money, when } from '@/lib/format';
 import type { EventCard as Ev } from '@/lib/types';
-import { colors, radius, shadow, space } from '@/theme';
+import { colors, radius, space } from '@/theme';
 import { HeartButton } from './heart';
 import { Icon } from './icons';
 import { Badge, Skeleton, Txt } from './ui';
@@ -36,8 +36,12 @@ function DateTile({ iso }: { iso: string }) {
 export function LargeEventCard({ e, width = 280, distanceKm }: { e: Ev; width?: number; distanceKm?: number | null }) {
   const d = when(e.startsAt);
   return (
-    <Pressable accessibilityRole="link" accessibilityLabel={a11y(e)} onPress={() => open(e.slug)} style={({ pressed }) => [{ width }, pressed && { transform: [{ scale: 0.98 }] }]}>
-      <View style={[styles.largeMedia, shadow.card]}>
+    <Pressable
+      accessibilityRole="link"
+      accessibilityLabel={a11y(e)}
+      onPress={() => open(e.slug)}
+      style={({ pressed }) => [styles.largeCard, { width }, pressed && { transform: [{ scale: 0.98 }], borderColor: colors.line2 }]}>
+      <View style={styles.largeMedia}>
         <Image source={e.imageUrl ? { uri: e.imageUrl } : null} style={StyleSheet.absoluteFill} contentFit="cover" transition={250} recyclingKey={e.slug} />
         <LinearGradient colors={[colors.fade0, colors.fade]} locations={[0.45, 1]} style={StyleSheet.absoluteFill} />
         <View style={styles.largeTop}>
@@ -57,20 +61,25 @@ export function LargeEventCard({ e, width = 280, distanceKm }: { e: Ev; width?: 
         </View>
       </View>
       <View style={styles.largeMeta}>
-        <View style={{ flex: 1, gap: 2 }}>
+        <View style={{ flex: 1, gap: 4 }}>
           <Txt variant="smallStrong" numberOfLines={1}>
             {d.short} · {d.time}
           </Txt>
-          <Txt variant="small" color={colors.muted} numberOfLines={1}>
-            {distanceKm != null ? `${distanceLabel(distanceKm)} · ` : ''}
-            {where(e)}
-          </Txt>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+            <Icon name={e.venue ? 'pin' : 'stream'} size={13} color={colors.dim} />
+            <Txt variant="small" color={colors.muted} numberOfLines={1} style={{ flex: 1 }}>
+              {distanceKm != null ? `${distanceLabel(distanceKm)} · ` : ''}
+              {where(e)}
+            </Txt>
+          </View>
         </View>
         <View style={{ alignItems: 'flex-end' }}>
-          <Txt variant="tiny" color={colors.dim}>
+          <Txt variant="eyebrow" color={colors.dim} style={{ fontSize: 10, lineHeight: 12 }}>
             From
           </Txt>
-          <Txt variant="price">{money(e.fromCents, e.currency)}</Txt>
+          <Txt variant="price" color={colors.accent}>
+            {money(e.fromCents, e.currency)}
+          </Txt>
         </View>
       </View>
     </Pressable>
@@ -92,24 +101,24 @@ export function CompactEventCard({ e }: { e: Ev }) {
           {e.title}
         </Txt>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-          <Icon name="pin" size={13} color={colors.dim} />
+          <Icon name={e.venue ? 'pin' : 'stream'} size={13} color={colors.dim} />
           <Txt variant="small" color={colors.muted} numberOfLines={1} style={{ flex: 1 }}>
             {e.distanceKm != null ? `${distanceLabel(e.distanceKm)} · ` : ''}
             {where(e)}
           </Txt>
         </View>
-      </View>
-      <View style={{ alignItems: 'flex-end', justifyContent: 'center' }}>
-        <Txt variant="tiny" color={colors.dim}>
-          From
-        </Txt>
-        <Txt variant="title">{money(e.fromCents, e.currency)}</Txt>
-        {/* With a price filter in the visitor's currency, the API converts the price too (approximate). */}
-        {e.fromCentsIn && e.fromCentsIn.currency !== e.currency ? (
-          <Txt variant="tiny" color={colors.muted} accessibilityLabel={`about ${money(e.fromCentsIn.cents, e.fromCentsIn.currency)}`}>
-            ≈ {money(e.fromCentsIn.cents, e.fromCentsIn.currency)}
+        <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 5, marginTop: 1 }}>
+          <Txt variant="small" color={colors.dim}>
+            From
           </Txt>
-        ) : null}
+          <Txt variant="title">{money(e.fromCents, e.currency)}</Txt>
+          {/* With a price filter in the visitor's currency, the API converts the price too (approximate). */}
+          {e.fromCentsIn && e.fromCentsIn.currency !== e.currency ? (
+            <Txt variant="tiny" color={colors.muted} accessibilityLabel={`about ${money(e.fromCentsIn.cents, e.fromCentsIn.currency)}`}>
+              ≈ {money(e.fromCentsIn.cents, e.fromCentsIn.currency)}
+            </Txt>
+          ) : null}
+        </View>
       </View>
       <View style={{ justifyContent: 'center' }}>
         <HeartButton card={e} size={34} />
@@ -131,7 +140,7 @@ export function LargeCardSkeleton({ width = 280 }: { width?: number }) {
 export function CompactCardSkeleton() {
   return (
     <View style={styles.compact}>
-      <Skeleton width={76} height={76} radius={radius.md} />
+      <Skeleton width={86} height={86} radius={radius.md} />
       <View style={{ flex: 1, gap: 8, justifyContent: 'center' }}>
         <Skeleton height={10} width="40%" />
         <Skeleton height={15} width="75%" />
@@ -142,11 +151,23 @@ export function CompactCardSkeleton() {
 }
 
 const styles = StyleSheet.create({
-  largeMedia: { aspectRatio: 1.5, borderRadius: radius.card, overflow: 'hidden', backgroundColor: colors.surface2, borderWidth: 1, borderColor: colors.line },
+  largeCard: { borderRadius: radius.lg, borderWidth: 1, borderColor: colors.line, backgroundColor: colors.surface, overflow: 'hidden' },
+  largeMedia: { aspectRatio: 1.5, overflow: 'hidden', backgroundColor: colors.surface2 },
   largeTop: { position: 'absolute', top: 12, left: 12, right: 12, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
   largeBottom: { position: 'absolute', left: 14, right: 14, bottom: 12, gap: 1 },
-  largeMeta: { flexDirection: 'row', alignItems: 'flex-end', gap: space.md, paddingTop: space.md, paddingHorizontal: 2 },
+  largeMeta: { flexDirection: 'row', alignItems: 'flex-end', gap: space.md, paddingVertical: space.md, paddingHorizontal: 14, borderTopWidth: 1, borderTopColor: colors.line },
   dateTile: { width: 44, paddingVertical: 5, borderRadius: 12, backgroundColor: colors.glass, borderWidth: 1, borderColor: 'rgba(255,255,255,0.16)', alignItems: 'center' },
-  compact: { flexDirection: 'row', gap: space.md, padding: space.sm, borderRadius: radius.card, minHeight: 92 },
-  thumb: { width: 76, height: 76, borderRadius: radius.md, overflow: 'hidden', backgroundColor: colors.surface2 },
+  compact: {
+    flexDirection: 'row',
+    gap: space.md,
+    padding: space.sm,
+    paddingRight: space.md,
+    borderRadius: radius.card,
+    minHeight: 104,
+    marginBottom: space.sm,
+    borderWidth: 1,
+    borderColor: colors.line,
+    backgroundColor: colors.surface,
+  },
+  thumb: { width: 86, height: 86, alignSelf: 'center', borderRadius: radius.md, overflow: 'hidden', backgroundColor: colors.surface2 },
 });
