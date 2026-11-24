@@ -1,10 +1,10 @@
 /** Data hooks over the API (React Query). */
-import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
+import { useInfiniteQuery, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
 import { api, ApiError, isOffline, qs } from './api';
 import { dateRange, type DateRange } from './format';
-import { readJson, writeJson } from './storage';
-import type { Category, EventDetail, EventPage, Health, MyTickets } from './types';
+import type { Category, EventDetail, EventPage, EventResale, Health, MyOrg, MyResale, MyTickets } from './types';
+import { readVault, writeVault } from './vault';
 
 /** Every upcoming public event (the catalog is small); used for near-you, place options and rails. */
 export function useAllEvents() {
@@ -90,8 +90,9 @@ export function useHealth() {
 }
 
 /**
- * The wallet (GET /me/tickets). Each good answer is saved on the device, so the wallet still opens offline;
- * `offline` is true when the saved copy is showing because the API couldn't be reached.
+ * The wallet (GET /me/tickets). Each good answer is saved on the device (encrypted: ACTIVE tickets carry their QR
+ * seeds), so the wallet and its door codes still work offline; `offline` is true when the saved copy is showing
+ * because the API couldn't be reached.
  */
 export function useMyTickets(userId: string | undefined) {
   const key = userId ? `tickets-${userId}` : null;
@@ -105,7 +106,7 @@ export function useMyTickets(userId: string | undefined) {
   useEffect(() => {
     if (!key) return;
     let live = true;
-    readJson<Saved>(key).then((s) => {
+    readVault<Saved>(key).then((s) => {
       if (live) setCache({ key, value: s, loaded: true });
     });
     return () => {
@@ -117,7 +118,7 @@ export function useMyTickets(userId: string | undefined) {
     queryKey: ['me', 'tickets', userId],
     queryFn: async () => {
       const data = await api<MyTickets>('/me/tickets');
-      if (key) void writeJson(key, { at: Date.now(), data });
+      if (key) void writeVault(key, { at: Date.now(), data });
       return data;
     },
     enabled: !!userId,
@@ -136,4 +137,42 @@ export function useMyTickets(userId: string | undefined) {
     refetch: q.refetch,
     isRefetching: q.isRefetching,
   };
+}
+
+/** "Sales & payouts" (GET /me/resale). */
+export function useMyResale(userId: string | undefined) {
+  return useQuery({
+    queryKey: ['me', 'resale', userId],
+    queryFn: () => api<MyResale>('/me/resale'),
+    enabled: !!userId,
+    staleTime: 30_000,
+  });
+}
+
+/** Other fans' listings for an event (for "other fans from …" in the sell sheet). */
+export function useEventResale(slug: string | undefined) {
+  return useQuery({
+    queryKey: ['event', slug, 'resale'],
+    queryFn: () => api<EventResale>(`/events/${encodeURIComponent(slug!)}/resale`),
+    enabled: !!slug,
+    staleTime: 60_000,
+    retry: 0,
+  });
+}
+
+/** After a transfer, sale or claim: the wallet and sales lists are out of date. */
+export function useRefreshWallet() {
+  const qc = useQueryClient();
+  return () => Promise.all([qc.invalidateQueries({ queryKey: ['me', 'tickets'] }), qc.invalidateQueries({ queryKey: ['me', 'resale'] })]);
+}
+
+/** Organizations this account is on the team of (GET /organizer/orgs); empty for most fans. */
+export function useMyOrgs(userId: string | undefined) {
+  return useQuery({
+    queryKey: ['organizer', 'orgs', userId],
+    queryFn: () => api<MyOrg[]>('/organizer/orgs'),
+    enabled: !!userId,
+    staleTime: 5 * 60_000,
+    retry: 1,
+  });
 }

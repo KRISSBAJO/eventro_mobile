@@ -1,7 +1,10 @@
 /**
- * One ticket: a large rotating QR code for the door (GET /tickets/:id/qr; the code changes every 15 seconds and
- * the API says when via `expiresInMs`), a countdown ring, seat details, and the screen kept awake while it shows.
- * The last code is saved so the ticket still opens offline (it may not scan once it has rotated).
+ * One ticket: a large rotating QR code for the door, seat details, and what you can do with it (send it to a
+ * friend, sell it on fan resale, take either back).
+ *
+ * The code is made on the phone from the ticket's QR seed (door-code.ts: HMAC-SHA256, a new code every 15 seconds),
+ * so it works with no signal at all. Without a seed (an older saved copy) it falls back to GET /tickets/:id/qr.
+ * The screen stays awake while the code shows.
  */
 import { Image } from 'expo-image';
 import { router, useLocalSearchParams } from 'expo-router';
@@ -14,17 +17,17 @@ import { Icon } from '@/components/icons';
 import { KeepAwake } from '@/components/keep-awake';
 import { QrCode } from '@/components/qr';
 import { Button, EmptyState, IconButton, Notice, Skeleton, Txt } from '@/components/ui';
-import { api, errorText, isOffline, WEB_URL } from '@/lib/api';
+import { api, errorText, isOffline } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
+import { codeAt, WINDOW_MS } from '@/lib/door-code';
 import { localStamp, when, zoneAbbr } from '@/lib/format';
 import { haptic } from '@/lib/haptics';
-import { useMyTickets } from '@/lib/queries';
+import { useMyResale, useMyTickets, useRefreshWallet } from '@/lib/queries';
+import { blockedLine, blockers, breakdown, fmt, RESALE_FEE_PERMILLE, rulesOf, transferExpiry } from '@/lib/resale';
 import { readJson, writeJson } from '@/lib/storage';
 import { seatLine, ticketState } from '@/lib/tickets';
 import type { QrToken, Ticket } from '@/lib/types';
 import { colors, font, gutter, radius, space } from '@/theme';
-
-const WINDOW_MS = 15_000;
 
 export default function TicketScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -49,7 +52,7 @@ export default function TicketScreen() {
     return (
       <View style={{ flex: 1, backgroundColor: colors.bg }}>
         {header}
-        <EmptyState icon="lock" title="Sign in to see this ticket" action="Sign in" onAction={() => router.push('/sign-in')} />
+        <EmptyState icon="lock" title="Sign in to see this ticket" action="Sign in" onAction={() => router.push({ pathname: '/sign-in', params: { then: `/ticket/${id}` } })} />
       </View>
     );
   }
@@ -78,7 +81,7 @@ export default function TicketScreen() {
       <ScrollView contentContainerStyle={{ paddingHorizontal: gutter, paddingBottom: insets.bottom + space.xxxl, gap: space.lg }}>
         {t.offline ? (
           <Notice tone="warning" icon="offline" title="Offline — showing saved tickets">
-            Pull down in your wallet to refresh when you’re back online.
+            {ticket.qrSeed ? 'Your door code still works: it’s made on this phone.' : 'Pull down in your wallet to refresh when you’re back online.'}
           </Notice>
         ) : null}
         {siblings.length > 1 ? (
@@ -104,90 +107,200 @@ export default function TicketScreen() {
             })}
           </ScrollView>
         ) : null}
-        <TicketCard key={ticket.id} t={ticket} offline={t.offline} />
+        <TicketCard key={ticket.id} t={ticket} offline={t.offline} feePermille={t.data?.resaleFeePermille ?? RESALE_FEE_PERMILLE} userId={user.id} />
       </ScrollView>
     </View>
   );
 }
 
-function TicketCard({ t, offline }: { t: Ticket; offline: boolean }) {
+function TicketCard({ t, offline, feePermille, userId }: { t: Ticket; offline: boolean; feePermille: number; userId: string }) {
   const { width } = useWindowDimensions();
   const d = when(t.event.startsAt);
   const abbr = zoneAbbr(t.event.timezone, t.event.startsAt);
   const state = ticketState(t);
   const qrSize = Math.min(260, width - gutter * 2 - space.xxxl * 2);
   const live = state.key === 'ready';
+  const [now] = useState(() => Date.now());
+  const rules = rulesOf(t.event);
+  const blocked = blockers(t, rules, now);
+  const expiry = state.key === 'sent' ? transferExpiry(t.transferExpiresAt, t.event.startsAt, now, rules.cutoffMinutes) : null;
+  const resale = useMyResale(state.key === 'listed' ? userId : undefined);
+  const listing = resale.data?.listings.find((l) => l.ticketId === t.id && (l.status === 'ACTIVE' || l.status === 'HELD'));
+  const held = listing?.status === 'HELD';
+  const net = t.listCents !== null ? breakdown(t.listCents, feePermille, rules.royaltyPermille).payout : null;
+  const refresh = useRefreshWallet();
+  const [busy, setBusy] = useState(false);
+  const [note, setNote] = useState<{ tone: 'success' | 'warning' | 'accent'; title: string; body: string } | null>(null);
+
+  const undo = async () => {
+    setBusy(true);
+    setNote(null);
+    try {
+      if (t.status === 'TRANSFER_PENDING') {
+        await api(`/tickets/${encodeURIComponent(t.id)}/transfer`, { method: 'DELETE' });
+        haptic.success();
+        setNote({ tone: 'success', title: 'Transfer cancelled', body: 'The ticket is back in your wallet.' });
+      } else {
+        await api(`/tickets/${encodeURIComponent(t.id)}/listing`, { method: 'DELETE' });
+        haptic.success();
+        setNote({ tone: 'success', title: 'Listing removed', body: 'Your ticket is back in your wallet and works as normal.' });
+      }
+      await refresh();
+    } catch (e) {
+      haptic.error();
+      const msg = errorText(e);
+      if (/buying this ticket right now/i.test(msg)) setNote({ tone: 'warning', title: 'Someone is buying it right now', body: 'A buyer is checking out with this ticket. Try again in a few minutes.' });
+      else setNote({ tone: 'accent', title: t.status === 'TRANSFER_PENDING' ? 'Couldn’t cancel the transfer' : 'Couldn’t remove the listing', body: msg });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const showActions = !offline && (state.key === 'ready' || state.key === 'sent' || state.key === 'listed');
 
   return (
-    <View style={styles.card}>
-      <View style={styles.cardTop}>
-        <Image source={t.event.imageUrl ? { uri: t.event.imageUrl } : null} style={styles.cardImage} contentFit="cover" />
-        <View style={{ flex: 1, gap: 2 }}>
-          <Txt variant="h3" color={colors.ink} numberOfLines={2}>
-            {t.event.title}
-          </Txt>
-          <Txt variant="small" color={colors.inkMuted}>
-            {d.short} · {d.time}
-            {abbr ? ` ${abbr}` : ''}
-            {t.event.doorsAt ? ` · Doors ${when(t.event.doorsAt).time}` : ''}
-          </Txt>
-          <Txt variant="small" color={colors.inkMuted} numberOfLines={1}>
-            {t.event.online ? 'Online event' : [t.event.venue?.name, t.event.venue?.city].filter(Boolean).join(', ')}
-          </Txt>
-        </View>
-      </View>
-
-      <View style={styles.perforation}>
-        <View style={[styles.notch, { left: -12 }]} />
-        <View style={styles.dash} />
-        <View style={[styles.notch, { right: -12 }]} />
-      </View>
-
-      <View style={{ alignItems: 'center', gap: space.md, paddingHorizontal: space.xl }}>
-        {live ? (
-          <>
-            <KeepAwake />
-            <RotatingQr ticketId={t.id} size={qrSize} offline={offline} />
-          </>
-        ) : (
-          <View style={[styles.statusBox, { width: qrSize + 24 }, state.key === 'cancelled' && { backgroundColor: 'rgba(255,77,61,0.08)' }]}>
-            <Icon name={state.key === 'cancelled' ? 'alert' : state.key === 'gift' ? 'gift' : state.key === 'used' ? 'check' : state.key === 'listed' ? 'tag' : state.key === 'sent' ? 'mail' : 'clock'} size={28} color={state.key === 'cancelled' ? '#d7321f' : colors.inkMuted} />
-            <Txt variant="title" color={colors.ink} style={{ textAlign: 'center' }}>
-              {state.key === 'cancelled' ? 'Event cancelled' : state.label}
+    <View style={{ gap: space.md }}>
+      <View style={styles.card}>
+        <View style={styles.cardTop}>
+          <Image source={t.event.imageUrl ? { uri: t.event.imageUrl } : null} style={styles.cardImage} contentFit="cover" />
+          <View style={{ flex: 1, gap: 2 }}>
+            <Txt variant="h3" color={colors.ink} numberOfLines={2}>
+              {t.event.title}
             </Txt>
-            <Txt variant="small" color={colors.inkMuted} style={{ textAlign: 'center' }}>
-              {state.detail}
+            <Txt variant="small" color={colors.inkMuted}>
+              {d.short} · {d.time}
+              {abbr ? ` ${abbr}` : ''}
+              {t.event.doorsAt ? ` · Doors ${when(t.event.doorsAt).time}` : ''}
             </Txt>
-            {state.key === 'cancelled' && t.event.cancelReason ? (
-              <Txt variant="small" color={colors.inkMuted} style={{ textAlign: 'center', fontStyle: 'italic' }}>
-                “{t.event.cancelReason}”
-              </Txt>
-            ) : null}
+            <Txt variant="small" color={colors.inkMuted} numberOfLines={1}>
+              {t.event.online ? 'Online event' : [t.event.venue?.name, t.event.venue?.city].filter(Boolean).join(', ')}
+            </Txt>
           </View>
-        )}
-      </View>
-
-      <View style={styles.details}>
-        <Detail label="Ticket" value={t.ticketType.name} />
-        <Detail label="Seat" value={seatLine(t)} />
-        <Detail label="Name" value={t.holderName} />
-        <Detail label="Order" value={t.orderId} mono />
-      </View>
-
-      {t.event.online && t.event.streamUrl && (t.status === 'ACTIVE' || t.status === 'CHECKED_IN') ? (
-        <View style={{ paddingHorizontal: space.xl, paddingBottom: space.lg }}>
-          <Button label="Watch the stream" icon="stream" onPress={() => WebBrowser.openBrowserAsync(t.event.streamUrl!).catch(() => undefined)} />
         </View>
-      ) : null}
-      {state.key === 'sent' || state.key === 'listed' || state.key === 'gift' ? (
-        <View style={{ paddingHorizontal: space.xl, paddingBottom: space.lg }}>
-          <Button label="Manage on the website" variant="ghost" size="md" iconRight="external" onPress={() => WebBrowser.openBrowserAsync(`${WEB_URL}/tickets`).catch(() => undefined)} style={{ borderColor: 'rgba(13,13,15,0.2)' }} />
+
+        <View style={styles.perforation}>
+          <View style={[styles.notch, { left: -12 }]} />
+          <View style={styles.dash} />
+          <View style={[styles.notch, { right: -12 }]} />
         </View>
+
+        <View style={{ alignItems: 'center', gap: space.md, paddingHorizontal: space.xl }}>
+          {live ? (
+            <>
+              <KeepAwake />
+              {t.qrSeed ? <LocalQr ticketId={t.id} seed={t.qrSeed} size={qrSize} /> : <ServerQr ticketId={t.id} size={qrSize} offline={offline} />}
+            </>
+          ) : (
+            <View style={[styles.statusBox, { width: qrSize + 24 }, state.key === 'cancelled' && { backgroundColor: 'rgba(255,77,61,0.08)' }]}>
+              <Icon name={state.key === 'cancelled' ? 'alert' : state.key === 'gift' ? 'gift' : state.key === 'used' ? 'check' : state.key === 'listed' ? 'tag' : state.key === 'sent' ? 'mail' : 'clock'} size={28} color={state.key === 'cancelled' ? '#d7321f' : colors.inkMuted} />
+              <Txt variant="title" color={colors.ink} style={{ textAlign: 'center' }}>
+                {state.key === 'cancelled' ? 'Event cancelled' : state.label}
+              </Txt>
+              {state.key === 'listed' ? (
+                <>
+                  <Txt variant="small" color={held ? '#b26b00' : colors.inkMuted} style={{ textAlign: 'center' }}>
+                    {held ? 'A buyer is checking out with it right now.' : net !== null ? `You’ll receive ${rules.royaltyPermille === undefined ? 'about ' : ''}${fmt(net, t.order.currency)} when it sells.` : 'We’ll pay you when it sells.'}
+                  </Txt>
+                  <Txt variant="small" color={colors.inkMuted} style={{ textAlign: 'center' }}>
+                    Your QR code is off while it’s listed.
+                  </Txt>
+                </>
+              ) : (
+                <Txt variant="small" color={colors.inkMuted} style={{ textAlign: 'center' }}>
+                  {state.detail}
+                </Txt>
+              )}
+              {expiry ? (
+                <View style={{ alignItems: 'center', gap: 1, marginTop: 2 }}>
+                  <Txt variant="smallStrong" color={expiry.soon ? '#d7321f' : colors.ink}>
+                    {expiry.text}
+                  </Txt>
+                  <Txt variant="small" color={colors.inkMuted} style={{ textAlign: 'center' }}>
+                    {expiry.detail}
+                  </Txt>
+                </View>
+              ) : null}
+              {state.key === 'cancelled' && t.event.cancelReason ? (
+                <Txt variant="small" color={colors.inkMuted} style={{ textAlign: 'center', fontStyle: 'italic' }}>
+                  “{t.event.cancelReason}”
+                </Txt>
+              ) : null}
+            </View>
+          )}
+        </View>
+
+        <View style={styles.details}>
+          <Detail label="Ticket" value={t.ticketType.name} />
+          <Detail label="Seat" value={seatLine(t)} />
+          <Detail label="Name" value={t.holderName} />
+          <Detail label="Order" value={t.orderId} mono />
+        </View>
+
+        {t.event.online && t.event.streamUrl && (t.status === 'ACTIVE' || t.status === 'CHECKED_IN') ? (
+          <View style={{ paddingHorizontal: space.xl }}>
+            <Button label="Watch the stream" icon="stream" onPress={() => WebBrowser.openBrowserAsync(t.event.streamUrl!).catch(() => undefined)} />
+          </View>
+        ) : null}
+
+        {showActions && state.key === 'ready' && (blocked.sell || blocked.transfer) ? (
+          <Txt variant="small" color={colors.inkMuted} style={{ paddingHorizontal: space.xl, textAlign: 'center' }}>
+            {blockedLine(blocked)}
+          </Txt>
+        ) : null}
+
+        {showActions ? (
+          <View style={styles.actions}>
+            {state.key === 'ready' ? (
+              <>
+                <Action
+                  icon="send"
+                  label="Transfer"
+                  disabled={!!blocked.transfer}
+                  hint={blocked.transfer || undefined}
+                  onPress={() => router.push({ pathname: '/transfer/[id]', params: { id: t.id } })}
+                />
+                <View style={styles.actionSep} />
+                {/* Sell stays tappable when resale is off: the sheet explains why and offers a transfer instead. */}
+                <Action icon="tag" label="Sell" muted={!!blocked.sell} onPress={() => router.push({ pathname: '/sell/[id]', params: { id: t.id } })} />
+              </>
+            ) : (
+              <Action icon="undo" label={busy ? 'Working…' : state.key === 'sent' ? 'Cancel transfer' : held ? 'Being bought…' : 'Remove listing'} disabled={busy || held} onPress={undo} />
+            )}
+          </View>
+        ) : null}
+
+        <Txt variant="mono" color={colors.inkMuted} style={{ textAlign: 'center', fontSize: 10, paddingBottom: space.lg }}>
+          {t.id}
+        </Txt>
+      </View>
+      {note ? (
+        <Notice tone={note.tone} icon={note.tone === 'success' ? 'check' : 'alert'} title={note.title}>
+          {note.body}
+        </Notice>
       ) : null}
-      <Txt variant="mono" color={colors.inkMuted} style={{ textAlign: 'center', fontSize: 10, paddingBottom: space.lg }}>
-        {t.id}
-      </Txt>
     </View>
+  );
+}
+
+function Action({ icon, label, onPress, disabled, muted, hint }: { icon: 'send' | 'tag' | 'undo'; label: string; onPress: () => void; disabled?: boolean; muted?: boolean; hint?: string }) {
+  const color = disabled || muted ? colors.inkMuted : colors.ink;
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      accessibilityHint={hint}
+      accessibilityState={{ disabled: !!disabled }}
+      disabled={disabled}
+      onPress={() => {
+        haptic.tap();
+        onPress();
+      }}
+      style={({ pressed }) => [styles.action, disabled && { opacity: 0.45 }, pressed && { backgroundColor: 'rgba(13,13,15,0.05)' }]}>
+      <Icon name={icon} size={17} color={color} />
+      <Txt variant="smallStrong" color={color}>
+        {label}
+      </Txt>
+    </Pressable>
   );
 }
 
@@ -204,10 +317,45 @@ function Detail({ label, value, mono }: { label: string; value: string; mono?: b
   );
 }
 
+/** The door code made on this phone from the ticket's seed: no network needed, a new code every window. */
+function LocalQr({ ticketId, seed, size }: { ticketId: string; seed: string; size: number }) {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 250);
+    return () => clearInterval(t);
+  }, []);
+  let code: ReturnType<typeof codeAt> | null = null;
+  try {
+    code = codeAt(seed, ticketId, now);
+  } catch {
+    code = null;
+  }
+  if (!code) return <ServerQr ticketId={ticketId} size={size} offline={false} />;
+  return (
+    <View style={{ alignItems: 'center', gap: space.md }}>
+      <View style={styles.qrFrame}>
+        <QrCode value={code.token} size={size} />
+      </View>
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.sm }} accessibilityLabel={`Code refreshes in ${Math.ceil(code.expiresInMs / 1000)} seconds`}>
+        <CountdownRing fraction={code.expiresInMs / WINDOW_MS} size={26} stroke={3} track="rgba(13,13,15,0.12)" />
+        <Txt variant="small" color={colors.inkMuted}>
+          Live code · refreshes in {Math.ceil(code.expiresInMs / 1000)}s. Screenshots won’t scan.
+        </Txt>
+      </View>
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+        <Icon name="shield" size={14} color={colors.inkMuted} />
+        <Txt variant="tiny" color={colors.inkMuted}>
+          Works offline · made on this phone
+        </Txt>
+      </View>
+    </View>
+  );
+}
+
 type SavedQr = QrToken & { at: number };
 
-/** Fetches the door code, refreshes it when the API says it rotates, and shows a ring counting down to the next one. */
-function RotatingQr({ ticketId, size, offline }: { ticketId: string; size: number; offline: boolean }) {
+/** No seed saved: fetches the door code, refreshes it when the API says it rotates, and counts down. */
+function ServerQr({ ticketId, size, offline }: { ticketId: string; size: number; offline: boolean }) {
   const [qr, setQr] = useState<{ token: string; expiresAt: number; window: number } | null>(null);
   const [stale, setStale] = useState<SavedQr | null>(null);
   const [error, setError] = useState('');
@@ -301,4 +449,7 @@ const styles = StyleSheet.create({
   qrBox: { borderRadius: radius.lg, backgroundColor: 'rgba(13,13,15,0.05)', alignItems: 'center', justifyContent: 'center', gap: space.sm, padding: space.xl },
   statusBox: { minHeight: 200, borderRadius: radius.lg, backgroundColor: 'rgba(13,13,15,0.05)', alignItems: 'center', justifyContent: 'center', gap: space.sm, padding: space.xl },
   details: { gap: space.sm, marginHorizontal: space.xl, paddingTop: space.lg, borderTopWidth: 1, borderTopColor: 'rgba(13,13,15,0.1)' },
+  actions: { flexDirection: 'row', borderTopWidth: 1, borderTopColor: 'rgba(13,13,15,0.1)', marginBottom: -space.lg + 4 },
+  action: { flex: 1, flexDirection: 'row', gap: 8, alignItems: 'center', justifyContent: 'center', minHeight: 52 },
+  actionSep: { width: 1, backgroundColor: 'rgba(13,13,15,0.1)' },
 });

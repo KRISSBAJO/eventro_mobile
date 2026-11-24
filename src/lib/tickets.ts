@@ -45,7 +45,7 @@ export function ticketState(t: Ticket): TicketState {
   if (t.status === 'TRANSFER_PENDING' && t.order.gift) {
     return { key: 'gift', label: `Gift for ${t.order.gift.recipientName}`, detail: t.order.gift.sentAt ? 'Held until they open it. No QR code until then.' : 'Held until it’s delivered. No QR code until then.', tone: 'warning' };
   }
-  if (t.status === 'TRANSFER_PENDING') return { key: 'sent', label: `Sent to ${t.transferTo ?? 'a friend'}`, detail: 'Waiting for them to accept. You can manage transfers on the website.', tone: 'warning' };
+  if (t.status === 'TRANSFER_PENDING') return { key: 'sent', label: `Sent to ${t.transferTo ?? 'a friend'}`, detail: 'Waiting for them to accept.', tone: 'warning' };
   if (t.status === 'LISTED') return { key: 'listed', label: `Listed for ${money(t.listCents ?? 0, t.order.currency)}`, detail: 'Your QR code is off while it’s listed for resale.', tone: 'warning' };
   return { key: 'ready', label: 'Ready', detail: 'Show this code at the door.', tone: 'success' };
 }

@@ -2,7 +2,15 @@
 
 export type Role = 'FAN' | 'ORGANIZER' | 'ADMIN';
 export type User = { id: string; email: string; name: string; roles: Role[] };
-export type Session = { token: string; user: User };
+/** POST /auth/login, /auth/signup, /auth/reset (and /auth/password, which has no refreshToken). */
+export type Session = {
+  token: string;
+  user: User;
+  refreshToken?: string;
+  refreshTokenExpiresAt?: string;
+  accessTokenExpiresAt?: string | null;
+  sessionId?: string;
+};
 
 export type Category =
   | 'CONCERTS'
@@ -190,6 +198,11 @@ export type Ticket = {
   transferExpiresAt: string | null;
   listCents: number | null;
   checkedInAt: string | null;
+  /** the account holding it; null while it's only held under the email */
+  ownerId?: string | null;
+  /** ACTIVE tickets only: base64url seed for making door codes offline (see door-code.ts) */
+  qrSeed?: string;
+  qrVersion?: number;
   ticketType: { name: string; priceCents: number };
   order: {
     id: string;
@@ -215,6 +228,12 @@ export type Ticket = {
     streamUrl: string | null;
     timezone: string | null;
     venue: { name: string; address: string | null; city: string | null } | null;
+    /* the organizer's rules for resale and transfers */
+    resaleEnabled?: boolean;
+    resaleCapPercent?: number | null;
+    resaleRoyaltyPermille?: number;
+    transfersEnabled?: boolean;
+    transferCutoffMinutes?: number;
   };
 };
 
@@ -233,3 +252,142 @@ export type QrToken = { token: string; expiresInMs: number };
 
 export type Health = { ok: boolean; payments: 'mock' | 'live'; stripe: boolean; paystack: boolean };
 export type GeoMe = { country: string | null; countryName: string | null; city: string | null; source: string };
+
+/** GET /me/sessions */
+export type DeviceSession = {
+  id: string;
+  deviceName: string | null;
+  platform: string | null;
+  ip: string | null;
+  createdAt: string;
+  lastUsedAt: string;
+  expiresAt: string;
+  current: boolean;
+};
+
+/** GET/PATCH /me/notify-prefs */
+export type NotifyPrefs = { orders: boolean; tickets: boolean; priceDrops: boolean; reminders: boolean; marketing: boolean };
+
+/** POST /tickets/:id/listing */
+export type Listed = { listingId: string; feeCents: number; royaltyCents: number; payoutCents: number; capCents: number | null; listCents: number };
+
+export type ListingStatus = 'ACTIVE' | 'HELD' | 'SOLD' | 'CANCELLED';
+export type PayoutStatus = 'NONE' | 'PENDING' | 'AVAILABLE' | 'HELD' | 'PAID';
+
+/** One row of GET /me/resale */
+export type MyListing = {
+  id: string;
+  ticketId: string;
+  priceCents: number;
+  faceCents: number;
+  currency: string;
+  status: ListingStatus;
+  heldUntil: string | null;
+  cancelReason: string | null;
+  createdAt: string;
+  soldAt: string | null;
+  sellerFeeCents: number | null;
+  royaltyCents: number | null;
+  payoutCents: number | null;
+  payoutStatus: PayoutStatus;
+  payoutAvailableAt: string | null;
+  paidOutAt: string | null;
+  payoutNote: string | null;
+  event: { slug: string; title: string; startsAt: string };
+  ticket: { id: string; section: string | null; row: string | null; seat: number | null; ticketType: { name: string } };
+};
+export type MyResale = { listings: MyListing[]; totals: { owedCents: number; paidCents: number } };
+
+/** GET /events/:slug/resale */
+export type EventResale = { enabled: boolean; listings: { id: string; priceCents: number; faceCents: number; currency: string; ticketType: { id: string; name: string } }[] };
+
+/** GET /gifts/:token (details only once delivered) */
+export type Gift = {
+  from: string;
+  to: string;
+  status: 'scheduled' | 'ready' | 'claimed';
+  sendAt: string;
+  message?: string;
+  event?: { slug: string; title: string; subtitle: string; startsAt: string; imageUrl: string | null; online: boolean; timezone: string | null; venue: { name: string; city: string | null } | null };
+  ticketType?: { name: string; perks: string[] };
+  quantity?: number;
+  seats?: { section: string | null; sectionName: string | null; row: string | null; seat: number | null }[];
+  totalCents?: number;
+  currency?: string;
+};
+
+/* ---------- organizer ---------- */
+
+export type MemberRole = 'ADMIN' | 'EDITOR' | 'FINANCE' | 'DOOR' | string;
+
+/** GET /organizer/orgs */
+export type MyOrg = { role: MemberRole; org: { id: string; name: string } };
+
+/** GET /organizer/orgs/:orgId/events (the fields the door needs) */
+export type OrgEvent = {
+  id: string;
+  slug: string;
+  title: string;
+  status: string;
+  startsAt: string;
+  timezone: string | null;
+  imageUrl: string | null;
+  online: boolean;
+  venue: { name: string; city: string | null } | null;
+  sold: number;
+  capacity: number;
+};
+
+/** POST /organizer/events/:id/check-in */
+export type DoorTicket = { id: string; holderName: string; ticketType: string; section: string | null; row: string | null; seat: number | null };
+export type CheckInAnswer = {
+  result: 'ok' | 'duplicate' | 'invalid' | 'wrong-event' | 'expired-code';
+  message: string;
+  ticket?: DoorTicket;
+  checkedInAt?: string | null;
+};
+
+/** GET /organizer/events/:id/door-pack */
+export type DoorPackTicket = {
+  id: string;
+  seed: string;
+  version: number;
+  status: TicketStatus;
+  checkedInAt: string | null;
+  checkedInDevice: string | null;
+  holderName: string;
+  ticketType: string;
+  section: string | null;
+  sectionName: string | null;
+  row: string | null;
+  seat: number | null;
+};
+export type DoorPack = {
+  eventId: string;
+  title: string;
+  startsAt: string;
+  doorsAt: string | null;
+  timezone: string | null;
+  generatedAt: string;
+  windowMs: number;
+  algorithm: string;
+  tickets: DoorPackTicket[];
+};
+
+/** POST /organizer/events/:id/check-ins/sync */
+export type SyncResult = {
+  index: number;
+  ticketId: string;
+  scannedAt: string;
+  result: 'checked_in' | 'already' | 'invalid';
+  reason?: string;
+  replay?: boolean;
+  checkedInAt?: string | null;
+  checkedInBy?: { id: string; name: string | null } | null;
+  checkedInDevice?: string | null;
+  ticket?: DoorTicket;
+};
+export type SyncAnswer = { eventId: string; deviceId: string; summary: { checked_in: number; already: number; invalid: number }; results: SyncResult[] };
+
+/** GET /organizer/events/:id/attendees */
+export type Attendee = { id: string; holderName: string; holderEmail: string; section: string | null; row: string | null; seat: number | null; status: TicketStatus; checkedInAt: string | null; ticketType: { name: string } };

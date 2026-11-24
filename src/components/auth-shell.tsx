@@ -1,13 +1,13 @@
-/** The frame for sign-in, sign-up and password screens: close button, mark, title, keyboard-aware scroll. */
+/** The frame for sign-in, sign-up, password and other modal screens: close button, mark (or an icon), title, keyboard-aware scroll. */
 import { router } from 'expo-router';
 import type { ReactNode } from 'react';
 import { KeyboardAvoidingView, Platform, ScrollView, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colors, gutter, space } from '@/theme';
-import { LogoMark } from './icons';
+import { Icon, LogoMark, type IconName } from './icons';
 import { IconButton, Txt } from './ui';
 
-export function AuthShell({ title, subtitle, children, onClose }: { title: string; subtitle?: string; children: ReactNode; onClose?: () => void }) {
+export function AuthShell({ title, subtitle, children, onClose, icon }: { title: string; subtitle?: string; children: ReactNode; onClose?: () => void; icon?: IconName }) {
   const insets = useSafeAreaInsets();
   const close = onClose ?? (() => (router.canGoBack() ? router.back() : router.replace('/')));
   return (
@@ -17,7 +17,13 @@ export function AuthShell({ title, subtitle, children, onClose }: { title: strin
       </View>
       <ScrollView contentContainerStyle={{ paddingHorizontal: gutter, paddingBottom: insets.bottom + space.xxxl, gap: space.lg, maxWidth: 520, width: '100%', alignSelf: 'center' }} keyboardShouldPersistTaps="handled">
         <View style={{ gap: space.sm, marginBottom: space.sm }}>
-          <LogoMark size={36} />
+          {icon ? (
+            <View style={{ width: 48, height: 48, borderRadius: 15, backgroundColor: colors.accentSoft, alignItems: 'center', justifyContent: 'center' }}>
+              <Icon name={icon} size={22} color={colors.accent} />
+            </View>
+          ) : (
+            <LogoMark size={36} />
+          )}
           <Txt variant="h1" accessibilityRole="header" style={{ marginTop: space.md }}>
             {title}
           </Txt>

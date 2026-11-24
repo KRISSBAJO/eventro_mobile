@@ -19,6 +19,7 @@ import { api, ApiError, errorText, WEB_URL } from '@/lib/api';
 import { emailOk, useAuth } from '@/lib/auth';
 import { money, PAYSTACK, when, zoneAbbr } from '@/lib/format';
 import { haptic } from '@/lib/haptics';
+import { enablePush, markPushOffered, shouldOfferPush } from '@/lib/push';
 import { useHealth } from '@/lib/queries';
 import { payWithStripeSheet, stripeSheetAvailable } from '@/lib/stripe-sheet';
 import type { Hold, Order, OrderCreated, Quote } from '@/lib/types';
@@ -512,6 +513,65 @@ function Line({ label, value, accent }: { label: string; value: string; accent?:
   );
 }
 
+/**
+ * After a first purchase: the moment notifications are worth asking for (reminders before doors open). Shown once,
+ * only when the phone hasn't been asked yet; the system prompt appears only if they tap the button.
+ */
+function PushOffer() {
+  const [show, setShow] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [result, setResult] = useState<{ ok: boolean; text: string } | null>(null);
+  useEffect(() => {
+    let live = true;
+    void shouldOfferPush().then((v) => {
+      if (!live || !v) return;
+      setShow(true);
+      void markPushOffered();
+    });
+    return () => {
+      live = false;
+    };
+  }, []);
+  if (!show) return null;
+  if (result) {
+    return (
+      <Notice tone={result.ok ? 'success' : 'plain'} icon={result.ok ? 'check' : 'bell'}>
+        {result.text}
+      </Notice>
+    );
+  }
+  return (
+    <Card style={{ gap: space.md }}>
+      <View style={{ flexDirection: 'row', gap: space.md, alignItems: 'center' }}>
+        <View style={{ width: 40, height: 40, borderRadius: 12, backgroundColor: colors.accentSoft, alignItems: 'center', justifyContent: 'center' }}>
+          <Icon name="bell" size={20} color={colors.accent} />
+        </View>
+        <View style={{ flex: 1, gap: 2 }}>
+          <Txt variant="bodyStrong">Get a reminder before doors open?</Txt>
+          <Txt variant="small" color={colors.muted}>
+            We’ll also tell you when a friend sends you a ticket. Change it any time in Account.
+          </Txt>
+        </View>
+      </View>
+      <View style={{ flexDirection: 'row', gap: space.sm }}>
+        <Button
+          label="Turn on"
+          size="md"
+          loading={busy}
+          style={{ flex: 1 }}
+          onPress={async () => {
+            setBusy(true);
+            const r = await enablePush(true);
+            setBusy(false);
+            setResult(r.ok ? { ok: true, text: 'Notifications are on. We’ll remind you before the show.' } : { ok: false, text: r.reason });
+          }}
+        />
+        <Button label="Not now" size="md" variant="ghost" style={{ flex: 1 }} onPress={() => setShow(false)} />
+      </View>
+    </Card>
+  );
+}
+
 function Success({ order, hold, testMode, signedIn }: { order: Order; hold: Hold; testMode: boolean; signedIn: boolean }) {
   const insets = useSafeAreaInsets();
   const d = when(order.event.startsAt);
@@ -559,6 +619,8 @@ function Success({ order, hold, testMode, signedIn }: { order: Order; hold: Hold
           <Txt variant="price">{money(order.totalCents, order.currency)}</Txt>
         </View>
       </Card>
+
+      {signedIn ? <PushOffer /> : null}
 
       {signedIn ? (
         <Button label="View my tickets" icon="ticket" onPress={() => router.replace('/tickets')} />

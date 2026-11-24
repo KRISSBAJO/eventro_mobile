@@ -7,12 +7,14 @@ import { Pressable, RefreshControl, ScrollView, StyleSheet, View } from 'react-n
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Icon } from '@/components/icons';
 import { Badge, Button, EmptyState, ErrorState, FadeIn, Notice, Skeleton, Txt } from '@/components/ui';
-import { errorText } from '@/lib/api';
+import { api, errorText } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
-import { localStamp, when } from '@/lib/format';
+import { firstName, localStamp, when } from '@/lib/format';
 import { haptic } from '@/lib/haptics';
-import { useMyTickets } from '@/lib/queries';
+import { useMyTickets, useRefreshWallet } from '@/lib/queries';
+import { inTime } from '@/lib/resale';
 import { groupTickets, seatLine, ticketState, type TicketGroup } from '@/lib/tickets';
+import type { IncomingTransfer } from '@/lib/types';
 import { colors, gutter, radius, space } from '@/theme';
 
 export default function Tickets() {
@@ -70,11 +72,7 @@ export default function Tickets() {
             </Notice>
           ) : null}
 
-          {incoming.length ? (
-            <Notice tone="plain" icon="gift" title={`${incoming.length} ticket${incoming.length === 1 ? '' : 's'} waiting for you`}>
-              {`${incoming.map((x) => `${x.holderName} sent you ${x.ticketType.name} for ${x.event.title}`).join('. ')}. Accept on the Eventro website for now; accepting in the app is coming soon.`}
-            </Notice>
-          ) : null}
+          {incoming.length && !t.offline ? <IncomingTransfers items={incoming} /> : null}
 
           {!groups.upcoming.length && !groups.past.length ? (
             <EmptyState icon="ticket" title="No tickets yet" body="When you buy tickets, they’ll show up here with the QR code for the door." action="Find events" onAction={() => router.navigate('/')} />
@@ -87,6 +85,16 @@ export default function Tickets() {
               <GroupCard g={g} />
             </FadeIn>
           ))}
+
+          {groups.upcoming.length || groups.past.length ? (
+            <Pressable accessibilityRole="link" onPress={() => router.push('/resale')} style={({ pressed }) => [styles.salesLink, pressed && { backgroundColor: colors.surface2 }]}>
+              <Icon name="cash" size={18} color={colors.muted} />
+              <Txt variant="bodyStrong" style={{ flex: 1 }}>
+                Sales & payouts
+              </Txt>
+              <Icon name="chevronRight" size={17} color={colors.dim} />
+            </Pressable>
+          ) : null}
 
           {groups.past.length ? (
             <>
@@ -111,6 +119,59 @@ export default function Tickets() {
         </>
       )}
     </ScrollView>
+  );
+}
+
+/** Tickets friends sent to this account's email: accept them into the wallet (POST /tickets/:id/accept). */
+function IncomingTransfers({ items }: { items: IncomingTransfer[] }) {
+  const refresh = useRefreshWallet();
+  const [busy, setBusy] = useState('');
+  const [error, setError] = useState('');
+  const [now] = useState(() => Date.now());
+  const accept = async (id: string) => {
+    setBusy(id);
+    setError('');
+    try {
+      await api(`/tickets/${encodeURIComponent(id)}/accept`, { method: 'POST' });
+      haptic.success();
+      await refresh();
+    } catch (e) {
+      haptic.error();
+      setError(errorText(e));
+    } finally {
+      setBusy('');
+    }
+  };
+  return (
+    <View style={styles.incoming} accessibilityLabel="Tickets sent to you">
+      <Txt variant="h3">Tickets waiting for you</Txt>
+      {items.map((x) => {
+        const left = x.transferExpiresAt ? new Date(x.transferExpiresAt).getTime() - now : null;
+        return (
+          <View key={x.id} style={{ flexDirection: 'row', alignItems: 'center', gap: space.md }}>
+            <View style={{ flex: 1, gap: 2 }}>
+              <Txt variant="bodyStrong" numberOfLines={1}>
+                {x.event.title}
+              </Txt>
+              <Txt variant="small" color={colors.muted}>
+                {x.ticketType.name} · {when(x.event.startsAt).short} · from {x.holderName}
+              </Txt>
+              {left !== null ? (
+                <Txt variant="tiny" color={left < 24 * 3600_000 ? colors.accentHi : colors.dim}>
+                  Accept {inTime(left)}, or it goes back to {firstName(x.holderName)}
+                </Txt>
+              ) : null}
+            </View>
+            <Button label={busy === x.id ? 'Accepting…' : 'Accept ticket'} size="sm" loading={busy === x.id} onPress={() => accept(x.id)} />
+          </View>
+        );
+      })}
+      {error ? (
+        <Txt variant="small" color={colors.accentHi}>
+          {error}
+        </Txt>
+      ) : null}
+    </View>
   );
 }
 
@@ -193,5 +254,7 @@ const styles = StyleSheet.create({
   ticketRow: { flexDirection: 'row', alignItems: 'center', gap: space.md, paddingHorizontal: space.lg, minHeight: 68, paddingVertical: space.sm },
   ticketIcon: { width: 38, height: 38, borderRadius: 11, backgroundColor: colors.surface2, alignItems: 'center', justifyContent: 'center' },
   showQr: { paddingHorizontal: 12, height: 30, borderRadius: 15, backgroundColor: colors.accent, alignItems: 'center', justifyContent: 'center' },
+  incoming: { gap: space.md, padding: space.lg, borderRadius: radius.card, borderWidth: 1, borderColor: colors.accentLine, backgroundColor: colors.accentSoft },
+  salesLink: { flexDirection: 'row', alignItems: 'center', gap: space.md, minHeight: 52, paddingHorizontal: space.lg, borderRadius: radius.card, borderWidth: 1, borderColor: colors.line, backgroundColor: colors.surface },
   pastToggle: { flexDirection: 'row', alignItems: 'center', minHeight: 48, paddingHorizontal: space.xs, marginTop: space.sm },
 });

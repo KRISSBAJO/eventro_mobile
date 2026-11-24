@@ -6,6 +6,7 @@ import { Button, Field, Notice, Txt } from '@/components/ui';
 import { errorText, WEB_URL } from '@/lib/api';
 import { emailOk, useAuth } from '@/lib/auth';
 import { haptic } from '@/lib/haptics';
+import { appPath } from '@/lib/links';
 import { colors, space } from '@/theme';
 
 export default function SignUp() {
@@ -37,7 +38,8 @@ export default function SignUp() {
       await signUp(name, email, password);
       haptic.success();
       // Tickets bought earlier with this email move into the new account (the API links them).
-      if (params.then === 'tickets' || params.email) router.replace('/tickets');
+      if (params.then?.startsWith('/')) router.replace(appPath(params.then) ?? '/');
+      else if (params.then === 'tickets' || params.email) router.replace('/tickets');
       else if (router.canGoBack()) router.back();
       else router.replace('/');
     } catch (e) {

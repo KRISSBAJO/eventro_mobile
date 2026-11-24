@@ -1,11 +1,11 @@
-/** Account: who you are, change password, sign out, help and legal pages. */
+/** Account: who you are, notifications, sales, signed-in devices, sign out, help and legal pages. */
 import Constants from 'expo-constants';
 import { router } from 'expo-router';
 import * as WebBrowser from 'expo-web-browser';
 import { Alert, Platform, ScrollView, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LogoMark } from '@/components/icons';
-import { Badge, Button, Divider, Row, Txt } from '@/components/ui';
+import { Badge, Button, Divider, Notice, Row, Txt } from '@/components/ui';
 import { WEB_URL } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { haptic } from '@/lib/haptics';
@@ -20,20 +20,21 @@ const openWeb = (path: string) => {
 
 export default function Account() {
   const insets = useSafeAreaInsets();
-  const { user, signOut } = useAuth();
+  const { user, signOut, endedNotice } = useAuth();
   const { place } = usePlace();
   const health = useHealth();
 
-  const confirmSignOut = () => {
+  const confirmSignOut = async () => {
     const go = () => {
       haptic.firm();
       void signOut();
     };
+    const warn = '';
     if (Platform.OS === 'web') {
-      if (globalThis.confirm?.('Sign out of Eventro on this device?') ?? true) go();
+      if (globalThis.confirm?.(`Sign out of Eventro on this device?${warn}`) ?? true) go();
       return;
     }
-    Alert.alert('Sign out?', 'Your tickets stay in your account. Sign in again to see them here.', [
+    Alert.alert('Sign out?', `Your tickets stay in your account. Sign in again to see them here.${warn}`, [
       { text: 'Cancel', style: 'cancel' },
       { text: 'Sign out', style: 'destructive', onPress: go },
     ]);
@@ -51,6 +52,12 @@ export default function Account() {
       <Txt variant="h1" accessibilityRole="header">
         Account
       </Txt>
+
+      {!user && endedNotice ? (
+        <Notice tone="warning" icon="lock" title="You’ve been signed out">
+          {endedNotice}
+        </Notice>
+      ) : null}
 
       {user ? (
         <View style={styles.profile}>
@@ -97,10 +104,21 @@ export default function Account() {
         {user ? (
           <>
             <Divider style={{ marginLeft: 62 }} />
-            <Row icon="key" label="Change password" onPress={() => router.push('/change-password')} />
+            <Row icon="cash" label="Sales & payouts" onPress={() => router.push('/resale')} />
+            <Divider style={{ marginLeft: 62 }} />
+            <Row icon="bell" label="Notifications" onPress={() => router.push('/notifications')} />
           </>
         ) : null}
       </View>
+
+      {user ? (
+        <View style={styles.group}>
+          <Row icon="key" label="Change password" onPress={() => router.push('/change-password')} />
+          <Divider style={{ marginLeft: 62 }} />
+          <Row icon="phone" label="Signed-in devices" onPress={() => router.push('/devices')} />
+        </View>
+      ) : null}
+
 
       <View style={styles.group}>
         <Row icon="help" label="Help centre" onPress={() => openWeb('/help')} />
@@ -114,7 +132,7 @@ export default function Account() {
 
       {user ? (
         <View style={styles.group}>
-          <Row icon="logout" label="Sign out" tone="accent" onPress={confirmSignOut} />
+          <Row icon="logout" label="Sign out" tone="accent" onPress={() => void confirmSignOut()} />
         </View>
       ) : null}
 

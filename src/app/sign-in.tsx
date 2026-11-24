@@ -6,6 +6,7 @@ import { Button, Field, Notice, Txt } from '@/components/ui';
 import { errorText } from '@/lib/api';
 import { emailOk, useAuth } from '@/lib/auth';
 import { haptic } from '@/lib/haptics';
+import { appPath } from '@/lib/links';
 import { colors, space } from '@/theme';
 
 export default function SignIn() {
@@ -31,6 +32,7 @@ export default function SignIn() {
       await signIn(email, password);
       haptic.success();
       if (params.then === 'tickets') router.replace('/tickets');
+      else if (params.then?.startsWith('/')) router.replace(appPath(params.then) ?? '/');
       else if (router.canGoBack()) router.back();
       else router.replace('/');
     } catch (e) {

@@ -7,6 +7,7 @@ import { useEffect } from 'react';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { AuthProvider } from '@/lib/auth';
 import { PlaceProvider } from '@/lib/place';
+import { PushLinks } from '@/lib/push';
 import { queryClient } from '@/lib/query';
 import { colors, fontAssets } from '@/theme';
 
@@ -34,6 +35,8 @@ export default function RootLayout() {
           <PlaceProvider>
             <ThemeProvider value={theme}>
               <StatusBar style="light" />
+              {/* Tapping a notification opens its screen (data.path); mounted with the navigator so it can navigate. */}
+              <PushLinks />
               <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.bg }, animation: 'default' }}>
                 <Stack.Screen name="(tabs)" />
                 <Stack.Screen name="event/[slug]" />
@@ -44,6 +47,13 @@ export default function RootLayout() {
                 <Stack.Screen name="sign-up" options={{ presentation: 'modal' }} />
                 <Stack.Screen name="forgot-password" options={{ presentation: 'modal' }} />
                 <Stack.Screen name="change-password" options={{ presentation: 'modal' }} />
+                <Stack.Screen name="reset-password" options={{ presentation: 'modal' }} />
+                <Stack.Screen name="transfer/[id]" options={{ presentation: 'modal' }} />
+                <Stack.Screen name="sell/[id]" options={{ presentation: 'modal' }} />
+                <Stack.Screen name="gift/[token]" />
+                <Stack.Screen name="resale" />
+                <Stack.Screen name="devices" />
+                <Stack.Screen name="notifications" />
               </Stack>
             </ThemeProvider>
           </PlaceProvider>
