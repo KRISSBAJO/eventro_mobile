@@ -23,8 +23,9 @@ export function dateLabel(v: string) {
   const d = new Date(`${v}T12:00:00Z`);
   return `${DOW[d.getUTCDay()]}, ${MONTHS[d.getUTCMonth()].slice(0, 3)} ${d.getUTCDate()}, ${d.getUTCFullYear()}`;
 }
-/** "8:00 PM" */
+/** "8:00 PM"; "24:00" (a closing time at the end of the day) is "Midnight". */
 export function timeLabel(v: string) {
+  if (v === '24:00') return 'Midnight';
   if (!/^\d{2}:\d{2}$/.test(v)) return '';
   const h = Number(v.slice(0, 2));
   return `${((h + 11) % 12) + 1}:${v.slice(3)} ${h < 12 ? 'AM' : 'PM'}`;
@@ -158,11 +159,33 @@ export function DateField({ label, value, onChange, error, hint, min }: { label:
 const HOURS = [12, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11];
 const MINUTES = ['00', '15', '30', '45'];
 
-/** A time of day. `optional` adds "No time" to clear it. */
-export function TimeField({ label, value, onChange, error, hint, optional }: { label: string; value: string; onChange: (v: string) => void; error?: string; hint?: string; optional?: boolean }) {
+/**
+ * A time of day. `optional` adds "No time" to clear it. `midnight` (closing times) adds "Midnight": the end of the
+ * day, "24:00".
+ */
+export function TimeField({
+  label,
+  value,
+  onChange,
+  error,
+  hint,
+  optional,
+  midnight,
+}: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  error?: string;
+  hint?: string;
+  optional?: boolean;
+  midnight?: boolean;
+}) {
   const [open, setOpen] = useState(false);
-  const h24 = value ? Number(value.slice(0, 2)) : 20;
-  const minute = value ? value.slice(3, 5) : '00';
+  const atMidnight = value === '24:00';
+  // Midnight lights no chip: picking any of them starts from 12 AM.
+  const lit = !!value && !atMidnight;
+  const h24 = lit ? Number(value.slice(0, 2)) : atMidnight ? 0 : 20;
+  const minute = lit ? value.slice(3, 5) : '00';
   const pm = h24 >= 12;
   const h12 = h24 % 12 === 0 ? 12 : h24 % 12;
   const set = (h: number, m: string, isPm: boolean) => onChange(`${pad((h % 12) + (isPm ? 12 : 0))}:${m}`);
@@ -187,13 +210,14 @@ export function TimeField({ label, value, onChange, error, hint, optional }: { l
       <FieldShell label={label} value={timeLabel(value)} placeholder={optional ? 'Optional' : 'Choose a time'} error={error} hint={hint} onPress={() => setOpen(true)} icon="clock" active={open} />
       <Sheet visible={open} title={label} onClose={() => setOpen(false)}>
         <Txt variant="small" color={colors.muted}>
-          {value ? timeLabel(value) : 'Pick the hour, then the minutes.'}
+          {value ? (atMidnight ? 'Midnight, the end of the day' : timeLabel(value)) : 'Pick the hour, then the minutes.'}
         </Txt>
-        <View style={styles.wrap}>{HOURS.map((h) => chip(String(h), !!value && h === h12, () => set(h, minute, pm), `${h} o’clock`))}</View>
-        <View style={styles.wrap}>{MINUTES.map((m) => chip(`:${m}`, !!value && m === minute, () => set(h12, m, pm), `${m} minutes`))}</View>
+        <View style={styles.wrap}>{HOURS.map((h) => chip(String(h), lit && h === h12, () => set(h, minute, pm), `${h} o’clock`))}</View>
+        <View style={styles.wrap}>{MINUTES.map((m) => chip(`:${m}`, lit && m === minute, () => set(h12, m, pm), `${m} minutes`))}</View>
         <View style={styles.wrap}>
-          {chip('AM', !!value && !pm, () => set(h12, minute, false), 'AM')}
-          {chip('PM', !!value && pm, () => set(h12, minute, true), 'PM')}
+          {chip('AM', lit && !pm, () => set(h12, minute, false), 'AM')}
+          {chip('PM', lit && pm, () => set(h12, minute, true), 'PM')}
+          {midnight ? chip('Midnight', atMidnight, () => onChange('24:00'), 'Midnight, the end of the day') : null}
         </View>
         <View style={{ gap: space.sm, marginTop: space.sm }}>
           <Button

@@ -196,11 +196,12 @@ export const CATEGORY_NAME: Record<Category, string> = {
   CONFERENCE: 'Conference',
   WORKSHOP: 'Workshop',
   FAITH: 'Faith',
+  FOOD: 'Food & Drink',
   OTHER: 'Other',
 };
 
 /** The categories fans browse by, in the website's order. */
-export const BROWSE_CATEGORIES: Category[] = ['CONCERTS', 'SPORTS', 'COMEDY', 'THEATER', 'FESTIVALS', 'FAMILY', 'FAITH', 'NIGHTLIFE'];
+export const BROWSE_CATEGORIES: Category[] = ['CONCERTS', 'SPORTS', 'COMEDY', 'THEATER', 'FESTIVALS', 'FAMILY', 'FAITH', 'NIGHTLIFE', 'FOOD', 'CONFERENCE'];
 
 /* ---------- places ---------- */
 

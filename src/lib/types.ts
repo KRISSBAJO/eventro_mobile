@@ -24,6 +24,7 @@ export type Category =
   | 'CONFERENCE'
   | 'WORKSHOP'
   | 'FAITH'
+  | 'FOOD'
   | 'OTHER';
 
 /** GET /events items. */
@@ -263,6 +264,8 @@ export type VenuePage = {
   website: string | null;
   phone: string | null;
   verified: boolean;
+  /** it has an approved manager already */
+  managed?: boolean;
   eventsHosted: number;
   layout: { sections: number; places: number } | null;
   events: { slug: string; title: string; subtitle: string; startsAt: string; imageUrl: string | null; category: Category; currency: string; fromCents: number }[];

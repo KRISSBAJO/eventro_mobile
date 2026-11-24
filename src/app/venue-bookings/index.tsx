@@ -6,13 +6,12 @@ import { router } from 'expo-router';
 import { useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { BookingRow } from '@/components/booking-ui';
-import { Label, OrgScreen, StatTile, TileRow } from '@/components/org-ui';
-import { Chip, EmptyState, ErrorState, Notice, Skeleton, Txt } from '@/components/ui';
+import { Group, Label, OrgScreen, StatTile, TileRow } from '@/components/org-ui';
+import { Chip, EmptyState, ErrorState, Row, Skeleton, Txt } from '@/components/ui';
 import { errorText } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { STATUS_FILTERS, useVenueInbox, type Booking, type BookingStatus } from '@/lib/bookings';
 import { isPast, num, when } from '@/lib/format';
-import { openWeb } from '@/lib/organizer';
 import { colors, radius, space } from '@/theme';
 
 export default function VenueInboxScreen() {
@@ -39,7 +38,7 @@ export default function VenueInboxScreen() {
       ) : q.error ? (
         <ErrorState message={errorText(q.error)} onRetry={() => void q.refetch()} />
       ) : !q.data?.venues.length ? (
-        <EmptyState icon="building" title="You don’t manage a venue" body="Venue managers claim their venue’s page on the Eventro website. Once approved, booking requests show up here." />
+        <EmptyState icon="building" title="You don’t manage a venue" body="Own or run a venue? List it on Eventro. Once Eventro approves you, booking requests show up here." action="List your venue" onAction={() => router.push('/my-venues/add')} />
       ) : (
         <>
           <TileRow>
@@ -68,9 +67,9 @@ export default function VenueInboxScreen() {
             </View>
           ))}
           {!waiting.length && !days.size ? <EmptyState compact icon="calendar" title={status ? 'Nothing here' : 'Nothing coming up'} body="Requests from organizers show up here, and you’re emailed about each one." /> : null}
-          <Notice tone="plain" icon="sliders" title="Listing, hours and blocked times" action="Manage on the web" onAction={() => openWeb('/venues/manage')}>
-            Change your venue’s price, rules, opening hours and blocked-out times on the Eventro website.
-          </Notice>
+          <Group>
+            <Row icon="sliders" label="Listing, hours and blocked time" detail="My venues" onPress={() => router.push('/my-venues')} />
+          </Group>
           <Txt variant="small" color={colors.dim}>
             Times are each venue’s local time. Payment is arranged directly with the organizer, outside Eventro.
           </Txt>

@@ -35,6 +35,8 @@ const CATEGORY_LOOK: Partial<Record<string, { icon: IconName; color: string }>> 
   FAMILY: { icon: 'users', color: '#38bdf8' },
   FAITH: { icon: 'sun', color: '#2dd4bf' },
   NIGHTLIFE: { icon: 'moon', color: '#818cf8' },
+  FOOD: { icon: 'food', color: '#a3e635' },
+  CONFERENCE: { icon: 'mic', color: '#94a3b8' },
 };
 
 const initialsOf = (name: string) =>

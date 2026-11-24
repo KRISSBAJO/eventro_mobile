@@ -11,6 +11,7 @@ import { api, ApiError, errorText, qs } from '@/lib/api';
 import {
   bookingPath,
   BOOKING_TONE,
+  freeSlot,
   hoursLines,
   hoursOn,
   minutesLabel,
@@ -237,16 +238,29 @@ export function BookingRequestForm({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
 
-  // The venue's earliest start (its notice, in venue wall-clock time) from the default range.
-  const base = useAvailability(venue.slug);
+  // The venue's earliest start (its notice, in venue wall-clock time) and its busy times for the next 120 days (from
+  // yesterday here, in case the venue's day is behind this phone's).
+  const today = todayYmd();
+  const base = useAvailability(venue.slug, addDays(today, -1), addDays(today, 118));
   const earliestStart = base.data?.earliestStart ?? null;
   const preset = defaultTimes(listing.minHours);
-  const start = startIn ?? defaults?.start ?? preset.start;
-  const end = endIn ?? defaults?.end ?? preset.end;
-  // The suggested day: the caller's (the event's date) when the venue can take it, else the first day it can.
+  const wantStart = startIn ?? defaults?.start ?? preset.start;
+  const wantEnd = endIn ?? defaults?.end ?? preset.end;
+  // Until the organizer picks a date or times: the first free time (on the caller's date, the event's, when it's
+  // free), skipping busy times. What they picked themselves is never changed.
+  const timePicked = startIn !== null || endIn !== null;
+  const pinned = dateIn ?? defaults?.date;
+  const slot =
+    base.data && (dateIn === null || !timePicked)
+      ? ((pinned ? freeSlot(base.data, { start: wantStart, end: wantEnd, date: pinned, fixedTime: timePicked }) : null) ??
+        (dateIn === null ? freeSlot(base.data, { start: wantStart, end: wantEnd, fixedTime: timePicked }) : null))
+      : null;
+  const start = startIn ?? slot?.start ?? wantStart;
+  const end = endIn ?? slot?.end ?? wantEnd;
+  // No free time found: the caller's day when the venue can take it, else the first day it can (busy or not).
   const usable = (d: string) => !earliestStart || (wallIso(d, start) >= earliestStart && fitsHours(listing.hours, d, start, end));
-  const suggested = defaults?.date && usable(defaults.date) ? defaults.date : earliestStart ? (firstBookableDay(earliestStart, listing.hours, start, end) ?? defaults?.date ?? '') : (defaults?.date ?? '');
-  const date = dateIn ?? suggested;
+  const fallback = defaults?.date && usable(defaults.date) ? defaults.date : earliestStart ? (firstBookableDay(earliestStart, listing.hours, start, end) ?? defaults?.date ?? '') : (defaults?.date ?? '');
+  const date = dateIn ?? slot?.date ?? fallback;
 
   const lastDay = endDate || date;
   const av = useAvailability(venue.slug, date || undefined, lastDay || undefined);

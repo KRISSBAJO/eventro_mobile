@@ -5,7 +5,9 @@
  *
  * An event held at a venue booked on Eventro (`venueBooking`) shows the booking's status; it can't be submitted
  * until the venue confirms (the API answers 409 VENUE_BOOKING_PENDING), and a booking that fell through
- * (VENUE_BOOKING_UNAVAILABLE) needs another venue, or the venue kept without the booking.
+ * (VENUE_BOOKING_UNAVAILABLE) needs another venue, or the venue kept without the booking. Drafts held in person can
+ * use one of the organization's venue bookings (organizer/events/[id]/booking.tsx), switch to another, or drop it
+ * (DELETE /organizer/events/:id/venue-booking; the booking itself stays).
  */
 import { useQueryClient } from '@tanstack/react-query';
 import { Image } from 'expo-image';
@@ -14,6 +16,7 @@ import { useState } from 'react';
 import { Platform, Share, StyleSheet, View } from 'react-native';
 import { useConfirm } from '@/components/confirm';
 import { BookingBadge } from '@/components/booking-ui';
+import { Icon } from '@/components/icons';
 import { ActionTile, Group, Label, OrgScreen, Progress, SalesBars, StatTile, StatusBadge, TileRow, WebButton } from '@/components/org-ui';
 import { Button, Divider, EmptyState, ErrorState, Notice, Row, Skeleton, Txt } from '@/components/ui';
 import { api, errorText } from '@/lib/api';
@@ -87,20 +90,31 @@ export default function EventDashboard() {
   const held = !!vb && vb.status !== 'CONFIRMED';
   const venueName = e.venue?.name ?? 'The venue';
   const openBooking = () => vb && router.push({ pathname: '/organizer/bookings/[id]', params: { id: vb.id } });
+  const pickBooking = () => router.push({ pathname: '/organizer/events/[id]/booking', params: { id: e.id } });
 
   const detach = async () => {
-    const yes = await confirm({
-      title: 'Keep the venue without the booking?',
-      message: `The event stays at ${venueName}, no longer tied to booking ${vb?.code ?? ''} on Eventro. Only do this if you’ve arranged the venue another way.`,
-      confirmLabel: 'Keep the venue',
-    });
+    // A booking that fell through: keep the venue without it. A live one: take it off the event (it stays booked).
+    const yes = await confirm(
+      held && vb?.status !== 'PENDING'
+        ? {
+            title: 'Keep the venue without the booking?',
+            message: `The event stays at ${venueName}, no longer tied to booking ${vb?.code ?? ''} on Eventro. Only do this if you’ve arranged the venue another way.`,
+            confirmLabel: 'Keep the venue',
+          }
+        : {
+            title: 'Remove the booking from this event?',
+            message: `The event stays at ${venueName}, no longer tied to booking ${vb?.code ?? ''}. The booking itself stays: cancel it from the booking if you don’t need it.`,
+            confirmLabel: 'Remove from event',
+            destructive: true,
+          },
+    );
     if (!yes) return;
     setError('');
     setBusy('detach');
     try {
       await api(`/organizer/events/${encodeURIComponent(e.id)}/venue-booking`, { method: 'DELETE' });
       haptic.success();
-      setNote('The event is no longer tied to the booking.');
+      setNote(`The event is no longer tied to booking ${vb?.code ?? ''}. The booking itself stays.`);
       await changed();
     } catch (err) {
       haptic.error();
@@ -233,7 +247,24 @@ export default function EventDashboard() {
                 <Button label="Keep this venue" variant="ghost" size="sm" loading={busy === 'detach'} onPress={() => void detach()} />
               </>
             ) : null}
+            {editor && draft && !e.online ? <Button label="Use another booking" variant="ghost" size="sm" onPress={pickBooking} /> : null}
+            {editor && draft && !(held && vb.status !== 'PENDING') ? <Button label="Remove from event" variant="ghost" size="sm" loading={busy === 'detach'} onPress={() => void detach()} /> : null}
           </View>
+        </View>
+      ) : editor && draft && !e.online ? (
+        <View style={styles.card}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.md }}>
+            <View style={styles.useIcon}>
+              <Icon name="building" size={18} color={colors.accent} />
+            </View>
+            <View style={{ flex: 1, gap: 2 }}>
+              <Txt variant="bodyStrong">Booked a venue on Eventro?</Txt>
+              <Txt variant="small" color={colors.muted}>
+                Use one of your venue bookings for this event. Its times, doors included, have to fit inside the booking.
+              </Txt>
+            </View>
+          </View>
+          <Button label="Use a venue booking" icon="calendar" variant="ghost" size="md" onPress={pickBooking} />
         </View>
       ) : null}
       {note ? (
@@ -346,4 +377,5 @@ const styles = StyleSheet.create({
   cover: { width: 92, height: 92, borderRadius: radius.lg, backgroundColor: colors.surface2, overflow: 'hidden' },
   actions: { flexDirection: 'row', gap: space.md },
   card: { gap: space.md, padding: space.lg, borderRadius: radius.card, borderWidth: 1, borderColor: colors.line, backgroundColor: colors.surface },
+  useIcon: { width: 36, height: 36, borderRadius: 11, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.accentSoft, borderWidth: 1, borderColor: colors.accentLine },
 });

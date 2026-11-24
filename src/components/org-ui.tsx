@@ -15,6 +15,7 @@ export function OrgScreen({
   title,
   eyebrow,
   fallback = '/organizer',
+  onBack,
   onRefresh,
   right,
   children,
@@ -23,6 +24,8 @@ export function OrgScreen({
   title: string;
   eyebrow?: string;
   fallback?: Href;
+  /** the back button's own action (a step back inside a multi-step screen) */
+  onBack?: () => void;
   onRefresh?: () => Promise<unknown>;
   right?: ReactNode;
   children: ReactNode;
@@ -51,7 +54,7 @@ export function OrgScreen({
           ) : undefined
         }>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.md }}>
-          <IconButton icon="back" label="Back" onPress={() => (router.canGoBack() ? router.back() : router.replace(fallback))} />
+          <IconButton icon="back" label="Back" onPress={() => (onBack ? onBack() : router.canGoBack() ? router.back() : router.replace(fallback))} />
           <View style={{ flex: 1, gap: 2 }}>
             {eyebrow ? (
               <Txt variant="eyebrow" color={colors.accent} numberOfLines={1}>

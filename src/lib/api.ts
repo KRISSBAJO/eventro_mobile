@@ -18,6 +18,8 @@ export class ApiError extends Error {
     readonly status: number,
     /** a machine-readable reason some endpoints add, e.g. RESET_EXPIRED */
     readonly code?: string,
+    /** the error's whole body, for the few answers that carry more (409 VENUE_EXISTS names the venue) */
+    readonly data?: unknown,
   ) {
     super(message);
     this.name = 'ApiError';
@@ -207,9 +209,12 @@ function toError(status: number, data: unknown) {
   const details = nested?.errors ?? body?.errors;
   const fallback =
     status === 429 ? 'Too many tries. Wait a minute and try again.' : status >= 500 ? 'Eventro had a problem. Please try again in a moment.' : `Something went wrong (${status}).`;
-  const base = Array.isArray(m) ? m.map(sentence).join(' ') : m ? sentence(m) : fallback;
-  const message = details?.length ? `${base} ${details.slice(0, 3).join(' ')}` : base;
-  return new ApiError(message, status, typeof body?.code === 'string' ? body.code : undefined);
+  // Validation errors list every problem: the first one reads best (fix it, and the next shows up).
+  const base = Array.isArray(m) ? (m[0] ? sentence(m[0]) : fallback) : m ? sentence(m) : fallback;
+  // Some answers repeat the message as the first of their `errors`.
+  const extra = (details ?? []).filter((d) => sentence(d) !== base).slice(0, 3);
+  const message = extra.length ? `${base} ${extra.join(' ')}` : base;
+  return new ApiError(message, status, typeof body?.code === 'string' ? body.code : undefined, data);
 }
 
 /** class-validator messages ("email must be an email") read better capitalised with a full stop. */

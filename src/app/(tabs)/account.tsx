@@ -1,6 +1,7 @@
 /**
- * Account: who you are, notifications, sales, signed-in devices, organizer tools, venue bookings (for venue managers),
- * sign out, help and legal pages.
+ * Account: who you are, notifications, sales, signed-in devices, organizer tools, venues (My venues and booking
+ * requests for venue managers, "Own or run a venue?" for everyone else, and requests waiting for Eventro's
+ * approval), sign out, help and legal pages.
  */
 import Constants from 'expo-constants';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -10,6 +11,7 @@ import { ScrollView, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useState } from 'react';
 import { useConfirm } from '@/components/confirm';
+import { RequestCard } from '@/components/venue-owner';
 import { LogoMark } from '@/components/icons';
 import { Badge, Button, Divider, Notice, Row, Txt } from '@/components/ui';
 import { WEB_URL } from '@/lib/api';
@@ -34,6 +36,9 @@ export default function Account() {
   const venues = useMyVenues(user?.id);
   const managed = venues.data?.managed ?? [];
   const waiting = managed.reduce((n, m) => n + m.pendingBookings, 0);
+  // Waiting for Eventro, or declined (with Eventro's note) and not since approved.
+  const managedIds = new Set(managed.map((m) => m.venue.id));
+  const requests = (venues.data?.requests ?? []).filter((r) => (r.status === 'PENDING' || r.status === 'REJECTED') && !managedIds.has(r.venue.id));
   const { place } = usePlace();
   const health = useHealth();
   const ask = useConfirm();
@@ -166,15 +171,27 @@ export default function Account() {
 
       {user && managed.length ? (
         <View style={styles.group}>
-          <Row
-            icon="building"
-            label="Venue bookings"
-            detail={waiting ? `${waiting} waiting` : managed.length === 1 ? managed[0].venue.name : `${managed.length} venues`}
-            tone={waiting ? 'accent' : undefined}
-            onPress={() => router.push('/venue-bookings')}
-          />
+          <Row icon="building" label="My venues" detail={managed.length === 1 ? managed[0].venue.name : `${managed.length} venues`} onPress={() => router.push('/my-venues')} />
+          <Divider style={{ marginLeft: 62 }} />
+          <Row icon="calendar" label="Venue bookings" detail={waiting ? `${waiting} waiting` : 'Requests'} tone={waiting ? 'accent' : undefined} onPress={() => router.push('/venue-bookings')} />
+        </View>
+      ) : user && venues.data ? (
+        <View style={styles.group}>
+          <Row icon="building" label="Own or run a venue?" detail="List it" onPress={() => router.push('/my-venues/add')} />
         </View>
       ) : null}
+
+      {/* Requests to manage a venue that Eventro hasn't approved (yet), or declined. */}
+      {user
+        ? requests.map((r) => (
+            <RequestCard
+              key={r.id}
+              r={r}
+              onOpen={() => router.push({ pathname: '/venue/[slug]', params: { slug: r.venue.slug } })}
+              onRetry={r.newVenue || r.venue.hidden ? () => router.push('/my-venues/add') : () => router.push({ pathname: '/my-venues/add', params: { slug: r.venue.slug } })}
+            />
+          ))
+        : null}
 
       <View style={styles.group}>
         <Row icon="help" label="Help centre" onPress={() => openWeb('/help')} />

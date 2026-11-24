@@ -1,6 +1,7 @@
 /**
  * A venue (GET /venues/:slug): where it is, Open in Maps, what it's like, what's on there next and, when it's listed
- * for hire on Eventro (`listing`), its terms and "Book this venue" (app/book-venue/[slug].tsx).
+ * for hire on Eventro (`listing`), its terms and "Book this venue" (app/book-venue/[slug].tsx). At the bottom, for
+ * the people who run it: "Work here? Claim this page" (app/my-venues/add.tsx), or where their request stands.
  */
 import { useQuery } from '@tanstack/react-query';
 import { Image } from 'expo-image';
@@ -14,6 +15,8 @@ import { CompactEventCard } from '@/components/event-card';
 import { Icon } from '@/components/icons';
 import { Badge, Button, Card, EmptyState, ErrorState, FadeIn, IconButton, Skeleton, Txt } from '@/components/ui';
 import { api, ApiError, errorText } from '@/lib/api';
+import { useAuth } from '@/lib/auth';
+import { useMyVenues, type VenueRequest } from '@/lib/bookings';
 import { cityOnly, countryName, flag, num } from '@/lib/format';
 import { openMaps } from '@/lib/maps';
 import type { EventCard, VenuePage } from '@/lib/types';
@@ -24,6 +27,8 @@ const HERO = 220;
 export default function VenueScreen() {
   const { slug } = useLocalSearchParams<{ slug: string }>();
   const insets = useSafeAreaInsets();
+  const { user } = useAuth();
+  const mine = useMyVenues(user?.id);
   const q = useQuery({ queryKey: ['venue', slug], queryFn: () => api<VenuePage>(`/venues/${encodeURIComponent(slug!)}`), enabled: !!slug, staleTime: 60_000 });
   const v = q.data;
   const back = <IconButton icon="back" label="Back" glass onPress={() => (router.canGoBack() ? router.back() : router.replace('/'))} style={{ position: 'absolute', top: insets.top + space.sm, left: gutter - 4 }} />;
@@ -140,9 +145,54 @@ export default function VenueScreen() {
               <EmptyState compact icon="calendar" title="Nothing on sale here yet" body="Save events you like elsewhere, and check back soon." />
             )}
           </View>
+
+          <ClaimCard
+            venue={v}
+            signedIn={!!user}
+            loaded={!user || !!mine.data}
+            manages={mine.data?.managed.find((m) => m.venue.slug === v.slug)?.venue.id ?? null}
+            request={mine.data?.requests.find((r) => r.venue.slug === v.slug && r.status === 'PENDING') ?? mine.data?.requests.find((r) => r.venue.slug === v.slug) ?? null}
+          />
         </View>
       </ScrollView>
       {back}
+    </View>
+  );
+}
+
+/** For the people who run the venue: claim its page, or where that stands. */
+function ClaimCard({ venue: v, signedIn, loaded, manages, request }: { venue: VenuePage; signedIn: boolean; loaded: boolean; manages: string | null; request: VenueRequest | null }) {
+  if (!loaded) return null;
+  const pending = request?.status === 'PENDING';
+  const declined = request && !pending && !manages;
+  const claim = () => (signedIn ? router.push({ pathname: '/my-venues/add', params: { slug: v.slug } }) : router.push({ pathname: '/sign-in', params: { then: `/venues/${v.slug}` } }));
+  return (
+    <View style={styles.claim}>
+      <View style={{ flexDirection: 'row', gap: space.md }}>
+        <View style={styles.icon}>
+          <Icon name={manages ? 'check' : pending ? 'clock' : 'building'} size={19} color={manages ? colors.success : pending ? colors.warning : colors.accent} />
+        </View>
+        <View style={{ flex: 1, gap: 2 }}>
+          <Txt variant="eyebrow" color={colors.accent}>
+            For venues
+          </Txt>
+          <Txt variant="title">{manages ? `You manage ${v.name}` : pending ? 'Your request is with Eventro' : v.managed ? `Part of the team at ${v.name}?` : 'Work here? Claim this page'}</Txt>
+          <Txt variant="small" color={colors.muted}>
+            {manages
+              ? 'Its listing, price, opening hours, blocked-out time and details are in My venues.'
+              : pending
+                ? 'Eventro checks every request by hand, usually within a day. We’ll email you and send a notification.'
+                : declined
+                  ? `Your last request wasn’t approved${request?.note ? `: “${request.note}”` : '.'} You can ask again with something we can check.`
+                  : 'Keep its details and photo up to date, and let organizers book it on Eventro.'}
+          </Txt>
+        </View>
+      </View>
+      {manages ? (
+        <Button label="Manage venue" icon="sliders" variant="ghost" size="md" onPress={() => router.push({ pathname: '/my-venues/[id]', params: { id: manages } })} />
+      ) : pending ? null : (
+        <Button label={declined ? 'Ask again' : 'Claim this page'} icon="key" variant="ghost" size="md" onPress={claim} />
+      )}
     </View>
   );
 }
@@ -161,5 +211,6 @@ function Stat({ label, value }: { label: string; value: string }) {
 const styles = StyleSheet.create({
   icon: { width: 40, height: 40, borderRadius: 12, backgroundColor: colors.accentSoft, alignItems: 'center', justifyContent: 'center' },
   stats: { flexDirection: 'row', gap: space.md },
+  claim: { gap: space.md, padding: space.lg, borderRadius: radius.card, borderWidth: 1, borderColor: colors.line, backgroundColor: colors.bg2 },
   stat: { flex: 1, gap: 2, padding: space.md, borderRadius: radius.md, borderWidth: 1, borderColor: colors.line, backgroundColor: colors.surface },
 });

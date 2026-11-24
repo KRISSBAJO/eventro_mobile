@@ -19,12 +19,13 @@ import { useQueryClient } from '@tanstack/react-query';
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { router, useLocalSearchParams } from 'expo-router';
-import { useMemo, useState, type ReactNode } from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, View } from 'react-native';
+import { useMemo, useState } from 'react';
+import { Pressable, StyleSheet, View } from 'react-native';
 import { DateField, dateLabel, TimeField, timeLabel } from '@/components/date-time';
-import { Icon, type IconName } from '@/components/icons';
+import { Icon } from '@/components/icons';
 import { BookingBadge, BookingRequestForm, BookingRow, TermsCard, VenueSearch } from '@/components/booking-ui';
 import { CoverUpload } from '@/components/cover-upload';
+import { ChoiceRow, ChoiceTile, GradientButton, Section } from '@/components/form-ui';
 import { Label, OrgScreen, WebButton } from '@/components/org-ui';
 import { StockPicker } from '@/components/stock-picker';
 import { placeErrors, VenueFields, type VenuePlace } from '@/components/venue-fields';
@@ -327,9 +328,9 @@ export default function CreateEvent() {
     <View style={{ flexDirection: 'row', gap: space.md }}>
       <Button label="Back" variant="ghost" style={{ width: 96 }} onPress={back} disabled={!!busy} />
       {step < STEPS.length - 1 ? (
-        <NextButton label={`Next: ${SHORT[step + 1]}`} onPress={next} />
+        <GradientButton label={`Next: ${SHORT[step + 1]}`} onPress={next} />
       ) : (
-        <NextButton label={waiting ? 'Save and wait for the venue' : 'Submit for review'} icon={waiting ? 'clock' : 'send'} loading={busy === 'submit'} disabled={!!busy} onPress={() => void save(true)} />
+        <GradientButton label={waiting ? 'Save and wait for the venue' : 'Submit for review'} icon={waiting ? 'clock' : 'send'} loading={busy === 'submit'} disabled={!!busy} onPress={() => void save(true)} />
       )}
     </View>
   );
@@ -449,11 +450,11 @@ export default function CreateEvent() {
           </Section>
 
           <Section icon="pin" title="Where is it happening?" sub="At your own venue, a venue you hire on Eventro, or online.">
-            <View style={styles.formats} accessibilityRole="radiogroup">
-              <FormatTile icon="pin" label="My venue" sub="Your own place" on={d.format === 'venue'} onPress={() => set('format', 'venue')} />
-              <FormatTile icon="building" label="Book one" sub="Hire on Eventro" on={d.format === 'book'} onPress={() => set('format', 'book')} />
-              <FormatTile icon="stream" label="Online" sub="Live stream" on={d.format === 'online'} onPress={() => set('format', 'online')} />
-            </View>
+            <ChoiceRow>
+              <ChoiceTile icon="pin" label="My venue" sub="Your own place" on={d.format === 'venue'} onPress={() => set('format', 'venue')} />
+              <ChoiceTile icon="building" label="Book one" sub="Hire on Eventro" on={d.format === 'book'} onPress={() => set('format', 'book')} />
+              <ChoiceTile icon="stream" label="Online" sub="Live stream" on={d.format === 'online'} onPress={() => set('format', 'online')} />
+            </ChoiceRow>
           {d.format === 'venue' ? (
             <VenueFields value={d} onChange={patchPlace} errors={errors} />
           ) : d.format === 'book' ? (
@@ -777,56 +778,6 @@ function ReviewLine({ icon, text, onEdit }: { icon: 'tag' | 'calendar' | 'pin' |
   );
 }
 
-/** One of the three ways to say where the event happens. */
-function FormatTile({ icon, label, sub, on, onPress }: { icon: IconName; label: string; sub: string; on: boolean; onPress: () => void }) {
-  return (
-    <Pressable
-      accessibilityRole="radio"
-      accessibilityState={{ selected: on }}
-      accessibilityLabel={`${label}: ${sub}`}
-      onPress={() => {
-        haptic.select();
-        onPress();
-      }}
-      style={({ pressed }) => [styles.format, on && styles.formatOn, pressed && { transform: [{ scale: 0.97 }] }]}>
-      <View style={[styles.formatIcon, on && { backgroundColor: 'rgba(255,255,255,0.18)', borderColor: 'rgba(255,255,255,0.3)' }]}>
-        <Icon name={icon} size={18} color={on ? colors.accentInk : colors.accent} />
-      </View>
-      <Txt variant="smallStrong" color={on ? colors.accentInk : colors.text} numberOfLines={1}>
-        {label}
-      </Txt>
-      <Txt variant="tiny" color={on ? 'rgba(255,255,255,0.85)' : colors.muted} numberOfLines={1}>
-        {sub}
-      </Txt>
-    </Pressable>
-  );
-}
-
-/** The footer's main action: a warm gradient pill naming where it goes next. */
-function NextButton({ label, onPress, icon = 'arrowRight', loading, disabled }: { label: string; onPress: () => void; icon?: IconName; loading?: boolean; disabled?: boolean }) {
-  return (
-    <Pressable
-      accessibilityRole="button"
-      accessibilityLabel={label}
-      accessibilityState={{ disabled: !!disabled, busy: !!loading }}
-      disabled={disabled}
-      onPress={onPress}
-      style={({ pressed }) => [styles.next, (disabled || loading) && { opacity: 0.7 }, pressed && { transform: [{ scale: 0.98 }] }]}>
-      <LinearGradient colors={[colors.accent, '#ff7a45']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={StyleSheet.absoluteFill} />
-      {loading ? <ActivityIndicator color={colors.accentInk} /> : null}
-      <Txt variant="bodyStrong" color={colors.accentInk} numberOfLines={1} style={{ flexShrink: 1 }}>
-        {label}
-      </Txt>
-      {/* In a View so it paints above the gradient on web */}
-      {loading ? null : (
-        <View>
-          <Icon name={icon} size={18} color={colors.accentInk} />
-        </View>
-      )}
-    </Pressable>
-  );
-}
-
 type PreviewProps = { cover: string; title: string; subtitle: string; category: string; date: string; time: string; place: string; online: boolean; price: string };
 
 /** The event as fans will see it on Discover, updated live as the organizer fills the form in. */
@@ -903,28 +854,6 @@ function CardPreview({ cover, title, subtitle, category, date, time, place, onli
   );
 }
 
-/** A titled card that groups the fields of one part of the form. */
-function Section({ icon, title, sub, children }: { icon: IconName; title: string; sub?: string; children: ReactNode }) {
-  return (
-    <View style={styles.section}>
-      <View style={styles.sectionHead}>
-        <View style={styles.sectionIcon}>
-          <Icon name={icon} size={16} color={colors.accent} />
-        </View>
-        <View style={{ flex: 1, gap: 2 }}>
-          <Txt variant="title">{title}</Txt>
-          {sub ? (
-            <Txt variant="small" color={colors.muted}>
-              {sub}
-            </Txt>
-          ) : null}
-        </View>
-      </View>
-      {children}
-    </View>
-  );
-}
-
 /** Categories as an even three-column grid of tiles; the chosen one is filled with a check. */
 function CategoryGrid({ value, onPick }: { value: string; onPick: (c: (typeof CATEGORIES)[number]) => void }) {
   const [w, setW] = useState(0);
@@ -963,8 +892,6 @@ function CategoryGrid({ value, onPick }: { value: string; onPick: (c: (typeof CA
 
 const styles = StyleSheet.create({
   progress: { flexDirection: 'row', gap: 6 },
-  section: { gap: space.lg, padding: space.lg, borderRadius: radius.card, borderWidth: 1, borderColor: colors.line, backgroundColor: colors.bg2 },
-  sectionHead: { flexDirection: 'row', alignItems: 'flex-start', gap: space.md },
   sectionIcon: { width: 32, height: 32, borderRadius: 10, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.accentSoft, borderWidth: 1, borderColor: colors.accentLine },
   titleInput: { fontFamily: font.display.bold, fontSize: 20, letterSpacing: -0.4, minHeight: 56 },
   grid: { flexDirection: 'row', flexWrap: 'wrap', gap: space.sm },
@@ -977,25 +904,6 @@ const styles = StyleSheet.create({
   dotNow: { backgroundColor: colors.accent, shadowColor: colors.accent, shadowOpacity: 0.8, shadowRadius: 6, shadowOffset: { width: 0, height: 0 } },
   whenPill: { flexDirection: 'row', alignItems: 'center', gap: 6, alignSelf: 'flex-start', maxWidth: '100%', paddingHorizontal: 12, height: 34, borderRadius: radius.pill, borderWidth: 1, borderColor: colors.accentLine, backgroundColor: colors.accentSoft },
   zoneNote: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  formats: { flexDirection: 'row', gap: space.sm },
-  format: { flex: 1, alignItems: 'center', gap: 4, paddingVertical: space.md, paddingHorizontal: 4, borderRadius: radius.md, borderWidth: 1, borderColor: colors.line2, backgroundColor: colors.surface },
-  formatOn: { backgroundColor: colors.accent, borderColor: colors.accent, shadowColor: colors.accent, shadowOpacity: 0.45, shadowRadius: 10, shadowOffset: { width: 0, height: 4 } },
-  formatIcon: { width: 34, height: 34, borderRadius: 11, alignItems: 'center', justifyContent: 'center', marginBottom: 2, backgroundColor: colors.accentSoft, borderWidth: 1, borderColor: colors.accentLine },
-  next: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: space.sm,
-    height: 54,
-    paddingHorizontal: space.lg,
-    borderRadius: radius.pill,
-    overflow: 'hidden',
-    shadowColor: colors.accent,
-    shadowOpacity: 0.45,
-    shadowRadius: 14,
-    shadowOffset: { width: 0, height: 6 },
-  },
   liveDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: colors.success },
   previewCard: { borderRadius: radius.lg, borderWidth: 1, borderColor: colors.line2, backgroundColor: colors.surface, overflow: 'hidden' },
   previewMedia: { aspectRatio: 16 / 9, backgroundColor: colors.surface2 },
