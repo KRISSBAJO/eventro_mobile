@@ -243,6 +243,8 @@ export type IncomingTransfer = {
   transferExpiresAt: string | null;
   event: { title: string; startsAt: string };
   ticketType: { name: string };
+  /** Set when these tickets are a gift: accepting one claims the whole gift. */
+  gift?: { id: string; from: string; message: string | null } | null;
 };
 
 export type MyTickets = { tickets: Ticket[]; incomingTransfers: IncomingTransfer[]; resaleFeePermille: number };

@@ -145,8 +145,32 @@ function IncomingTransfers({ items }: { items: IncomingTransfer[] }) {
   return (
     <View style={styles.incoming} accessibilityLabel="Tickets sent to you">
       <Txt variant="h3">Tickets waiting for you</Txt>
-      {items.map((x) => {
+      {/* A gift shows once (accepting it takes all its tickets); transfers show per ticket. */}
+      {items
+        .filter((x, i) => !x.gift || items.findIndex((y) => y.gift?.id === x.gift!.id) === i)
+        .map((x) => {
         const left = x.transferExpiresAt ? new Date(x.transferExpiresAt).getTime() - now : null;
+        if (x.gift) {
+          const n = items.filter((y) => y.gift?.id === x.gift!.id).length;
+          return (
+            <View key={x.gift.id} style={{ flexDirection: 'row', alignItems: 'center', gap: space.md }}>
+              <View style={{ flex: 1, gap: 2 }}>
+                <Txt variant="bodyStrong" numberOfLines={2}>
+                  🎁 A gift from {x.gift.from}: {x.event.title}
+                </Txt>
+                <Txt variant="small" color={colors.muted}>
+                  {n} × {x.ticketType.name} · {when(x.event.startsAt).short}
+                </Txt>
+                {x.gift.message ? (
+                  <Txt variant="small" color={colors.text} numberOfLines={3}>
+                    “{x.gift.message}”
+                  </Txt>
+                ) : null}
+              </View>
+              <Button label={busy === x.id ? 'Accepting…' : 'Accept gift'} size="sm" loading={busy === x.id} onPress={() => accept(x.id)} />
+            </View>
+          );
+        }
         return (
           <View key={x.id} style={{ flexDirection: 'row', alignItems: 'center', gap: space.md }}>
             <View style={{ flex: 1, gap: 2 }}>
