@@ -10,7 +10,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { haptic } from '@/lib/haptics';
 import { colors, gutter, radius, space, touch } from '@/theme';
 import { Icon } from './icons';
-import { Button, Txt } from './ui';
+import { Button, focusRing, Txt } from './ui';
 
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 const DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
@@ -30,7 +30,8 @@ export function timeLabel(v: string) {
   return `${((h + 11) % 12) + 1}:${v.slice(3)} ${h < 12 ? 'AM' : 'PM'}`;
 }
 
-function FieldShell({ label, value, placeholder, error, hint, onPress, icon }: { label: string; value: string; placeholder: string; error?: string; hint?: string; onPress: () => void; icon: 'calendar' | 'clock' }) {
+/** `active`: its picker is open, so it glows like a text field being typed in. */
+function FieldShell({ label, value, placeholder, error, hint, onPress, icon, active }: { label: string; value: string; placeholder: string; error?: string; hint?: string; onPress: () => void; icon: 'calendar' | 'clock'; active?: boolean }) {
   return (
     <View style={{ gap: 6, flex: 1, minWidth: 0 }}>
       <Txt variant="smallStrong" color={colors.muted}>
@@ -44,8 +45,8 @@ function FieldShell({ label, value, placeholder, error, hint, onPress, icon }: {
           haptic.select();
           onPress();
         }}
-        style={({ pressed }) => [styles.field, !!error && { borderColor: colors.accent }, pressed && { backgroundColor: colors.surface2 }]}>
-        <Icon name={icon} size={18} color={colors.muted} />
+        style={({ pressed }) => [styles.field, !!error && { borderColor: colors.accent }, (active || pressed) && focusRing]}>
+        <Icon name={icon} size={18} color={active ? colors.accent : colors.muted} />
         <Txt color={value ? colors.text : colors.dim} numberOfLines={1} style={{ flex: 1 }}>
           {value || placeholder}
         </Txt>
@@ -102,7 +103,7 @@ export function DateField({ label, value, onChange, error, hint, min }: { label:
   };
   return (
     <>
-      <FieldShell label={label} value={dateLabel(value)} placeholder="Choose a date" error={error} hint={hint} onPress={show} icon="calendar" />
+      <FieldShell label={label} value={dateLabel(value)} placeholder="Choose a date" error={error} hint={hint} onPress={show} icon="calendar" active={open} />
       <Sheet visible={open} title={label} onClose={() => setOpen(false)}>
         <View style={styles.monthRow}>
           <Pressable accessibilityRole="button" accessibilityLabel="Previous month" onPress={() => move(-1)} hitSlop={8} style={styles.navBtn}>
@@ -183,7 +184,7 @@ export function TimeField({ label, value, onChange, error, hint, optional }: { l
   );
   return (
     <>
-      <FieldShell label={label} value={timeLabel(value)} placeholder={optional ? 'Optional' : 'Choose a time'} error={error} hint={hint} onPress={() => setOpen(true)} icon="clock" />
+      <FieldShell label={label} value={timeLabel(value)} placeholder={optional ? 'Optional' : 'Choose a time'} error={error} hint={hint} onPress={() => setOpen(true)} icon="clock" active={open} />
       <Sheet visible={open} title={label} onClose={() => setOpen(false)}>
         <Txt variant="small" color={colors.muted}>
           {value ? timeLabel(value) : 'Pick the hour, then the minutes.'}

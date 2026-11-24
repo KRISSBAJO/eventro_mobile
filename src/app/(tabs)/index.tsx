@@ -6,7 +6,7 @@ import { Pressable, RefreshControl, ScrollView, StyleSheet, View } from 'react-n
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Icon, LogoMark, type IconName } from '@/components/icons';
 import { Rail } from '@/components/rail';
-import { Button, Chip, ErrorState, FadeIn, Notice, SectionHeader, Skeleton, Txt } from '@/components/ui';
+import { Button, Chip, ErrorState, FadeIn, focusRing, Notice, SectionHeader, Skeleton, Txt } from '@/components/ui';
 import { errorText, isOffline } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { BROWSE_CATEGORIES, CATEGORY_NAME, cityOnly, countryName, distanceLabel, firstName, flag, greeting } from '@/lib/format';
@@ -195,7 +195,7 @@ export default function Discover() {
 
       {/* Search, with filters one tap away */}
       <View style={styles.searchRow}>
-        <Pressable accessibilityRole="search" accessibilityLabel="Search events" onPress={() => router.push('/search')} style={({ pressed }) => [styles.fakeSearch, pressed && { borderColor: colors.text }]}>
+        <Pressable accessibilityRole="search" accessibilityLabel="Search events" onPress={() => router.push('/search')} style={({ pressed }) => [styles.fakeSearch, pressed && focusRing]}>
           <Icon name="search" size={19} color={colors.muted} />
           <Txt color={colors.dim} numberOfLines={1} style={{ flex: 1 }}>
             Artists, events, venues
@@ -205,7 +205,7 @@ export default function Discover() {
           accessibilityRole="button"
           accessibilityLabel="Filters"
           onPress={() => browse({ filters: '1' })}
-          style={({ pressed }) => [styles.filterBtn, pressed && { borderColor: colors.text }]}>
+          style={({ pressed }) => [styles.filterBtn, pressed && focusRing]}>
           <Icon name="sliders" size={19} color={colors.text} />
         </Pressable>
       </View>

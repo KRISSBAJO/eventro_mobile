@@ -14,7 +14,7 @@ import { COUNTRY_ZONES, deviceZone, VENUE_COUNTRIES } from '@/lib/organizer';
 import { colors, radius, space } from '@/theme';
 import { Icon } from './icons';
 import { OptionSheet } from './option-sheet';
-import { Field, Txt } from './ui';
+import { Field, focusRing, Txt } from './ui';
 
 export type VenuePlace = {
   country: string;
@@ -86,7 +86,7 @@ export function VenueFields({ value: v, onChange, errors }: { value: VenuePlace;
 
   return (
     <>
-      <Pick label="Country" value={v.country ? countryName(v.country) : ''} placeholder="Choose the country" error={errors.country} onPress={() => setSheet('country')} />
+      <Pick label="Country" value={v.country ? countryName(v.country) : ''} placeholder="Choose the country" error={errors.country} onPress={() => setSheet('country')} active={sheet === 'country'} />
       <Field label="Venue name" placeholder="e.g. Eko Convention Centre" value={v.venue} onChangeText={(x) => onChange({ venue: x })} maxLength={120} error={errors.venue} />
       <Field label="Street address" value={v.address} onChangeText={(x) => onChange({ address: x })} maxLength={200} error={errors.address} />
       <View style={styles.row2}>
@@ -102,6 +102,7 @@ export function VenueFields({ value: v, onChange, errors }: { value: VenuePlace;
           error={errors.zone}
           hint="Times are local to the venue."
           onPress={() => setSheet('zone')}
+          active={sheet === 'zone'}
         />
       ) : (
         <Txt variant="small" color={colors.dim}>
@@ -128,7 +129,8 @@ export function VenueFields({ value: v, onChange, errors }: { value: VenuePlace;
   );
 }
 
-export function Pick({ label, value, placeholder, error, hint, onPress }: { label: string; value: string; placeholder: string; error?: string; hint?: string; onPress: () => void }) {
+/** A field that opens a list. `active`: the list is open, so it glows like a text field being typed in. */
+export function Pick({ label, value, placeholder, error, hint, onPress, active }: { label: string; value: string; placeholder: string; error?: string; hint?: string; onPress: () => void; active?: boolean }) {
   return (
     <View style={{ gap: 6 }}>
       <Txt variant="smallStrong" color={colors.muted}>
@@ -141,11 +143,11 @@ export function Pick({ label, value, placeholder, error, hint, onPress }: { labe
           haptic.select();
           onPress();
         }}
-        style={({ pressed }) => [styles.pick, !!error && { borderColor: colors.accent }, pressed && { backgroundColor: colors.surface2 }]}>
+        style={({ pressed }) => [styles.pick, !!error && { borderColor: colors.accent }, (active || pressed) && focusRing]}>
         <Txt color={value ? colors.text : colors.dim} style={{ flex: 1 }} numberOfLines={1}>
           {value || placeholder}
         </Txt>
-        <Icon name="chevronDown" size={18} color={colors.muted} />
+        <Icon name="chevronDown" size={18} color={active ? colors.accent : colors.muted} />
       </Pressable>
       {error ? (
         <Txt variant="small" color={colors.accentHi}>

@@ -103,11 +103,11 @@ export default function Search() {
         ))}
       </ScrollView>
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chips}>
-        <Filter label={country ? `${flag(country.code)} ${country.name}` : 'Anywhere'} on={!!f.country} onPress={() => setSheet('country')} />
-        {country ? <Filter label={f.city || 'Any city'} on={!!f.city} onPress={() => setSheet('city')} /> : null}
-        <Filter label={dateLabel} on={f.date !== 'any'} onPress={() => setSheet('date')} />
-        <Filter label={limitLabel} on={f.maxPrice !== null} onPress={() => setSheet('price')} />
-        <Filter label={SORTS.find((s) => s.value === f.sort)!.label} on={f.sort !== 'date'} onPress={() => setSheet('sort')} icon="sliders" />
+        <Filter label={country ? `${flag(country.code)} ${country.name}` : 'Anywhere'} on={!!f.country} onPress={() => setSheet('country')} open={sheet === 'country'} />
+        {country ? <Filter label={f.city || 'Any city'} on={!!f.city} onPress={() => setSheet('city')} open={sheet === 'city'} /> : null}
+        <Filter label={dateLabel} on={f.date !== 'any'} onPress={() => setSheet('date')} open={sheet === 'date'} />
+        <Filter label={limitLabel} on={f.maxPrice !== null} onPress={() => setSheet('price')} open={sheet === 'price'} />
+        <Filter label={SORTS.find((s) => s.value === f.sort)!.label} on={f.sort !== 'date'} onPress={() => setSheet('sort')} icon="sliders" open={sheet === 'sort'} />
       </ScrollView>
       <View style={styles.countRow}>
         <Txt variant="smallStrong" accessibilityLiveRegion="polite" numberOfLines={1} style={{ flexShrink: 1 }}>
@@ -253,7 +253,8 @@ export default function Search() {
   );
 }
 
-function Filter({ label, on, onPress, icon }: { label: string; on: boolean; onPress: () => void; icon?: 'sliders' }) {
+/** A filter pill; `open`: its options sheet is showing, so it glows. */
+function Filter({ label, on, onPress, icon, open }: { label: string; on: boolean; onPress: () => void; icon?: 'sliders'; open?: boolean }) {
   return (
     <Pressable
       accessibilityRole="button"
@@ -262,7 +263,7 @@ function Filter({ label, on, onPress, icon }: { label: string; on: boolean; onPr
         haptic.select();
         onPress();
       }}
-      style={({ pressed }) => [styles.filter, on && styles.filterOn, pressed && { opacity: 0.8 }]}>
+      style={({ pressed }) => [styles.filter, on && styles.filterOn, (open || pressed) && focusRing]}>
       {icon ? <Icon name={icon} size={15} color={on ? colors.accent : colors.muted} /> : null}
       <Txt variant="smallStrong" color={on ? colors.accentHi : colors.text} numberOfLines={1}>
         {label}
