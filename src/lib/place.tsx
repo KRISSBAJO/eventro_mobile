@@ -62,6 +62,28 @@ export function usePlace() {
 export const placeLabel = (p: Place | null) =>
   !p ? 'Choose location' : p.source === 'precise' ? 'Your location' : [p.city, countryName(p.country)].filter(Boolean).join(', ');
 
+/** A city name short enough for a header pill: one-word names as they are (up to 9 letters), several words as
+ * initials ("New York" → "NY", "Los Angeles" → "LA", "Port Harcourt" → "PH"). */
+export const shortCity = (city: string) => {
+  const c = city.trim();
+  if (!/[\s-]/.test(c) && c.length <= 9) return c;
+  const initials = c
+    .split(/[\s-]+/)
+    .filter((w) => /^[A-ZÀ-Ý]/.test(w))
+    .map((w) => w[0])
+    .join('');
+  return initials.length >= 2 ? initials : c.slice(0, 7) + '…';
+};
+
+/** The header pill: "NY", "Lagos", "Near you", or the country when there's no city ("Nigeria" / "US"). */
+export const placeShort = (p: Place | null) => {
+  if (!p) return 'Location';
+  if (p.source === 'precise') return 'Near you';
+  if (p.city) return shortCity(p.city);
+  const name = countryName(p.country);
+  return name.length <= 8 ? name : p.country;
+};
+
 /** Asks for the device's position (shows the system prompt the first time). */
 export async function preciseLocation(): Promise<{ lat: number; lng: number }> {
   const perm = await Location.requestForegroundPermissionsAsync().catch(() => null);
