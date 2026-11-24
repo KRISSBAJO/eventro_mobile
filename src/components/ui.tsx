@@ -10,6 +10,7 @@ import {
   Text,
   TextInput,
   View,
+  type GestureResponderEvent,
   type PressableProps,
   type StyleProp,
   type TextInputProps,
@@ -257,7 +258,7 @@ export function FadeIn({ children, delay = 0, style }: { children: ReactNode; de
 
 /* ---------- forms ---------- */
 
-export function Field({ label, error, hint, secure, style, ...input }: TextInputProps & { label: string; error?: string; hint?: string; secure?: boolean; style?: StyleProp<ViewStyle> }) {
+export function Field({ label, error, hint, secure, style, inputStyle, ...input }: TextInputProps & { label: string; error?: string; hint?: string; secure?: boolean; style?: StyleProp<ViewStyle>; inputStyle?: StyleProp<TextStyle> }) {
   const [focused, setFocused] = useState(false);
   const [shown, setShown] = useState(false);
   return (
@@ -281,7 +282,7 @@ export function Field({ label, error, hint, secure, style, ...input }: TextInput
             setFocused(false);
             input.onBlur?.(e);
           }}
-          style={styles.input}
+          style={[styles.input, inputStyle]}
           {...input}
         />
         {secure ? (
@@ -289,6 +290,116 @@ export function Field({ label, error, hint, secure, style, ...input }: TextInput
             <Icon name={shown ? 'eyeOff' : 'eye'} size={19} color={colors.muted} />
           </Pressable>
         ) : null}
+      </View>
+      {error ? (
+        <Txt variant="small" color={colors.accentHi}>
+          {error}
+        </Txt>
+      ) : hint ? (
+        <Txt variant="small" color={colors.dim}>
+          {hint}
+        </Txt>
+      ) : null}
+    </View>
+  );
+}
+
+/**
+ * A text box for longer writing (descriptions). It grows with what's typed, up to `maxAuto`, then scrolls; the grip
+ * along the bottom drags it taller or shorter, like a desktop textarea. Shows a live count against `maxLength`.
+ */
+export function TextArea({
+  label,
+  value,
+  onChangeText,
+  placeholder,
+  maxLength,
+  error,
+  hint,
+  minHeight = 148,
+  maxAuto = 360,
+  maxHeight = 720,
+}: {
+  label: string;
+  value: string;
+  onChangeText: (v: string) => void;
+  placeholder?: string;
+  maxLength?: number;
+  error?: string;
+  hint?: string;
+  minHeight?: number;
+  maxAuto?: number;
+  maxHeight?: number;
+}) {
+  const [focused, setFocused] = useState(false);
+  const [content, setContent] = useState(minHeight);
+  // Once dragged, the box keeps the height the organizer chose.
+  const [manual, setManual] = useState<number | null>(null);
+  const auto = Math.max(minHeight, Math.min(content, maxAuto));
+  const height = manual ?? auto;
+  // While dragging: where the finger started (page y) and the box's height then.
+  const [drag, setDrag] = useState<{ y: number; h: number } | null>(null);
+  const dragging = !!drag;
+  const clamp = (h: number) => Math.round(Math.max(minHeight, Math.min(maxHeight, h)));
+  // The grip uses the touch responder directly: it claims the touch, keeps it from the page's scroll, and resizes.
+  const grip = {
+    onStartShouldSetResponder: () => true,
+    onMoveShouldSetResponder: () => true,
+    onResponderTerminationRequest: () => false,
+    onResponderGrant: (e: GestureResponderEvent) => {
+      setDrag({ y: e.nativeEvent.pageY, h: height });
+      haptic.select();
+    },
+    onResponderMove: (e: GestureResponderEvent) => {
+      if (drag) setManual(clamp(drag.h + e.nativeEvent.pageY - drag.y));
+    },
+    onResponderRelease: () => setDrag(null),
+    onResponderTerminate: () => setDrag(null),
+  };
+  const count = value.length;
+  const near = maxLength ? count > maxLength * 0.9 : false;
+  return (
+    <View style={{ gap: 6 }}>
+      <Txt variant="smallStrong" color={colors.muted}>
+        {label}
+      </Txt>
+      <View style={[styles.areaWrap, focused && { borderColor: colors.text }, dragging && { borderColor: colors.accent }, !!error && { borderColor: colors.accent }]}>
+        <TextInput
+          multiline
+          value={value}
+          onChangeText={onChangeText}
+          placeholder={placeholder}
+          maxLength={maxLength}
+          placeholderTextColor={colors.dim}
+          selectionColor={colors.accent}
+          cursorColor={colors.accent}
+          accessibilityLabel={label}
+          accessibilityHint={error || hint}
+          textAlignVertical="top"
+          scrollEnabled
+          onFocus={() => setFocused(true)}
+          onBlur={() => setFocused(false)}
+          // On the web the measured height already includes the padding (and never drops below the box), so adding it
+          // again would make the box creep taller on its own.
+          onContentSizeChange={(e) => setContent(Math.ceil(e.nativeEvent.contentSize.height) + (Platform.OS === 'web' ? 0 : space.lg + space.sm))}
+          style={[styles.area, { height }]}
+        />
+        <View style={styles.areaFoot}>
+          <Txt variant="tiny" color={near ? colors.warning : colors.dim}>
+            {maxLength ? `${count.toLocaleString()} / ${maxLength.toLocaleString()}` : `${count.toLocaleString()} characters`}
+          </Txt>
+          <View
+            {...grip}
+            accessibilityRole="adjustable"
+            accessibilityLabel={`Resize ${label.toLowerCase()} box`}
+            accessibilityActions={[{ name: 'increment' }, { name: 'decrement' }]}
+            onAccessibilityAction={(e) => setManual(clamp(height + (e.nativeEvent.actionName === 'increment' ? 80 : -80)))}
+            hitSlop={10}
+            style={[styles.grip, Platform.OS === 'web' && ({ cursor: 'ns-resize' } as ViewStyle)]}>
+            <View style={[styles.gripBar, dragging && { backgroundColor: colors.accent }]} />
+            <View style={[styles.gripBar, { width: 14 }, dragging && { backgroundColor: colors.accent }]} />
+          </View>
+        </View>
       </View>
       {error ? (
         <Txt variant="small" color={colors.accentHi}>
@@ -379,6 +490,11 @@ const styles = StyleSheet.create({
   notice: { flexDirection: 'row', gap: space.md, padding: space.md + 2, borderRadius: radius.md, borderWidth: 1, alignItems: 'flex-start' },
   empty: { alignItems: 'center', gap: space.sm, paddingVertical: space.huge, paddingHorizontal: space.xxl },
   emptyIcon: { width: 52, height: 52, borderRadius: 26, backgroundColor: colors.accentSoft, alignItems: 'center', justifyContent: 'center', marginBottom: space.sm },
+  areaWrap: { borderRadius: radius.md, borderWidth: 1, borderColor: colors.line2, backgroundColor: colors.surface, overflow: 'hidden' },
+  area: { paddingHorizontal: space.lg, paddingTop: space.lg, paddingBottom: space.sm, color: colors.text, ...type.body, outlineWidth: 0 },
+  areaFoot: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingLeft: space.lg, paddingRight: space.sm, height: 30, borderTopWidth: 1, borderTopColor: colors.line },
+  grip: { width: 44, height: 30, alignItems: 'center', justifyContent: 'center', gap: 3 },
+  gripBar: { width: 22, height: 2, borderRadius: 1, backgroundColor: colors.dim },
   inputWrap: { flexDirection: 'row', alignItems: 'center', minHeight: 52, borderRadius: radius.md, borderWidth: 1, borderColor: colors.line2, backgroundColor: colors.surface },
   input: { flex: 1, minWidth: 0, minHeight: 50, paddingHorizontal: space.lg, color: colors.text, ...type.body, lineHeight: undefined, outlineWidth: 0 },
   eye: { width: touch, height: touch, alignItems: 'center', justifyContent: 'center' },

@@ -1,7 +1,8 @@
 /**
  * Edit an event from the phone (admins and managers), with the website's endpoints:
  *
- *   PATCH /organizer/events/:id                          title, tagline, description, start (and doors), cover
+ *   PATCH /organizer/events/:id                          title, tagline, description, start (and doors), a stock cover
+ *   PUT   /organizer/events/:id/media                    a photo uploaded from the phone becomes the cover (first item)
  *   PATCH /organizer/events/:id/ticket-types/:ttId       name, price, quantity (a lower price may alert watchers)
  *   POST  /organizer/events/:id/ticket-types             a new ticket type
  *   DELETE /organizer/events/:id/ticket-types/:ttId      only when none are sold and it isn't on the seat map
@@ -9,7 +10,8 @@
  *
  * Prices here are what fans pay (all-in), as on the website; the API takes the organizer's base price, so they're
  * converted with the event's fee mode. Times are the venue's wall-clock time stored as UTC (the website does the
- * same). The venue can't be changed here or on the website (support does it); seat maps are designed on the web.
+ * same). "Change venue" opens its own screen (…/venue, PUT /organizer/events/:id/venue); seat maps are designed on
+ * the web.
  */
 import { useQueryClient } from '@tanstack/react-query';
 import { Image } from 'expo-image';
@@ -19,12 +21,14 @@ import { Pressable, StyleSheet, View } from 'react-native';
 import { useConfirm } from '@/components/confirm';
 import { DateField, TimeField } from '@/components/date-time';
 import { Icon, type IconName } from '@/components/icons';
+import { CoverUpload } from '@/components/cover-upload';
 import { Label, OrgScreen, WebButton } from '@/components/org-ui';
 import { StockPicker } from '@/components/stock-picker';
 import { Button, ErrorState, Field, Notice, Skeleton, Txt } from '@/components/ui';
 import { api, errorText } from '@/lib/api';
 import { CATEGORY_NAME, currencySymbol, money, num, todayYmd } from '@/lib/format';
 import { haptic } from '@/lib/haptics';
+import type { UploadedCover } from '@/lib/media-upload';
 import {
   baseFromAllIn,
   canEdit,
@@ -92,6 +96,9 @@ function Editor({ e }: { e: OrgEventDetail }) {
   const [doors, setDoors] = useState(doors0?.time ?? '');
   const [cover, setCover] = useState(e.imageUrl ?? '');
   const [picking, setPicking] = useState(false);
+  /** A photo uploaded from the phone; saved as the event's first media item, which makes it the cover. */
+  const [upload, setUpload] = useState<UploadedCover | null>(null);
+  const [now] = useState(() => Date.now());
   const [tiers, setTiers] = useState<Tier[]>(fromApi);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
@@ -173,8 +180,15 @@ function Editor({ e }: { e: OrgEventDetail }) {
         if (!e.doorsAt || d !== new Date(e.doorsAt).toISOString()) body.doorsAt = d;
       }
       if (e.endsAt && shift) body.endsAt = new Date(new Date(e.endsAt).getTime() + shift).toISOString();
-      if (cover && cover !== (e.imageUrl ?? '')) body.imageUrl = cover;
+      const uploaded = upload && cover === upload.url ? upload : null;
+      if (cover && !uploaded && cover !== (e.imageUrl ?? '')) body.imageUrl = cover;
       if (Object.keys(body).length) await api(path, { method: 'PATCH', body });
+      // An uploaded photo goes first in the event's media (the cover), ahead of what's already there.
+      if (uploaded) {
+        const rest = (e.media ?? []).filter((m) => m.id !== uploaded.id).map((m) => ({ id: m.id, kind: m.kind }));
+        await api(`${path}/media`, { method: 'PUT', body: { items: [{ id: uploaded.id, kind: 'image' }, ...rest] } });
+        setUpload(null);
+      }
 
       // 2. Ticket types that changed.
       const byId = new Map(e.ticketTypes.map((t) => [t.id, t]));
@@ -270,28 +284,47 @@ function Editor({ e }: { e: OrgEventDetail }) {
             </Txt>
           </>
         ) : null}
-        <Txt variant="small" color={colors.dim}>
-          To move the event to another venue, contact Eventro support: fans who bought tickets are told about the change.
-        </Txt>
+        {e.online ? (
+          <Txt variant="small" color={colors.dim}>
+            Online events have no venue. To hold it in person, create a new event.
+          </Txt>
+        ) : e.status === 'CANCELLED' || new Date(e.startsAt).getTime() < now ? null : (
+          <Button
+            label="Change venue"
+            variant="subtle"
+            size="md"
+            icon="pin"
+            onPress={() => router.push({ pathname: '/organizer/events/[id]/venue', params: { id: e.id } })}
+          />
+        )}
       </View>
 
       <View style={styles.card}>
         <Label>Cover photo</Label>
         <View style={styles.cover}>{cover ? <Image source={{ uri: cover }} style={StyleSheet.absoluteFill} contentFit="cover" /> : null}</View>
+        <CoverUpload
+          full={upload && cover === upload.url ? 'Upload a different photo' : undefined}
+          onUploaded={(c) => {
+            setUpload(c);
+            setCover(c.url);
+          }}
+        />
+        {upload && cover === upload.url ? (
+          <Txt variant="small" color={colors.muted}>
+            New cover uploaded. Save changes to use it.
+          </Txt>
+        ) : null}
         {hasMedia ? (
           <>
             <Txt variant="small" color={colors.muted}>
-              This event uses photos you uploaded (the first one is the cover). Change or reorder them on the website.
+              This event uses photos you uploaded (the first one is the cover). A new upload goes first. Reorder or remove photos on the website.
             </Txt>
             <WebButton label="Manage photos on the web" path={webPaths.event(e.id)} />
           </>
         ) : picking ? (
           <StockPicker category={CATEGORY_NAME[e.category] ?? 'Concerts'} value={cover} onPick={setCover} />
         ) : (
-          <View style={{ gap: space.sm }}>
-            <Button label="Pick a different photo" variant="subtle" size="md" icon="sparkle" onPress={() => setPicking(true)} />
-            <WebButton label="Upload your own on the web" path={webPaths.event(e.id)} />
-          </View>
+          <Button label="Pick one of our photos" variant="ghost" size="md" icon="sparkle" onPress={() => setPicking(true)} />
         )}
       </View>
 

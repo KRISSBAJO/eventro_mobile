@@ -3,21 +3,23 @@
  * POST /organizer/orgs/:orgId/events (the website's body); "Submit for review" also calls POST …/events/:id/submit.
  *
  * As on the website: times are the venue's wall-clock time stored as UTC; ticket prices are the organizer's price
- * and the fee mode decides who pays Eventro's fee; the cover is one of the free stock photos (no image picker is
- * installed, so uploading your own happens on the website); online events need their stream link; seat maps are
- * designed on the website after saving.
+ * and the fee mode decides who pays Eventro's fee; the cover is a photo uploaded from the phone (expo-image-picker,
+ * then the website's upload endpoints and PUT …/events/:id/media, which makes it the cover) or one of the free stock
+ * photos; online events need their stream link; seat maps are designed on the website after saving. The venue fields
+ * are shared with Change venue (components/venue-fields.tsx).
  */
 import { useQueryClient } from '@tanstack/react-query';
 import { Image } from 'expo-image';
 import { router, useLocalSearchParams } from 'expo-router';
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 import { DateField, dateLabel, TimeField, timeLabel } from '@/components/date-time';
-import { Icon } from '@/components/icons';
-import { OptionSheet } from '@/components/option-sheet';
+import { Icon, type IconName } from '@/components/icons';
+import { CoverUpload } from '@/components/cover-upload';
 import { Label, OrgScreen, WebButton } from '@/components/org-ui';
 import { StockPicker } from '@/components/stock-picker';
-import { Button, Chip, EmptyState, Field, Notice, Txt } from '@/components/ui';
+import { placeErrors, VenueFields, type VenuePlace } from '@/components/venue-fields';
+import { Button, Chip, EmptyState, Field, Notice, TextArea, Txt } from '@/components/ui';
 import { api, errorText } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { CATEGORY_NAME, countryName, currencyForCountry, currencySymbol, money, PAYSTACK, todayYmd } from '@/lib/format';
@@ -25,19 +27,18 @@ import { haptic } from '@/lib/haptics';
 import {
   buyerPrice,
   canEdit,
-  COUNTRY_ZONES,
   CURRENCIES,
   deviceZone,
   organizerNet,
   parseMoney,
-  VENUE_COUNTRIES,
   wallIso,
   webPaths,
 } from '@/lib/organizer';
 import { useMyOrgs } from '@/lib/queries';
+import type { UploadedCover } from '@/lib/media-upload';
 import { defaultCover } from '@/lib/stock-covers';
 import type { Category } from '@/lib/types';
-import { colors, radius, space, touch } from '@/theme';
+import { colors, font, radius, space, touch } from '@/theme';
 
 const STEPS = ['Basics', 'When and where', 'Tickets', 'Cover', 'Review'];
 const CATEGORIES = Object.keys(CATEGORY_NAME) as Category[];
@@ -110,11 +111,7 @@ function validate(step: number, d: Draft, today: string) {
     if (d.end && d.start && d.end <= d.start) e.end = 'The end time must be after the start.';
     if (d.doors && d.start && d.doors > d.start) e.doors = 'Doors usually open before the start time.';
     if (d.format === 'venue') {
-      if (!/^[A-Z]{2}$/.test(d.country)) e.country = 'Choose the country.';
-      if (d.venue.trim().length < 2) e.venue = 'Add the venue name.';
-      if (d.address.trim().length < 3) e.address = 'Add the street address.';
-      if (d.city.trim().length < 2) e.city = 'Add the city.';
-      if (COUNTRY_ZONES[d.country] && !d.zone) e.zone = 'Choose the time zone the times are in.';
+      Object.assign(e, placeErrors(d));
     } else if (!/^https?:\/\/\S+\.\S+/.test(d.link.trim())) {
       e.link = 'Add a full link, starting with https://';
     }
@@ -151,34 +148,20 @@ export default function CreateEvent() {
   const [busy, setBusy] = useState<'' | 'draft' | 'submit'>('');
   const [error, setError] = useState('');
   const [created, setCreated] = useState<string | null>(null);
-  const [sheet, setSheet] = useState<'' | 'country' | 'zone'>('');
+  /** A photo uploaded from the phone; it's the cover while `d.cover` is its address. */
+  const [upload, setUpload] = useState<UploadedCover | null>(null);
+  /** The uploaded cover was attached to the created event (PUT …/media), so a retry doesn't send it again. */
+  const [coverSet, setCoverSet] = useState(false);
   const today = todayYmd();
   const errors = useMemo(() => (show ? validate(step, d, today) : {}), [show, step, d, today]);
   const set = <K extends keyof Draft>(k: K, v: Draft[K]) => setD((p) => ({ ...p, [k]: v }));
   const patchTier = (key: string, p: Partial<Tier>) => setD((x) => ({ ...x, tiers: x.tiers.map((t) => (t.key === key ? { ...t, ...p } : t)) }));
   const cur = d.currency || 'USD';
 
-  // In countries with several zones, fill the zone in from the state ("Texas" → Central) or, with no state and no
-  // matching phone zone, the country's main zone. A zone the organizer picked themselves is never changed.
-  const zoneCountry = COUNTRY_ZONES[d.country] && !d.zonePicked ? d.country : '';
-  const zoneRegion = d.region.trim();
-  const zoneNow = d.zone;
-  useEffect(() => {
-    if (!zoneCountry || (!zoneRegion && zoneNow)) return;
-    let live = true;
-    const t = setTimeout(() => {
-      api<{ timezone: string | null }>(`/geo/timezone?country=${zoneCountry}${zoneRegion ? `&region=${encodeURIComponent(zoneRegion)}` : ''}`)
-        .then((r) => {
-          if (!live || !r.timezone || !COUNTRY_ZONES[zoneCountry]?.some((z) => z.id === r.timezone)) return;
-          setD((p) => (p.country === zoneCountry && !p.zonePicked && p.zone !== r.timezone ? { ...p, zone: r.timezone! } : p));
-        })
-        .catch(() => undefined);
-    }, 400);
-    return () => {
-      live = false;
-      clearTimeout(t);
-    };
-  }, [zoneCountry, zoneRegion, zoneNow]);
+  // The venue fields (and the state-based zone guess) live in VenueFields; a new country also sets the currency
+  // until the organizer picks one.
+  const patchPlace = (patch: Partial<VenuePlace>) =>
+    setD((p) => ({ ...p, ...patch, ...(patch.country && patch.country !== p.country && !p.currencyChosen ? { currency: currencyForCountry(patch.country) } : {}) }));
 
   const next = () => {
     const e = validate(step, d, today);
@@ -200,16 +183,6 @@ export default function CreateEvent() {
       if (router.canGoBack()) router.back();
       else router.replace('/organizer');
     } else setStep((s) => s - 1);
-  };
-
-  const pickCountry = (c: string) => {
-    setD((p) => ({
-      ...p,
-      country: c,
-      zone: COUNTRY_ZONES[c]?.some((z) => z.id === p.zone) ? p.zone : COUNTRY_ZONES[c]?.find((z) => z.id === deviceZone())?.id ?? '',
-      zonePicked: COUNTRY_ZONES[c]?.some((z) => z.id === p.zone) ? p.zonePicked : false,
-      currency: p.currencyChosen ? p.currency : currencyForCountry(c),
-    }));
   };
 
   const save = async (submit: boolean) => {
@@ -263,6 +236,11 @@ export default function CreateEvent() {
         id = ev.id;
         setCreated(id);
       }
+      // A photo uploaded from the phone becomes the cover the website's way: the event's first media item.
+      if (upload && d.cover === upload.url && !coverSet) {
+        await api(`/organizer/events/${encodeURIComponent(id)}/media`, { method: 'PUT', body: { items: [{ id: upload.id, kind: 'image' }] } });
+        setCoverSet(true);
+      }
       if (submit) await api(`/organizer/events/${encodeURIComponent(id)}/submit`, { method: 'POST' });
       haptic.success();
       await qc.invalidateQueries({ queryKey: ['organizer'] });
@@ -313,24 +291,39 @@ export default function CreateEvent() {
 
       {step === 0 ? (
         <>
-          <Field label="Event name" placeholder="e.g. Afrobeats Night Live" value={d.title} onChangeText={(v) => set('title', v)} maxLength={120} error={errors.title} />
-          <View style={{ gap: space.sm }}>
-            <Txt variant="smallStrong" color={colors.muted}>
-              Category
-            </Txt>
-            <View style={styles.wrap}>
-              {CATEGORIES.map((c) => (
-                <Chip key={c} label={CATEGORY_NAME[c]} active={d.category === c} onPress={() => setD((p) => ({ ...p, category: c, cover: '' }))} />
-              ))}
-            </View>
+          <Section icon="sparkle" title="Name your event" sub="The first thing fans see, on cards and in search.">
+            <Field
+              label="Event name"
+              placeholder="e.g. Afrobeats Night Live"
+              value={d.title}
+              onChangeText={(v) => set('title', v)}
+              maxLength={120}
+              error={errors.title}
+              inputStyle={styles.titleInput}
+            />
+            <Field label="Tagline (optional)" placeholder="One line under the name" value={d.subtitle} onChangeText={(v) => set('subtitle', v)} maxLength={120} />
+          </Section>
+
+          <Section icon="tag" title="Category" sub="Where fans will find it when they browse.">
+            <CategoryGrid value={d.category} onPick={(c) => setD((p) => ({ ...p, category: c, cover: '' }))} />
             {errors.category ? (
               <Txt variant="small" color={colors.accentHi}>
                 {errors.category}
               </Txt>
             ) : null}
-          </View>
-          <Field label="Tagline (optional)" placeholder="One line under the name" value={d.subtitle} onChangeText={(v) => set('subtitle', v)} maxLength={120} />
-          <Field label="Description" placeholder="Who’s on, what to expect, what’s included…" value={d.description} onChangeText={(v) => set('description', v)} multiline textAlignVertical="top" maxLength={5000} error={errors.description} hint={`${d.description.trim().length} characters`} />
+          </Section>
+
+          <Section icon="file" title="About the event" sub="Who’s on, what to expect, what’s included. Drag the handle to make the box bigger.">
+            <TextArea
+              label="Description"
+              placeholder="Tell people why they shouldn’t miss it…"
+              value={d.description}
+              onChangeText={(v) => set('description', v)}
+              maxLength={5000}
+              error={errors.description}
+              hint={d.description.trim().length < 20 ? 'At least 20 characters.' : undefined}
+            />
+          </Section>
         </>
       ) : null}
 
@@ -356,30 +349,7 @@ export default function CreateEvent() {
             </View>
           </View>
           {d.format === 'venue' ? (
-            <>
-              <Pick label="Country" value={d.country ? countryName(d.country) : ''} placeholder="Choose the country" error={errors.country} onPress={() => setSheet('country')} />
-              <Field label="Venue name" placeholder="e.g. Eko Convention Centre" value={d.venue} onChangeText={(v) => set('venue', v)} maxLength={120} error={errors.venue} />
-              <Field label="Street address" value={d.address} onChangeText={(v) => set('address', v)} maxLength={200} error={errors.address} />
-              <View style={styles.row2}>
-                <Field style={{ flex: 1 }} label="City" value={d.city} onChangeText={(v) => set('city', v)} maxLength={80} error={errors.city} />
-                <Field style={{ flex: 1 }} label="State (optional)" value={d.region} onChangeText={(v) => set('region', v)} maxLength={80} />
-              </View>
-              <Field label="Postal code (optional)" value={d.postalCode} onChangeText={(v) => set('postalCode', v)} maxLength={20} autoCapitalize="characters" />
-              {COUNTRY_ZONES[d.country] ? (
-                <Pick
-                  label="Time zone"
-                  value={COUNTRY_ZONES[d.country].find((z) => z.id === d.zone)?.label ?? ''}
-                  placeholder="Choose the venue’s time zone"
-                  error={errors.zone}
-                  hint="The times above are local to the venue."
-                  onPress={() => setSheet('zone')}
-                />
-              ) : (
-                <Txt variant="small" color={colors.dim}>
-                  Times are local to the venue.
-                </Txt>
-              )}
-            </>
+            <VenueFields value={d} onChange={patchPlace} errors={errors} />
           ) : (
             <>
               <Field label="Stream link" placeholder="https://" keyboardType="url" autoCapitalize="none" autoCorrect={false} value={d.link} onChangeText={(v) => set('link', v)} error={errors.link} hint="Only people with a ticket see it." />
@@ -483,11 +453,20 @@ export default function CreateEvent() {
               {errors.cover}
             </Txt>
           ) : null}
+          <Label>Your own photo</Label>
+          <CoverUpload
+            full={upload && d.cover === upload.url ? 'Upload a different photo' : undefined}
+            onUploaded={(c) => {
+              setUpload(c);
+              setCoverSet(false);
+              set('cover', c.url);
+            }}
+          />
           <Label>No photos yet? Pick one of ours</Label>
           <StockPicker category={d.category ? CATEGORY_NAME[d.category] : 'Concerts'} value={d.cover} onPick={(c) => set('cover', c)} />
-          <Notice tone="plain" icon="external" title="Your own photos">
-            Uploading your own photos and videos happens on the website for now. Save the event, then add them from its page there.
-          </Notice>
+          <Txt variant="small" color={colors.dim}>
+            More photos and videos can be added from the event’s page on the website.
+          </Txt>
         </>
       ) : null}
 
@@ -530,22 +509,6 @@ export default function CreateEvent() {
         </>
       ) : null}
 
-      <OptionSheet<string>
-        visible={sheet === 'country'}
-        title="Country"
-        options={VENUE_COUNTRIES.map((c) => ({ value: c, label: countryName(c) }))}
-        value={d.country}
-        onPick={pickCountry}
-        onClose={() => setSheet('')}
-      />
-      <OptionSheet<string>
-        visible={sheet === 'zone'}
-        title="Time zone"
-        options={(COUNTRY_ZONES[d.country] ?? []).map((z) => ({ value: z.id, label: z.label, detail: z.id.split('/')[1]?.replace(/_/g, ' ') }))}
-        value={d.zone}
-        onPick={(z) => setD((p) => ({ ...p, zone: z, zonePicked: true }))}
-        onClose={() => setSheet('')}
-      />
     </OrgScreen>
   );
 }
@@ -556,38 +519,6 @@ const swap = <T,>(list: T[], i: number, j: number) => {
   [next[i], next[j]] = [next[j], next[i]];
   return next;
 };
-
-function Pick({ label, value, placeholder, error, hint, onPress }: { label: string; value: string; placeholder: string; error?: string; hint?: string; onPress: () => void }) {
-  return (
-    <View style={{ gap: 6 }}>
-      <Txt variant="smallStrong" color={colors.muted}>
-        {label}
-      </Txt>
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel={`${label}: ${value || 'not set'}`}
-        onPress={() => {
-          haptic.select();
-          onPress();
-        }}
-        style={({ pressed }) => [styles.pick, !!error && { borderColor: colors.accent }, pressed && { backgroundColor: colors.surface2 }]}>
-        <Txt color={value ? colors.text : colors.dim} style={{ flex: 1 }} numberOfLines={1}>
-          {value || placeholder}
-        </Txt>
-        <Icon name="chevronDown" size={18} color={colors.muted} />
-      </Pressable>
-      {error ? (
-        <Txt variant="small" color={colors.accentHi}>
-          {error}
-        </Txt>
-      ) : hint ? (
-        <Txt variant="small" color={colors.dim}>
-          {hint}
-        </Txt>
-      ) : null}
-    </View>
-  );
-}
 
 function Mini({ label, onPress, disabled, rotate, icon = 'chevronDown' }: { label: string; onPress: () => void; disabled?: boolean; rotate?: boolean; icon?: 'chevronDown' | 'trash' }) {
   return (
@@ -622,8 +553,74 @@ function ReviewLine({ icon, text, onEdit }: { icon: 'tag' | 'calendar' | 'pin' |
   );
 }
 
+/** A titled card that groups the fields of one part of the form. */
+function Section({ icon, title, sub, children }: { icon: IconName; title: string; sub?: string; children: ReactNode }) {
+  return (
+    <View style={styles.section}>
+      <View style={styles.sectionHead}>
+        <View style={styles.sectionIcon}>
+          <Icon name={icon} size={16} color={colors.accent} />
+        </View>
+        <View style={{ flex: 1, gap: 2 }}>
+          <Txt variant="title">{title}</Txt>
+          {sub ? (
+            <Txt variant="small" color={colors.muted}>
+              {sub}
+            </Txt>
+          ) : null}
+        </View>
+      </View>
+      {children}
+    </View>
+  );
+}
+
+/** Categories as an even three-column grid of tiles; the chosen one is filled with a check. */
+function CategoryGrid({ value, onPick }: { value: string; onPick: (c: (typeof CATEGORIES)[number]) => void }) {
+  const [w, setW] = useState(0);
+  const tile = w ? Math.floor((w - space.sm * 2) / 3) : 0;
+  return (
+    <View style={styles.grid} onLayout={(e) => setW(e.nativeEvent.layout.width)} accessibilityRole="radiogroup">
+      {tile
+        ? CATEGORIES.map((c) => {
+            const on = value === c;
+            return (
+              <Pressable
+                key={c}
+                accessibilityRole="radio"
+                accessibilityState={{ selected: on }}
+                accessibilityLabel={CATEGORY_NAME[c]}
+                onPress={() => {
+                  haptic.select();
+                  onPick(c);
+                }}
+                style={({ pressed }) => [styles.tile, { width: tile }, on && styles.tileOn, pressed && { transform: [{ scale: 0.97 }] }]}>
+                <Txt variant="smallStrong" color={on ? colors.accentInk : colors.text} numberOfLines={1}>
+                  {CATEGORY_NAME[c]}
+                </Txt>
+                {on ? (
+                  <View style={styles.tileCheck}>
+                    <Icon name="check" size={10} color={colors.accent} />
+                  </View>
+                ) : null}
+              </Pressable>
+            );
+          })
+        : null}
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
   progress: { flexDirection: 'row', gap: 6 },
+  section: { gap: space.lg, padding: space.lg, borderRadius: radius.card, borderWidth: 1, borderColor: colors.line, backgroundColor: colors.bg2 },
+  sectionHead: { flexDirection: 'row', alignItems: 'flex-start', gap: space.md },
+  sectionIcon: { width: 32, height: 32, borderRadius: 10, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.accentSoft, borderWidth: 1, borderColor: colors.accentLine },
+  titleInput: { fontFamily: font.display.bold, fontSize: 20, letterSpacing: -0.4, minHeight: 56 },
+  grid: { flexDirection: 'row', flexWrap: 'wrap', gap: space.sm },
+  tile: { height: 46, borderRadius: radius.md, borderWidth: 1, borderColor: colors.line2, backgroundColor: colors.surface, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 6 },
+  tileOn: { backgroundColor: colors.accent, borderColor: colors.accent, shadowColor: colors.accent, shadowOpacity: 0.45, shadowRadius: 10, shadowOffset: { width: 0, height: 4 } },
+  tileCheck: { position: 'absolute', top: 5, right: 5, width: 14, height: 14, borderRadius: 7, backgroundColor: colors.accentInk, alignItems: 'center', justifyContent: 'center' },
   dot: { flex: 1, height: 4, borderRadius: 2, backgroundColor: colors.surface2 },
   wrap: { flexDirection: 'row', flexWrap: 'wrap', gap: space.sm },
   row2: { flexDirection: 'row', gap: space.md },

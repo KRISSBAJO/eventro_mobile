@@ -92,11 +92,20 @@ and sales (no payouts, team changes or cancelling), door staff only the door lis
   name typed again; a last confirm sheet repeats the numbers).
 - **Edit** (`…/edit`) and **Create** (`organizer/create`, five steps, save as draft or submit): the website's
   endpoints and rules. Prices in Edit are what fans pay (all-in) and are converted back with the fee mode; times
-  are the venue's wall-clock time stored as UTC. Countries with several time zones (US, CA, AU) ask for one. The
-  venue can't be changed (support does it, as on the website). Covers come from the website's free stock photos
-  (`src/lib/stock-covers.ts`, same Unsplash ids; picker in `src/components/stock-picker.tsx`); there is no image
-  picker installed, so uploads stay on the website. Dates and times use small built-in sheets
+  are the venue's wall-clock time stored as UTC. Countries with several time zones (US, CA, AU) ask for one, filled
+  in from the state ("Texas" → Central) unless the organizer picked one. Dates and times use small built-in sheets
   (`src/components/date-time.tsx`), not a native picker.
+- **Change venue** (`…/venue`, from Edit): the create flow's where-step fields (`src/components/venue-fields.tsx`)
+  and `PUT /organizer/events/:id/venue`. Times keep their value in the new venue's zone, so the screen says
+  "Times stay 8:00 PM, now in Central time" before and after saving; on a published event with sales the confirm
+  sheet says every ticket holder is emailed. Online, cancelled and ended events can't move.
+- **Cover photos**: "Upload a photo" in Create's cover step and in Edit (`src/components/cover-upload.tsx`,
+  `src/lib/media-upload.ts`) picks a photo with `expo-image-picker` (cropped to 16:9 where the phone can crop; a file
+  chooser in the web build), checks it against `GET /media/config` (JPG, PNG, WebP or HEIC, up to 15 MB), uploads it
+  through the website's endpoints with progress (`POST /media/uploads`, then the file to the API or a signed bucket
+  URL, then `…/complete`) and makes it the cover with `PUT /organizer/events/:id/media` (first item = cover, which
+  sets `imageUrl`). Refused photo access (with a way to Settings), cancelled picks, wrong types, big files and failed
+  uploads each get a clear message. The website's free stock photos (`src/lib/stock-covers.ts`) are still there.
 - **Payouts** (`organizer/payouts`, admins, read-only) and **Team** (`organizer/team`: invite with a role, change
   role, remove with the confirm sheet). The app never asks for bank details.
 - **Sell tickets** (`organizer/start`): accounts without an organization create one (the name, as on the website).
