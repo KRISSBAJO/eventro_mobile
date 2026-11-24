@@ -2,8 +2,10 @@
 import Constants from 'expo-constants';
 import { router } from 'expo-router';
 import * as WebBrowser from 'expo-web-browser';
-import { Alert, Platform, ScrollView, StyleSheet, View } from 'react-native';
+import { ScrollView, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useState } from 'react';
+import { useConfirm } from '@/components/confirm';
 import { LogoMark } from '@/components/icons';
 import { Badge, Button, Divider, Notice, Row, Txt } from '@/components/ui';
 import { WEB_URL } from '@/lib/api';
@@ -25,23 +27,24 @@ export default function Account() {
   const orgs = useMyOrgs(user?.id);
   const { place } = usePlace();
   const health = useHealth();
+  const ask = useConfirm();
+  const [signingOut, setSigningOut] = useState(false);
 
+  // An in-app sheet, not Alert/window.confirm: the web build's confirm can be blocked (it then returns false at
+  // once, and Sign out did nothing).
   const confirmSignOut = async () => {
-    const go = () => {
-      haptic.firm();
-      void signOut();
-    };
     // Door scans made offline and not synced yet are deleted with everything else this phone kept.
-    const pending = await pendingDoorScans();
+    const pending = await pendingDoorScans().catch(() => 0);
     const warn = pending ? ` ${pending} door scan${pending === 1 ? '' : 's'} on this phone haven’t synced yet and will be lost.` : '';
-    if (Platform.OS === 'web') {
-      if (globalThis.confirm?.(`Sign out of Eventro on this device?${warn}`) ?? true) go();
-      return;
+    const yes = await ask({ title: 'Sign out?', message: `Your tickets stay in your account. Sign in again to see them here.${warn}`, confirmLabel: 'Sign out', destructive: true });
+    if (!yes) return;
+    haptic.firm();
+    setSigningOut(true);
+    try {
+      await signOut();
+    } finally {
+      setSigningOut(false);
     }
-    Alert.alert('Sign out?', `Your tickets stay in your account. Sign in again to see them here.${warn}`, [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Sign out', style: 'destructive', onPress: go },
-    ]);
   };
 
   const initials = (user?.name ?? '')
@@ -102,8 +105,12 @@ export default function Account() {
           <>
             <Row icon="ticket" label="My tickets" onPress={() => router.navigate('/tickets')} />
             <Divider style={{ marginLeft: 62 }} />
+            <Row icon="receipt" label="Orders & receipts" onPress={() => router.push('/orders')} />
+            <Divider style={{ marginLeft: 62 }} />
           </>
         ) : null}
+        <Row icon="heart" label="Saved events" onPress={() => router.push('/saved')} />
+        <Divider style={{ marginLeft: 62 }} />
         <Row icon="pin" label="Location" detail={placeLabel(place)} onPress={() => router.push('/place')} />
         {user ? (
           <>
@@ -141,7 +148,7 @@ export default function Account() {
 
       {user ? (
         <View style={styles.group}>
-          <Row icon="logout" label="Sign out" tone="accent" onPress={() => void confirmSignOut()} />
+          <Row icon="logout" label={signingOut ? 'Signing out…' : 'Sign out'} tone="accent" onPress={() => void (signingOut ? undefined : confirmSignOut())} />
         </View>
       ) : null}
 

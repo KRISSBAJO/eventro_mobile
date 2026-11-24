@@ -55,7 +55,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     await Promise.all([writeSecret(SESSION, null), writeSecret(LEGACY_TOKEN, null), writeSecret(USER, null), forgetPushToken()]);
     // Saved tickets (with QR seeds), door packs and queued scans, then the older plain caches.
     await resetVault();
-    await Promise.all([clearJson('qr-'), clearJson('tickets-')]);
+    await Promise.all([clearJson('qr-'), clearJson('tickets-'), clearJson('price-watch')]);
     qc.removeQueries({ queryKey: ['me'] });
     qc.removeQueries({ queryKey: ['organizer'] });
   }, [qc]);

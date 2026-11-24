@@ -13,7 +13,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Alert, Platform, Pressable, ScrollView, StyleSheet, useWindowDimensions, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { DoorCamera, HAS_CAMERA } from '@/components/door-camera';
 import { Icon, type IconName } from '@/components/icons';
@@ -44,6 +44,7 @@ import {
 import { localStamp, when } from '@/lib/format';
 import { haptic } from '@/lib/haptics';
 import { useDoorEvents } from '@/lib/queries';
+import { useConfirm } from '@/components/confirm';
 import type { Attendee, CheckInAnswer } from '@/lib/types';
 import { colors, font, gutter, radius, space } from '@/theme';
 
@@ -55,18 +56,12 @@ const TONE: Record<Verdict['tone'], { bg: string; icon: IconName }> = {
   invalid: { bg: '#b8291d', icon: 'close' },
 };
 
-const confirmAsk = (title: string, body: string, ok: string, go: () => void) => {
-  if (Platform.OS === 'web') {
-    if (globalThis.confirm?.(`${title}\n\n${body}`) ?? true) go();
-    return;
-  }
-  Alert.alert(title, body, [
-    { text: 'Cancel', style: 'cancel' },
-    { text: ok, style: 'destructive', onPress: go },
-  ]);
-};
-
 export default function Door() {
+  const confirm = useConfirm();
+  const confirmAsk = (title: string, message: string, confirmLabel: string, go: () => void) =>
+    void confirm({ title, message, confirmLabel, destructive: true }).then((yes) => {
+      if (yes) go();
+    });
   const { eventId = '' } = useLocalSearchParams<{ eventId: string }>();
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();

@@ -48,6 +48,30 @@ development.
 - **Links**: `eventro://tickets/<id>`, `eventro://events/<slug>`, `eventro://gift/<token>`,
   `eventro://reset-password?token=…` (and the same paths on the web build).
 
+## Phase 3: fan parity
+
+- **Saved events** (`src/lib/saved.ts`): hearts on event cards and the event screen. Signed out they're kept on the
+  phone (with a copy of each card, so Account → Saved events works offline); signed in they live on the server
+  (`GET/PUT/DELETE /me/saved`), the same list as the website. At sign-in the phone's hearts are merged once
+  (`POST /me/saved/sync`) and forgotten here.
+- **Exact seats** (`src/app/seats/[slug].tsx`): for events with a seat map, "Choose seats" lists sections with places
+  left and the best seats together (`GET /events/:slug/availability`), then a row-by-row grid of finger-sized seats
+  (sold and held ones from `/sections/:id/seats`). The hold reserves exactly the seats picked (`POST /holds` with
+  `sectionId` and `seats`). "Skip the map" still holds the best seats together.
+- **Gifts at checkout** (`src/components/gift-option.tsx`): "This is a gift" sends `gift: { name, email, message?,
+  sendAt?, hidePrice? }` with the order. The delivery time is picked from day and time chips (no native date picker).
+- **Price-drop alerts** (`POST /events/:slug/price-watch`), a **swipeable gallery** of the event's photos and videos
+  (videos open mediaEX's player in the in-app browser: no video library is installed), and **share** with the
+  website link (`EXPO_PUBLIC_WEB_URL`).
+- **Venue, category and city pages** (`venue/[slug]`, `category/[category]`, `city/[city]`), from the event screen and
+  Discover; the lists reuse Search's query, date chips and sort. Venues have "Open in Maps" (Apple Maps on iOS, the
+  maps app on Android, Google Maps on the web). There is no in-app map: that needs a native maps library.
+- **Orders & receipts** (Account): `GET /me/orders`, a receipt per order and "Request a refund"
+  (`POST /orders/:id/refund-requests`), with the request's state.
+- **Confirmations** use an in-app sheet (`src/components/confirm.tsx`) instead of `Alert`/`window.confirm`. Embedded
+  browsers can block `window.confirm` (it returns false at once without showing anything), which is why Sign out
+  did nothing in the web preview.
+
 Camera scanning and push need a phone; camera works in Expo Go, remote push needs a development build
 (`npx expo run:android|ios` or `eas build --profile development`).
 
@@ -60,7 +84,8 @@ npx expo lint
 
 ## Layout
 
-- `src/app/` screens (Expo Router): tabs for Discover, Search, Tickets and Account; `event/[slug]`, `checkout/[holdId]`,
+- `src/app/` screens (Expo Router): tabs for Discover, Search, Tickets and Account; `event/[slug]`, `seats/[slug]`,
+  `checkout/[holdId]`, `saved`, `orders`, `order/[id]`, `venue/[slug]`, `category/[category]`, `city/[city]`,
   `ticket/[id]`, `transfer/[id]`, `sell/[id]`, `resale`, `gift/[token]`, `devices`, `notifications`, `organizer`,
   `door/[eventId]`, `place` and the sign-in screens; `tickets/[id]` and `events/[slug]` redirect website paths.
 - `src/lib/` API client, session, place, data hooks (React Query), formatting.

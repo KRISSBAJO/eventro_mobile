@@ -9,9 +9,9 @@ import { Rail } from '@/components/rail';
 import { Button, Chip, ErrorState, FadeIn, Notice, SectionHeader, Skeleton, Txt } from '@/components/ui';
 import { errorText, isOffline } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
-import { BROWSE_CATEGORIES, CATEGORY_NAME, countryName, distanceLabel, firstName, greeting } from '@/lib/format';
+import { BROWSE_CATEGORIES, CATEGORY_NAME, cityOnly, countryName, distanceLabel, firstName, flag, greeting } from '@/lib/format';
 import { haptic } from '@/lib/haptics';
-import { nearestCountry, placeLabel, placeShort, preciseLocation, rankNear, shortCity, usePlace } from '@/lib/place';
+import { nearestCountry, placeLabel, placeOptions, placeShort, preciseLocation, rankNear, shortCity, usePlace } from '@/lib/place';
 import { useAllEvents, useEventsBetween, useEventsNear, useTrendingEvents } from '@/lib/queries';
 import { colors, gutter, radius, space } from '@/theme';
 
@@ -92,6 +92,11 @@ export default function Discover() {
   };
 
   const browse = (params: Record<string, string>) => router.navigate({ pathname: '/search', params: { ...params, at: String(Date.now()) } });
+  // Cities with the most events on sale (the visitor's country first), for the city pages.
+  const cities = placeOptions(events)
+    .flatMap((c) => c.cities.map(([city, n]) => ({ city, country: c.code, n, home: c.code === place?.country })))
+    .sort((a, b) => Number(b.home) - Number(a.home) || b.n - a.n)
+    .slice(0, 10);
 
   return (
     <ScrollView
@@ -265,10 +270,29 @@ export default function Discover() {
         <SectionHeader eyebrow="Browse" title="What are you into?" />
         <View style={styles.cats}>
           {BROWSE_CATEGORIES.map((c) => (
-            <Chip key={c} label={CATEGORY_NAME[c]} onPress={() => browse({ category: c })} />
+            <Chip key={c} label={CATEGORY_NAME[c]} onPress={() => router.push({ pathname: '/category/[category]', params: { category: c } })} />
           ))}
         </View>
       </View>
+
+      {/* Cities */}
+      {cities.length > 1 ? (
+        <View style={{ marginTop: space.xxxl }}>
+          <View style={{ paddingHorizontal: gutter }}>
+            <SectionHeader eyebrow="Places" title="Browse by city" />
+          </View>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: space.sm, paddingHorizontal: gutter }}>
+            {cities.map((c) => (
+              <Chip
+                key={`${c.country}-${c.city}`}
+                label={`${flag(c.country)} ${cityOnly(c.city)} · ${c.n}`}
+                accessibilityLabel={`${cityOnly(c.city)}, ${c.n} events`}
+                onPress={() => router.push({ pathname: '/city/[city]', params: { city: c.city, country: c.country } })}
+              />
+            ))}
+          </ScrollView>
+        </View>
+      ) : null}
 
       {/* This weekend */}
       {weekend.isPending || (weekend.data?.items.length ?? 0) > 0 ? (

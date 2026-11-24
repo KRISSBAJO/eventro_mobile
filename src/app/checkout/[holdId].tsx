@@ -1,6 +1,6 @@
 /**
  * Checkout for a hold (POST /holds made on the event screen): held seats and countdown, contact details,
- * ticket protection and promo codes, the all-in total, then payment:
+ * ticket protection and promo codes, "This is a gift" (gift on POST /orders), the all-in total, then payment:
  *   mock      test mode: POST /orders, then POST /orders/:id/pay
  *   paystack  Paystack's page in an auth session (returnTo: 'app'): after paying, the website's return page confirms
  *             the payment and hands back to eventro://tickets, which closes the browser; then POST /orders/:id/verify
@@ -15,11 +15,12 @@ import { useEffect, useRef, useState } from 'react';
 import { AppState, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Switch, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Image } from 'expo-image';
+import { GiftOption, giftBody, giftErrors, NO_GIFT, type GiftDraft } from '@/components/gift-option';
 import { Icon } from '@/components/icons';
 import { Badge, Button, Card, EmptyState, ErrorState, Field, IconButton, Notice, Skeleton, Txt } from '@/components/ui';
 import { api, ApiError, errorText, WEB_URL } from '@/lib/api';
 import { emailOk, useAuth } from '@/lib/auth';
-import { money, PAYSTACK, when, zoneAbbr } from '@/lib/format';
+import { instantOf, localStamp, money, PAYSTACK, when, zoneAbbr } from '@/lib/format';
 import { haptic } from '@/lib/haptics';
 import { enablePush, markPushOffered, shouldOfferPush } from '@/lib/push';
 import { useHealth } from '@/lib/queries';
@@ -62,6 +63,8 @@ export default function Checkout() {
   const [email, setEmail] = useState(user?.email ?? '');
   const [submitted, setSubmitted] = useState(false);
   const [protection, setProtection] = useState(false);
+  const [gift, setGift] = useState<GiftDraft>(NO_GIFT);
+  const patchGift = (p: Partial<GiftDraft>) => setGift((g) => ({ ...g, ...p }));
   const [promoInput, setPromoInput] = useState('');
   const [promo, setPromo] = useState<string | null>(null);
   const [promoError, setPromoError] = useState('');
@@ -103,9 +106,12 @@ export default function Checkout() {
   const testMode = health.data?.payments === 'mock' || provider === 'mock';
   const errors = {
     name: name.trim().length < 2 ? 'Enter the name for the tickets.' : '',
-    email: !emailOk(email) ? 'Enter a valid email; your tickets go there.' : '',
+    email: !emailOk(email) ? (gift.on ? 'Enter a valid email; your receipt goes there.' : 'Enter a valid email; your tickets go there.') : '',
   };
-  const valid = !errors.name && !errors.email;
+  // Event times are the venue's wall-clock time; with its zone this is the real start, which a gift must beat.
+  const eventStart = h ? (h.event.timezone ? instantOf(h.event.startsAt, h.event.timezone) : new Date(h.event.startsAt)).getTime() : 0;
+  const giftErr = giftErrors(gift, email, eventStart, now);
+  const valid = !errors.name && !errors.email && !giftErr.name && !giftErr.email && !giftErr.at;
 
   const applyPromo = async () => {
     const code = promoInput.trim().toUpperCase();
@@ -211,6 +217,7 @@ export default function Checkout() {
             name: name.trim(),
             protection,
             ...(promo ? { promoCode: promo } : {}),
+            ...giftBody(gift),
             // Paystack sends the fan back to the website; with this, the website hands them back to the app.
             ...(NATIVE && provider === 'paystack' ? { returnTo: 'app' } : {}),
           },
@@ -357,7 +364,7 @@ export default function Checkout() {
           </Txt>
           <Txt variant="bodyStrong">{seatLine}</Txt>
           <Txt variant="small" color={colors.dim}>
-            {h.seats.some((s) => s.seat) ? 'Side by side, the best available right now.' : 'Standing or general admission: no seat numbers.'}
+            {!h.seats.some((s) => s.seat) ? 'Standing or general admission: no seat numbers.' : together(h) ? 'Side by side, held for you.' : 'The seats you picked, held for you.'}
           </Txt>
         </Card>
 
@@ -382,10 +389,18 @@ export default function Checkout() {
             autoCapitalize="none"
             autoCorrect={false}
             error={submitted ? errors.email : ''}
-            hint="Your tickets and receipt go here."
+            hint={gift.on ? 'Your receipt goes here. You can manage the gift from My tickets.' : 'Your tickets and receipt go here.'}
             editable={!order}
           />
         </View>
+
+        {/* Gift */}
+        {!order ? <GiftOption gift={gift} patch={patchGift} errors={giftErr} show={submitted} eventStart={eventStart} now={now} /> : null}
+        {provider === 'stripe' && !stripeSheetAvailable && gift.on ? (
+          <Notice tone="warning" icon="gift">
+            Card payments finish on the Eventro website: turn on “This is a gift” there too.
+          </Notice>
+        ) : null}
 
         {/* Protection + promo */}
         {!order ? (
@@ -520,12 +535,21 @@ export default function Checkout() {
   );
 }
 
+/** One row, seat numbers in a run. */
+function together(h: Hold) {
+  const s = [...h.seats].sort((a, b) => (a.seat ?? 0) - (b.seat ?? 0));
+  return s.every((x, i) => x.row === s[0].row && (i === 0 || x.seat === (s[i - 1].seat ?? 0) + 1));
+}
+
 function seatText(h: Hold) {
   const section = h.section ? [h.section.level, h.section.label].filter(Boolean).join(' ') : null;
   const first = h.seats[0];
-  if (first?.row && h.seats.every((s) => s.seat)) {
-    const seats = h.seats.map((s) => s.seat).join(', ');
-    return [section ? `Section ${section}` : null, `Row ${first.row}`, `Seat${h.seats.length > 1 ? 's' : ''} ${seats}`].filter(Boolean).join(' · ');
+  if (first?.row && h.seats.every((s) => s.row && s.seat)) {
+    // Picked seats can be in different rows: "Row C · Seats 7, 8" or "Seats C8, D7".
+    const sameRow = h.seats.every((s) => s.row === first.row);
+    const sorted = [...h.seats].sort((a, b) => a.row!.localeCompare(b.row!) || a.seat! - b.seat!);
+    const seats = sameRow ? sorted.map((s) => s.seat).join(', ') : sorted.map((s) => `${s.row}${s.seat}`).join(', ');
+    return [section ? `Section ${section}` : null, sameRow ? `Row ${first.row}` : null, `Seat${h.seats.length > 1 ? 's' : ''} ${seats}`].filter(Boolean).join(' · ');
   }
   return section ? `${section} · General admission` : 'General admission';
 }
@@ -605,6 +629,8 @@ function PushOffer() {
 function Success({ order, hold, testMode, signedIn }: { order: Order; hold: Hold; testMode: boolean; signedIn: boolean }) {
   const insets = useSafeAreaInsets();
   const d = when(order.event.startsAt);
+  // Delivery runs right after payment, so a gift that's due now is on its way; read once so rendering stays pure.
+  const [scheduled] = useState(() => !!order.gift && new Date(order.gift.sendAt).getTime() > Date.now() + 60_000);
   return (
     <ScrollView style={{ flex: 1, backgroundColor: colors.bg }} contentContainerStyle={{ padding: gutter, paddingTop: insets.top + space.xxxl, paddingBottom: insets.bottom + space.xxxl, gap: space.lg }}>
       <View style={{ alignItems: 'center', gap: space.md }}>
@@ -619,6 +645,12 @@ function Success({ order, hold, testMode, signedIn }: { order: Order; hold: Hold
         </Txt>
         {testMode ? <Badge label="Test order · nothing was charged" tone="success" style={{ alignSelf: 'center' }} /> : null}
       </View>
+
+      {order.gift ? (
+        <Notice tone="success" icon="gift" title={scheduled ? `Gift scheduled for ${localStamp(new Date(order.gift.sendAt).getTime())}` : `Gift on its way to ${order.gift.recipientName.split(' ')[0]}`}>
+          {`We’ll email ${order.gift.recipientEmail} a private link to open it. The tickets stay held until they do. Manage it from My tickets.`}
+        </Notice>
+      ) : null}
 
       <Card style={{ gap: space.md }}>
         <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>

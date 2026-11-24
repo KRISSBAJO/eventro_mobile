@@ -1,16 +1,24 @@
-/** An event: hero, when and where, about, ticket types with perks, quantity and a sticky "Get tickets" bar. */
+/**
+ * An event: hero (save and share), when and where (venue, category and city pages), gallery, about, ticket types with
+ * perks, a price-drop alert, quantity and a sticky "Get tickets" bar ("Choose seats" when the event has a seat map).
+ */
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useState, type ReactNode } from 'react';
-import { Linking, Platform, Pressable, ScrollView, Share, StyleSheet, View } from 'react-native';
+import { Platform, Pressable, ScrollView, Share, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Gallery } from '@/components/gallery';
+import { HeartButton } from '@/components/heart';
 import { Icon } from '@/components/icons';
+import { PriceAlert } from '@/components/price-alert';
 import { Badge, Button, EmptyState, ErrorState, FadeIn, IconButton, Notice, Skeleton, Stepper, Txt } from '@/components/ui';
 import { api, ApiError, errorText, WEB_URL } from '@/lib/api';
-import { CATEGORY_NAME, isPast, localTimeText, money, when, zoneAbbr } from '@/lib/format';
+import { CATEGORY_NAME, cityOnly, isPast, localTimeText, money, when, zoneAbbr } from '@/lib/format';
 import { haptic } from '@/lib/haptics';
+import { openMaps } from '@/lib/maps';
 import { useEvent } from '@/lib/queries';
+import { cardOf } from '@/lib/saved';
 import type { EventDetail, HoldCreated, TicketType } from '@/lib/types';
 import { colors, gutter, radius, space } from '@/theme';
 
@@ -26,7 +34,12 @@ export default function EventScreen() {
   const topBar = (
     <View style={[styles.topBar, { top: insets.top + space.sm }]} pointerEvents="box-none">
       <IconButton icon="back" label="Back" glass onPress={back} />
-      {e ? <IconButton icon="share" label="Share this event" glass onPress={() => share(e)} /> : null}
+      {e ? (
+        <View style={{ flexDirection: 'row', gap: space.sm }}>
+          {e.status !== 'CANCELLED' ? <HeartButton card={cardOf(e)} glass size={44} /> : null}
+          <IconButton icon="share" label="Share this event" glass onPress={() => share(e)} />
+        </View>
+      ) : null}
     </View>
   );
 
@@ -67,24 +80,6 @@ function share(e: EventDetail) {
   Share.share(Platform.OS === 'ios' ? { message: `${e.title} on Eventro`, url } : { message: `${e.title} on Eventro: ${url}` }).catch(() => undefined);
 }
 
-function openMaps(e: EventDetail) {
-  const v = e.venue;
-  if (!v) return;
-  haptic.tap();
-  const label = [v.name, v.address, v.city].filter(Boolean).join(', ');
-  const hasPoint = v.lat !== null && v.lng !== null;
-  const google = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(hasPoint ? `${v.lat},${v.lng}` : label)}`;
-  const url =
-    Platform.OS === 'ios'
-      ? `https://maps.apple.com/?q=${encodeURIComponent(v.name)}${hasPoint ? `&ll=${v.lat},${v.lng}` : `&address=${encodeURIComponent(label)}`}`
-      : Platform.OS === 'android'
-        ? hasPoint
-          ? `geo:${v.lat},${v.lng}?q=${v.lat},${v.lng}(${encodeURIComponent(v.name)})`
-          : `geo:0,0?q=${encodeURIComponent(label)}`
-        : google;
-  Linking.openURL(url).catch(() => Linking.openURL(google).catch(() => undefined));
-}
-
 function EventBody({ e, topBar, refetch }: { e: EventDetail; topBar: ReactNode; refetch: () => void }) {
   const insets = useSafeAreaInsets();
   const d = when(e.startsAt);
@@ -107,7 +102,8 @@ function EventBody({ e, topBar, refetch }: { e: EventDetail; topBar: ReactNode; 
   const [solid, setSolid] = useState(false);
   const total = (tier?.priceCents ?? 0) * qty;
   const lowest = types.length ? Math.min(...types.map((t) => t.priceCents)) : e.fromCents;
-  const images = e.media.filter((m) => m.kind === 'image' && m.url);
+  const seatMap = !!e.seatMap?.sections.length;
+  const city = e.venue?.city ?? null;
 
   const getTickets = async () => {
     if (!tier) return;
@@ -153,7 +149,9 @@ function EventBody({ e, topBar, refetch }: { e: EventDetail; topBar: ReactNode; 
 
         <FadeIn style={{ paddingHorizontal: gutter, marginTop: -72, gap: space.sm }}>
           <View style={{ flexDirection: 'row', gap: space.sm, flexWrap: 'wrap' }}>
-            <Badge label={CATEGORY_NAME[e.category] ?? e.category} tone="glass" />
+            <Pressable accessibilityRole="link" accessibilityLabel={`More ${CATEGORY_NAME[e.category] ?? e.category} events`} onPress={() => router.push({ pathname: '/category/[category]', params: { category: e.category } })} hitSlop={6}>
+              <Badge label={CATEGORY_NAME[e.category] ?? e.category} tone="glass" />
+            </Pressable>
             {cancelled ? <Badge label="Cancelled" tone="accent" /> : null}
             {e.online ? <Badge label="Online" tone="glass" /> : null}
           </View>
@@ -180,10 +178,17 @@ function EventBody({ e, topBar, refetch }: { e: EventDetail; topBar: ReactNode; 
                 icon="pin"
                 title={e.venue.name}
                 lines={[[e.venue.address, e.venue.address?.includes(e.venue.city ?? '') ? null : e.venue.city].filter(Boolean).join(', ')]}
-                action={{ label: 'Open in Maps', onPress: () => openMaps(e) }}
+                action={{ label: 'Open in Maps', onPress: () => e.venue && openMaps(e.venue) }}
+                onTitle={() => router.push({ pathname: '/venue/[slug]', params: { slug: e.venue!.slug } })}
               />
             ) : null}
           </View>
+
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: space.sm }}>
+            {e.venue ? <LinkChip icon="building" label={e.venue.name} onPress={() => router.push({ pathname: '/venue/[slug]', params: { slug: e.venue!.slug } })} /> : null}
+            {city ? <LinkChip icon="pin" label={`What’s on in ${cityOnly(city)}`} onPress={() => router.push({ pathname: '/city/[city]', params: { city, ...(e.venue?.country ? { country: e.venue.country } : {}) } })} /> : null}
+            <LinkChip icon="sparkle" label={`More ${(CATEGORY_NAME[e.category] ?? e.category).toLowerCase()}`} onPress={() => router.push({ pathname: '/category/[category]', params: { category: e.category } })} />
+          </ScrollView>
 
           {e.description ? (
             <View style={{ gap: space.sm, marginTop: space.lg }}>
@@ -207,12 +212,10 @@ function EventBody({ e, topBar, refetch }: { e: EventDetail; topBar: ReactNode; 
           ) : null}
         </View>
 
-        {images.length > 1 ? (
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: gutter, gap: space.md, marginTop: space.xl }}>
-            {images.map((m) => (
-              <Image key={m.id} source={{ uri: m.thumbUrl ?? m.url }} style={styles.thumb} contentFit="cover" accessibilityLabel={m.alt || 'Event photo'} />
-            ))}
-          </ScrollView>
+        {e.media.length ? (
+          <View style={{ marginTop: space.xl }}>
+            <Gallery media={e.media} title={e.title} />
+          </View>
         ) : null}
 
         {!cancelled && !ended && types.length ? (
@@ -239,8 +242,16 @@ function EventBody({ e, topBar, refetch }: { e: EventDetail; topBar: ReactNode; 
                 <Stepper value={qty} max={max} onChange={setQty} label="Number of tickets" />
               </View>
             ) : null}
+            {onSale && seatMap ? (
+              <Pressable accessibilityRole="button" onPress={getTickets} disabled={busy} hitSlop={8} style={{ alignSelf: 'flex-start' }}>
+                <Txt variant="smallStrong" color={colors.accent}>
+                  {busy ? 'Holding…' : 'Skip the map: hold the best seats together'}
+                </Txt>
+              </Pressable>
+            ) : null}
+            {!cancelled && !ended ? <PriceAlert slug={e.slug} /> : null}
             <View style={styles.trust}>
-              {['Covered by the Eventro Guarantee', 'Instant mobile delivery', e.seatMap ? 'Seats side by side, picked for you' : 'Prices include all fees'].map((s) => (
+              {['Covered by the Eventro Guarantee', 'Instant mobile delivery', seatMap ? 'Pick your exact seats, or let us find the best together' : 'Prices include all fees'].map((s) => (
                 <View key={s} style={{ flexDirection: 'row', gap: space.sm, alignItems: 'center' }}>
                   <Icon name="check" size={15} color={colors.success} />
                   <Txt variant="small" color={colors.muted}>
@@ -272,13 +283,24 @@ function EventBody({ e, topBar, refetch }: { e: EventDetail; topBar: ReactNode; 
                 </Txt>
               </Txt>
             </View>
-            <Button label={busy ? 'Holding…' : tier.available === 0 ? 'Sold out' : 'Get tickets'} loading={busy} disabled={tier.available === 0} onPress={getTickets} style={{ minWidth: 140 }} feedback="firm" />
+            {seatMap ? (
+              <Button
+                label={tier.available === 0 ? 'Sold out' : 'Choose seats'}
+                icon="seat"
+                disabled={tier.available === 0 || busy}
+                onPress={() => router.push({ pathname: '/seats/[slug]', params: { slug: e.slug, tier: tier.id, qty: String(qty) } })}
+                style={{ minWidth: 140 }}
+                feedback="firm"
+              />
+            ) : (
+              <Button label={busy ? 'Holding…' : tier.available === 0 ? 'Sold out' : 'Get tickets'} loading={busy} disabled={tier.available === 0} onPress={getTickets} style={{ minWidth: 140 }} feedback="firm" />
+            )}
           </View>
         </View>
       ) : null}
       {solid ? (
         <View style={[styles.topFill, { height: insets.top + 60 }]}>
-          <Txt variant="title" numberOfLines={1} style={{ maxWidth: '60%' }}>
+          <Txt variant="title" numberOfLines={1} style={{ alignSelf: 'stretch', textAlign: 'center', marginLeft: 64, marginRight: 116 }}>
             {e.title}
           </Txt>
         </View>
@@ -288,14 +310,41 @@ function EventBody({ e, topBar, refetch }: { e: EventDetail; topBar: ReactNode; 
   );
 }
 
-function InfoRow({ icon, title, lines, action }: { icon: 'calendar' | 'pin' | 'stream'; title: string; lines: (string | null)[]; action?: { label: string; onPress: () => void } }) {
+function LinkChip({ icon, label, onPress }: { icon: 'building' | 'pin' | 'sparkle'; label: string; onPress: () => void }) {
+  return (
+    <Pressable
+      accessibilityRole="link"
+      onPress={() => {
+        haptic.select();
+        onPress();
+      }}
+      style={({ pressed }) => [styles.linkChip, pressed && { backgroundColor: colors.surface2 }]}>
+      <Icon name={icon} size={14} color={colors.accent} />
+      <Txt variant="smallStrong" numberOfLines={1} style={{ maxWidth: 200 }}>
+        {label}
+      </Txt>
+      <Icon name="chevronRight" size={13} color={colors.dim} />
+    </Pressable>
+  );
+}
+
+function InfoRow({ icon, title, lines, action, onTitle }: { icon: 'calendar' | 'pin' | 'stream'; title: string; lines: (string | null)[]; action?: { label: string; onPress: () => void }; onTitle?: () => void }) {
   return (
     <View style={{ flexDirection: 'row', gap: space.md, alignItems: 'flex-start' }}>
       <View style={styles.infoIcon}>
         <Icon name={icon} size={19} color={colors.accent} />
       </View>
       <View style={{ flex: 1, gap: 2 }}>
-        <Txt variant="bodyStrong">{title}</Txt>
+        {onTitle ? (
+          <Pressable accessibilityRole="link" accessibilityLabel={`${title}, venue page`} onPress={onTitle} hitSlop={6} style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+            <Txt variant="bodyStrong" style={{ flexShrink: 1 }}>
+              {title}
+            </Txt>
+            <Icon name="chevronRight" size={15} color={colors.muted} />
+          </Pressable>
+        ) : (
+          <Txt variant="bodyStrong">{title}</Txt>
+        )}
         {lines.filter(Boolean).map((l) => (
           <Txt key={l} variant="small" color={colors.muted}>
             {l}
@@ -383,7 +432,7 @@ const styles = StyleSheet.create({
   infoDivider: { height: StyleSheet.hairlineWidth, backgroundColor: colors.line2, marginLeft: 52 },
   infoIcon: { width: 40, height: 40, borderRadius: 12, backgroundColor: colors.accentSoft, alignItems: 'center', justifyContent: 'center' },
   mapLink: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 6, minHeight: 28, alignSelf: 'flex-start' },
-  thumb: { width: 160, height: 110, borderRadius: radius.md, backgroundColor: colors.surface2 },
+  linkChip: { flexDirection: 'row', alignItems: 'center', gap: 6, height: 36, paddingHorizontal: 12, borderRadius: radius.pill, borderWidth: 1, borderColor: colors.line2, backgroundColor: colors.surface },
   tier: { flexDirection: 'row', gap: space.md, alignItems: 'flex-start', padding: space.lg, borderRadius: radius.card, borderWidth: 1, borderColor: colors.line2, backgroundColor: colors.surface },
   tierOn: { borderColor: colors.accent, backgroundColor: 'rgba(255,77,61,0.06)' },
   radio: { width: 20, height: 20, borderRadius: 10, borderWidth: 2, borderColor: colors.line2, alignItems: 'center', justifyContent: 'center', marginTop: 1 },

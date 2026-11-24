@@ -70,6 +70,9 @@ export type MediaItem = {
   url?: string;
   thumbUrl?: string;
   posterUrl?: string;
+  /** videos: mediaEX's player page */
+  embedUrl?: string;
+  playbackUrl?: string;
 };
 
 export type Venue = {
@@ -110,8 +113,28 @@ export type EventDetail = {
   venue: Venue | null;
   ticketTypes: TicketType[];
   media: MediaItem[];
-  seatMap: { sections: { id: string; label: string; level?: string; ticketTypeId: string; seating: 'reserved' | 'ga' }[] } | null;
+  seatMap: { sections: MapSection[] } | null;
 };
+
+/** A seat map section (GET /events/:slug). Reserved sections are `rows` × `seatsPerRow`; rows are A, B, … Z, AA … */
+export type MapSection = {
+  id: string;
+  label: string;
+  level?: string;
+  ticketTypeId: string;
+  seating: 'reserved' | 'ga';
+  rows?: number;
+  seatsPerRow?: number;
+  capacity?: number;
+  /** places left */
+  available?: number;
+};
+
+/** GET /events/:slug/availability?qty= : places left per section and the seats a hold would get now */
+export type Availability = { qty: number; sections: { id: string; available: number; fits: boolean; row: string | null; seats: number[] }[] };
+
+/** GET /events/:slug/sections/:id/seats : seats sold or held, as "ROW:SEAT" */
+export type SectionSeats = { section: string; seating: 'reserved' | 'ga'; capacity: number; inUse: number; taken: string[] };
 
 export type SeatPick = { section: string; row: string | null; seat: number | null };
 
@@ -183,6 +206,65 @@ export type Order = {
   ticketType: { name: string };
   tickets: { id: string; section: string | null; row: string | null; seat: number | null; status: string; holderName: string }[];
   paymentStatus?: string;
+  createdAt?: string;
+  paidAt?: string | null;
+  refundedCents?: number;
+  gift?: { id: string; recipientName: string; recipientEmail: string; message: string | null; sendAt: string; sentAt: string | null; claimedAt: string | null } | null;
+  /** GET /orders/:id only (the buyer), newest first */
+  refundRequests?: RefundRequest[];
+};
+
+export type RefundRequestStatus = 'OPEN' | 'APPROVED' | 'PARTIAL' | 'DENIED';
+export type RefundRequest = { id: string; status: RefundRequestStatus; reason?: string; amountCents: number | null; createdAt: string; decidedAt: string | null };
+
+/** GET /me/orders rows, newest first */
+export type MyOrder = {
+  id: string;
+  status: Order['status'];
+  quantity: number;
+  unitCents: number;
+  subtotalCents: number;
+  protectionCents: number;
+  discountCents: number;
+  totalCents: number;
+  refundedCents: number;
+  promoCode: string | null;
+  currency: string;
+  provider: string;
+  createdAt: string;
+  paidAt: string | null;
+  resale: boolean;
+  event: { slug: string; title: string; startsAt: string; timezone: string | null; imageUrl: string | null; status: string; venue: { name: string; city: string | null } | null };
+  ticketType: { name: string };
+  gift: { recipientName: string; sendAt: string; sentAt: string | null; claimedAt: string | null } | null;
+  refundRequest: RefundRequest | null;
+};
+
+/** GET /me/saved */
+export type SavedEvents = { ids: string[]; slugs: string[]; items: EventCard[] };
+
+/** GET /venues/:slug */
+export type VenuePage = {
+  id: string;
+  slug: string;
+  name: string;
+  address: string;
+  city: string;
+  region: string | null;
+  country: string | null;
+  postalCode: string | null;
+  timezone: string | null;
+  lat: number | null;
+  lng: number | null;
+  capacity: number | null;
+  about: string | null;
+  imageUrl: string | null;
+  website: string | null;
+  phone: string | null;
+  verified: boolean;
+  eventsHosted: number;
+  layout: { sections: number; places: number } | null;
+  events: { slug: string; title: string; subtitle: string; startsAt: string; imageUrl: string | null; category: Category; currency: string; fromCents: number }[];
 };
 
 export type TicketStatus = 'ACTIVE' | 'TRANSFER_PENDING' | 'LISTED' | 'CHECKED_IN' | 'VOID';

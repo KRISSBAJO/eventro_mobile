@@ -53,15 +53,21 @@ const PATHS = {
   keyboard: ['M3 7h18v10H3z', 'M7 11h.01M11 11h.01M15 11h.01M7 14h10'],
   users: ['M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8ZM2 20a7 7 0 0 1 14 0', 'M16 3.5a4 4 0 0 1 0 7.5M18 14a6 6 0 0 1 4 6'],
   trash: ['M4 7h16M10 11v6M14 11v6', 'M6 7l1 13h10l1-13M9 7V4h6v3'],
+  heart: ['M12 20s-7.5-4.6-7.5-10.2A4.3 4.3 0 0 1 12 7.2a4.3 4.3 0 0 1 7.5 2.6C19.5 15.4 12 20 12 20Z'],
+  play: ['M8 5.5v13l10.5-6.5L8 5.5Z'],
+  receipt: ['M6 3h12v18l-3-2-3 2-3-2-3 2V3Z', 'M9 8h6M9 12h6M9 16h3'],
+  seat: ['M7 11V6a2 2 0 0 1 2-2h6a2 2 0 0 1 2 2v5', 'M5 11h14v5H5z', 'M7 16v4M17 16v4'],
+  building: ['M4 21V8l8-5 8 5v13', 'M9 21v-6h6v6', 'M9 10h.01M15 10h.01'],
 } as const;
 
 export type IconName = keyof typeof PATHS;
 
-export function Icon({ name, size = 22, color = colors.text, strokeWidth = 2 }: { name: IconName; size?: number; color?: string; strokeWidth?: number }) {
+/** `fill` paints the shape too (a saved heart, a play triangle). */
+export function Icon({ name, size = 22, color = colors.text, strokeWidth = 2, fill }: { name: IconName; size?: number; color?: string; strokeWidth?: number; fill?: string }) {
   return (
     <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
       {PATHS[name].map((d) => (
-        <Path key={d} d={d} stroke={color} strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round" />
+        <Path key={d} d={d} stroke={color} strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round" fill={fill ?? 'none'} />
       ))}
     </Svg>
   );

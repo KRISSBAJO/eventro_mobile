@@ -2,8 +2,9 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { router } from 'expo-router';
 import { useState } from 'react';
-import { Alert, Platform, RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
+import { RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useConfirm } from '@/components/confirm';
 import { Icon } from '@/components/icons';
 import { Badge, Button, EmptyState, ErrorState, IconButton, Notice, Skeleton, Txt } from '@/components/ui';
 import { api, errorText, getApiTokens } from '@/lib/api';
@@ -36,6 +37,7 @@ export default function Devices() {
   const [error, setError] = useState('');
   const [pulling, setPulling] = useState(false);
   const mine = getApiTokens()?.sessionId ?? null;
+  const ask = useConfirm();
 
   const revoke = async (s: DeviceSession) => {
     const isMe = s.current || s.id === mine;
@@ -62,14 +64,9 @@ export default function Devices() {
     const name = s.deviceName || 'this device';
     const isMe = s.current || s.id === mine;
     const text = isMe ? 'Sign out of Eventro on this phone?' : `Sign out ${name}? It will need the password to sign in again.`;
-    if (Platform.OS === 'web') {
-      if (globalThis.confirm?.(text) ?? true) void revoke(s);
-      return;
-    }
-    Alert.alert(isMe ? 'Sign out?' : 'Sign out that device?', text, [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Sign out', style: 'destructive', onPress: () => void revoke(s) },
-    ]);
+    void ask({ title: isMe ? 'Sign out?' : 'Sign out that device?', message: text, confirmLabel: 'Sign out', destructive: true }).then((yes) => {
+      if (yes) void revoke(s);
+    });
   };
 
   // This phone first, then the rest by when they were last used (the API's order).

@@ -7,6 +7,7 @@ import { haptic } from '@/lib/haptics';
 import { CATEGORY_NAME, cityOnly, distanceLabel, money, when } from '@/lib/format';
 import type { EventCard as Ev } from '@/lib/types';
 import { colors, radius, shadow, space } from '@/theme';
+import { HeartButton } from './heart';
 import { Icon } from './icons';
 import { Badge, Skeleton, Txt } from './ui';
 
@@ -41,7 +42,10 @@ export function LargeEventCard({ e, width = 280, distanceKm }: { e: Ev; width?: 
         <LinearGradient colors={[colors.fade0, colors.fade]} locations={[0.45, 1]} style={StyleSheet.absoluteFill} />
         <View style={styles.largeTop}>
           <DateTile iso={e.startsAt} />
-          <Badge label={CATEGORY_NAME[e.category] ?? e.category} tone="glass" />
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.sm }}>
+            <Badge label={CATEGORY_NAME[e.category] ?? e.category} tone="glass" />
+            <HeartButton card={e} glass size={34} />
+          </View>
         </View>
         <View style={styles.largeBottom}>
           <Txt variant="h3" numberOfLines={1}>
@@ -106,6 +110,9 @@ export function CompactEventCard({ e }: { e: Ev }) {
             ≈ {money(e.fromCentsIn.cents, e.fromCentsIn.currency)}
           </Txt>
         ) : null}
+      </View>
+      <View style={{ justifyContent: 'center' }}>
+        <HeartButton card={e} size={34} />
       </View>
     </Pressable>
   );
