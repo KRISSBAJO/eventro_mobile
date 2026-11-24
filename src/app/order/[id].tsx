@@ -8,6 +8,7 @@ import { useState } from 'react';
 import { KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ScreenHeader } from '@/components/screen-header';
+import { TierChip } from '@/components/tier-look';
 import { Badge, Button, Card, EmptyState, ErrorState, Field, Notice, Skeleton, Txt } from '@/components/ui';
 import { api, ApiError, errorText } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
@@ -78,6 +79,7 @@ function Receipt({ o }: { o: Order }) {
             {o.event.venue ? ` · ${[o.event.venue.name, o.event.venue.city].filter(Boolean).join(', ')}` : ''}
           </Txt>
         </Pressable>
+        <TierChip tier={o.ticketType} label={`${o.quantity} × ${o.ticketType.name}`} size="md" />
 
         <View style={styles.block}>
           {o.tickets.map((t, i) => (

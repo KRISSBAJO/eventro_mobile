@@ -13,6 +13,7 @@ import { haptic } from './haptics';
 import type { EventBooking } from './bookings';
 import type { Attendee, Category, MyOrg } from './types';
 import { colors } from '@/theme';
+import type { TierLook } from './tiers';
 
 /* ---------- roles ---------- */
 
@@ -44,6 +45,10 @@ export type OrgTicketType = {
   sortOrder: number;
   perks?: string[];
   badge?: string | null;
+  /** the organizer's pick of look; null = Auto (from the name) */
+  style?: TierLook | null;
+  /** the look fans see (style, else from the name) */
+  look?: TierLook;
 };
 
 /** GET /organizer/orgs/:orgId/events */

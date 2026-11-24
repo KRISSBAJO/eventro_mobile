@@ -6,6 +6,7 @@ import { FlatList, Pressable, RefreshControl, StyleSheet, View } from 'react-nat
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Icon } from '@/components/icons';
 import { ScreenHeader } from '@/components/screen-header';
+import { TierChip } from '@/components/tier-look';
 import { Badge, EmptyState, ErrorState, Skeleton, Txt } from '@/components/ui';
 import { errorText } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
@@ -91,9 +92,10 @@ function OrderRow({ o }: { o: MyOrder }) {
           {o.event.title}
         </Txt>
         <Txt variant="small" color={colors.muted} numberOfLines={1}>
-          {o.quantity} × {o.ticketType.name} · {d.short}
+          {o.quantity} {o.quantity === 1 ? 'ticket' : 'tickets'} · {d.short}
         </Txt>
-        <View style={{ flexDirection: 'row', gap: 6, flexWrap: 'wrap', marginTop: 2 }}>
+        <View style={{ flexDirection: 'row', gap: 6, flexWrap: 'wrap', alignItems: 'center', marginTop: 2 }}>
+          <TierChip tier={o.ticketType} />
           <Badge label={s.label} tone={s.tone} />
           {refund ? <Badge label={refund.short} tone={refund.tone} /> : null}
           {o.gift ? <Badge label="Gift" /> : null}

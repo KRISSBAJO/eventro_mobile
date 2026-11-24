@@ -14,12 +14,14 @@ import { useEffect, useRef, useState } from 'react';
 import { Animated, Easing, Platform, ScrollView, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Icon } from '@/components/icons';
+import { TierBadge, TierGlyph, TierSurface } from '@/components/tier-look';
 import { Button, EmptyState, IconButton, Notice, Skeleton, Txt } from '@/components/ui';
 import { api, ApiError, errorText } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { firstName, localStamp, money, when } from '@/lib/format';
 import { haptic } from '@/lib/haptics';
 import { useRefreshWallet } from '@/lib/queries';
+import { lookOf } from '@/lib/tiers';
 import type { Gift } from '@/lib/types';
 import { colors, gutter, radius, space } from '@/theme';
 
@@ -170,6 +172,7 @@ function Revealed({ gift, token, onStatus }: { gift: Gift; token: string; onStat
   const tickets = qty === 1 ? 'ticket' : `${qty} tickets`;
   const title = gift.event?.title ?? 'the event';
   const e = gift.event;
+  const look = lookOf(gift.ticketType);
 
   const add = async () => {
     setClaim({ kind: 'busy' });
@@ -214,10 +217,17 @@ function Revealed({ gift, token, onStatus }: { gift: Gift; token: string; onStat
       {e ? (
         <View style={styles.ticket}>
           {e.imageUrl ? <Image source={{ uri: e.imageUrl }} style={styles.ticketImage} contentFit="cover" /> : null}
+          {/* The tier's band, in its look */}
+          <TierSurface look={look} edge="top" style={{ borderWidth: 0 }}>
+            <View style={styles.band}>
+              <TierGlyph look={look} size={18} />
+              <Txt variant="title" color={look.ink} numberOfLines={1} style={{ flex: 1 }}>
+                {qty} × {gift.ticketType?.name ?? 'Ticket'}
+              </Txt>
+              {gift.ticketType?.badge ? <TierBadge label={gift.ticketType.badge} look={look} /> : null}
+            </View>
+          </TierSurface>
           <View style={{ padding: space.xl, gap: 4 }}>
-            <Txt variant="eyebrow" color={colors.inkMuted}>
-              {qty} × {gift.ticketType?.name ?? 'Ticket'}
-            </Txt>
             <Txt variant="h2" color={colors.ink}>
               {e.title}
             </Txt>
@@ -300,4 +310,5 @@ const styles = StyleSheet.create({
   doneIcon: { width: 72, height: 72, borderRadius: 22, borderWidth: 1, borderColor: colors.line2, backgroundColor: colors.surface, alignItems: 'center', justifyContent: 'center' },
   ticket: { width: '100%', borderRadius: radius.panel, overflow: 'hidden', backgroundColor: colors.paper },
   ticketImage: { width: '100%', height: 150, backgroundColor: '#ddd' },
+  band: { flexDirection: 'row', alignItems: 'center', gap: space.sm, paddingHorizontal: space.xl, paddingVertical: space.md },
 });

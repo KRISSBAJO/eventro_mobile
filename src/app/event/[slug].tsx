@@ -12,6 +12,7 @@ import { Gallery } from '@/components/gallery';
 import { HeartButton } from '@/components/heart';
 import { Icon } from '@/components/icons';
 import { PriceAlert } from '@/components/price-alert';
+import { TierBadge, TierGlyph, TierSurface } from '@/components/tier-look';
 import { Badge, Button, EmptyState, ErrorState, FadeIn, IconButton, Notice, Skeleton, Stepper, Txt } from '@/components/ui';
 import { api, ApiError, errorText, WEB_URL } from '@/lib/api';
 import { CATEGORY_NAME, cityOnly, isPast, localTimeText, money, when, zoneAbbr } from '@/lib/format';
@@ -19,6 +20,7 @@ import { haptic } from '@/lib/haptics';
 import { openMaps } from '@/lib/maps';
 import { useEvent } from '@/lib/queries';
 import { cardOf } from '@/lib/saved';
+import { lookOf } from '@/lib/tiers';
 import type { EventDetail, HoldCreated, TicketType } from '@/lib/types';
 import { colors, gutter, radius, space } from '@/theme';
 
@@ -363,64 +365,87 @@ function InfoRow({ icon, title, lines, action, onTitle }: { icon: 'calendar' | '
   );
 }
 
+/** A tier in its look: the gradient head (glyph, name, badge, price), then what's included. Premium looks glow. */
 function TierCard({ t, currency, on, disabled, onPress }: { t: TicketType; currency: string; on: boolean; disabled?: boolean; onPress: () => void }) {
   const [open, setOpen] = useState(false);
   const out = t.available === 0;
+  const look = lookOf(t);
   const perks = open ? t.perks : t.perks.slice(0, 3);
+  const glow = look.colors[look.colors.length - 1];
+  const hasBody = !!t.description || perks.length > 0 || out || t.available < 50;
   return (
     <Pressable
       accessibilityRole="radio"
       accessibilityState={{ checked: on, disabled: out || !!disabled }}
-      accessibilityLabel={`${t.name}, ${money(t.priceCents, currency)} each${out ? ', sold out' : t.available < 50 ? `, only ${t.available} left` : ''}`}
+      accessibilityLabel={`${t.name}${t.badge ? `, ${t.badge}` : ''}, ${money(t.priceCents, currency)} each${out ? ', sold out' : t.available < 50 ? `, only ${t.available} left` : ''}`}
       disabled={out || disabled}
       onPress={() => {
         haptic.select();
         onPress();
       }}
-      style={({ pressed }) => [styles.tier, on && !out && styles.tierOn, out && { opacity: 0.5 }, pressed && { transform: [{ scale: 0.99 }] }]}>
-      <View style={[styles.radio, on && !out && styles.radioOn]}>{on && !out ? <View style={styles.radioDot} /> : null}</View>
-      <View style={{ flex: 1, gap: 4 }}>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.sm, flexWrap: 'wrap' }}>
-          <Txt variant="title">{t.name}</Txt>
-          {t.badge ? <Badge label={t.badge} tone="accent" /> : null}
-        </View>
-        {t.description ? (
-          <Txt variant="small" color={colors.muted}>
-            {t.description}
-          </Txt>
-        ) : null}
-        {perks.length ? (
-          <View style={{ gap: 3, marginTop: 2 }}>
-            {perks.map((p) => (
-              <View key={p} style={{ flexDirection: 'row', gap: 6, alignItems: 'flex-start' }}>
-                <View style={{ marginTop: 2 }}>
-                  <Icon name="check" size={14} color={colors.accent} />
-                </View>
-                <Txt variant="small" color={colors.muted} style={{ flex: 1 }}>
-                  {p}
-                </Txt>
+      style={({ pressed }) => [
+        styles.tier,
+        look.premium && !out && { borderColor: `${glow}66`, shadowColor: glow, shadowOpacity: 0.3, shadowRadius: 14, shadowOffset: { width: 0, height: 6 }, elevation: 4 },
+        on && !out && styles.tierOn,
+        out && { opacity: 0.5 },
+        pressed && { transform: [{ scale: 0.99 }] },
+      ]}>
+      <View style={styles.tierClip}>
+        <TierSurface look={look} edge="top" style={styles.tierHead}>
+          <View style={styles.tierHeadRow}>
+            <View style={[styles.radio, { borderColor: look.inkSoft }]}>{on && !out ? <View style={[styles.radioDot, { backgroundColor: look.ink }]} /> : null}</View>
+            <TierGlyph look={look} size={18} />
+            <View style={{ flex: 1, gap: 4 }}>
+              <Txt variant="title" color={look.ink}>
+                {t.name}
+              </Txt>
+              {t.badge ? <TierBadge label={t.badge} look={look} /> : null}
+            </View>
+            <Txt variant="price" color={look.ink}>
+              {money(t.priceCents, currency)}
+            </Txt>
+          </View>
+        </TierSurface>
+        {hasBody ? (
+          <View style={styles.tierBody}>
+            {t.description ? (
+              <Txt variant="small" color={colors.muted}>
+                {t.description}
+              </Txt>
+            ) : null}
+            {perks.length ? (
+              <View style={{ gap: 3 }}>
+                {perks.map((p) => (
+                  <View key={p} style={{ flexDirection: 'row', gap: 6, alignItems: 'flex-start' }}>
+                    <View style={{ marginTop: 2 }}>
+                      <Icon name="check" size={14} color={look.premium ? look.colors[0] : colors.accent} />
+                    </View>
+                    <Txt variant="small" color={colors.muted} style={{ flex: 1 }}>
+                      {p}
+                    </Txt>
+                  </View>
+                ))}
+                {t.perks.length > 3 ? (
+                  <Pressable accessibilityRole="button" onPress={() => setOpen((o) => !o)} hitSlop={8}>
+                    <Txt variant="smallStrong" color={colors.accent}>
+                      {open ? 'Show less' : `+${t.perks.length - 3} more`}
+                    </Txt>
+                  </Pressable>
+                ) : null}
               </View>
-            ))}
-            {t.perks.length > 3 ? (
-              <Pressable accessibilityRole="button" onPress={() => setOpen((o) => !o)} hitSlop={8}>
-                <Txt variant="smallStrong" color={colors.accent}>
-                  {open ? 'Show less' : `+${t.perks.length - 3} more`}
-                </Txt>
-              </Pressable>
+            ) : null}
+            {out ? (
+              <Txt variant="smallStrong" color={colors.accent}>
+                Sold out
+              </Txt>
+            ) : t.available < 50 ? (
+              <Txt variant="smallStrong" color={colors.accent}>
+                Only {t.available} left
+              </Txt>
             ) : null}
           </View>
         ) : null}
-        {out ? (
-          <Txt variant="smallStrong" color={colors.accent}>
-            Sold out
-          </Txt>
-        ) : t.available < 50 ? (
-          <Txt variant="smallStrong" color={colors.accent}>
-            Only {t.available} left
-          </Txt>
-        ) : null}
       </View>
-      <Txt variant="price">{money(t.priceCents, currency)}</Txt>
     </Pressable>
   );
 }
@@ -433,10 +458,13 @@ const styles = StyleSheet.create({
   infoIcon: { width: 40, height: 40, borderRadius: 12, backgroundColor: colors.accentSoft, alignItems: 'center', justifyContent: 'center' },
   mapLink: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 6, minHeight: 28, alignSelf: 'flex-start' },
   linkChip: { flexDirection: 'row', alignItems: 'center', gap: 6, height: 36, paddingHorizontal: 12, borderRadius: radius.pill, borderWidth: 1, borderColor: colors.line2, backgroundColor: colors.surface },
-  tier: { flexDirection: 'row', gap: space.md, alignItems: 'flex-start', padding: space.lg, borderRadius: radius.card, borderWidth: 1, borderColor: colors.line2, backgroundColor: colors.surface },
-  tierOn: { borderColor: colors.accent, backgroundColor: 'rgba(255,77,61,0.06)' },
-  radio: { width: 20, height: 20, borderRadius: 10, borderWidth: 2, borderColor: colors.line2, alignItems: 'center', justifyContent: 'center', marginTop: 1 },
-  radioOn: { borderColor: colors.accent },
+  tier: { borderRadius: radius.card, borderWidth: 1, borderColor: colors.line2, backgroundColor: colors.surface },
+  tierOn: { borderColor: colors.accent, shadowColor: colors.accent, shadowOpacity: 0.5, shadowRadius: 12, shadowOffset: { width: 0, height: 0 } },
+  tierClip: { borderRadius: radius.card - 1, overflow: 'hidden' },
+  tierHead: { borderWidth: 0 },
+  tierHeadRow: { flexDirection: 'row', alignItems: 'center', gap: space.md, paddingVertical: space.md + 2, paddingHorizontal: space.lg },
+  tierBody: { gap: 6, paddingVertical: space.md, paddingHorizontal: space.lg },
+  radio: { width: 20, height: 20, borderRadius: 10, borderWidth: 2, borderColor: colors.line2, alignItems: 'center', justifyContent: 'center' },
   radioDot: { width: 10, height: 10, borderRadius: 5, backgroundColor: colors.accent },
   qtyRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: space.sm },
   trust: { gap: 6, paddingTop: space.md, borderTopWidth: 1, borderTopColor: colors.line, borderStyle: 'dashed' },

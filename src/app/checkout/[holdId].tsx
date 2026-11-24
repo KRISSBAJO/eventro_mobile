@@ -17,6 +17,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Image } from 'expo-image';
 import { GiftOption, giftBody, giftErrors, NO_GIFT, type GiftDraft } from '@/components/gift-option';
 import { Icon } from '@/components/icons';
+import { TierChip } from '@/components/tier-look';
 import { Badge, Button, Card, EmptyState, ErrorState, Field, IconButton, Notice, Skeleton, Txt } from '@/components/ui';
 import { api, ApiError, errorText, WEB_URL } from '@/lib/api';
 import { emailOk, useAuth } from '@/lib/auth';
@@ -356,6 +357,7 @@ export default function Checkout() {
                 {[h.event.venue.name, h.event.venue.city].filter(Boolean).join(', ')}
               </Txt>
             ) : null}
+            <TierChip tier={h.ticketType} style={{ marginTop: 4 }} />
           </View>
         </Card>
         <Card style={{ gap: space.sm }}>
@@ -461,6 +463,7 @@ export default function Checkout() {
           <Txt variant="h3" accessibilityRole="header">
             Order summary
           </Txt>
+          <TierChip tier={h.ticketType} label={`${h.quantity} × ${h.ticketType.name}`} size="md" />
           <Line label={`${h.quantity} × ${h.ticketType.name}`} value={money(totals?.subtotalCents ?? h.ticketType.priceCents * h.quantity, currency)} />
           {totals?.protectionCents ? <Line label="Ticket protection" value={money(totals.protectionCents, currency)} /> : null}
           {totals?.discountCents ? <Line label={`Promo ${totals.promo?.code ?? ''}`} value={`−${money(totals.discountCents, currency)}`} accent /> : null}
@@ -662,6 +665,7 @@ function Success({ order, hold, testMode, signedIn }: { order: Order; hold: Hold
           </Txt>
         </View>
         <Txt variant="title">{order.event.title}</Txt>
+        <TierChip tier={order.ticketType} label={`${order.quantity} × ${order.ticketType.name}`} />
         <Txt variant="small" color={colors.muted}>
           {d.date} · {d.time}
           {order.event.venue ? `\n${[order.event.venue.name, order.event.venue.city].filter(Boolean).join(', ')}` : ''}

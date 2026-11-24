@@ -7,6 +7,7 @@ import { Pressable, RefreshControl, ScrollView, StyleSheet, View } from 'react-n
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { CompactEventCard } from '@/components/event-card';
 import { Icon, type IconName } from '@/components/icons';
+import { TierChip } from '@/components/tier-look';
 import { Badge, Button, ErrorState, FadeIn, Notice, Skeleton, Txt } from '@/components/ui';
 import { api, errorText } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
@@ -496,10 +497,8 @@ function GroupCard({ g }: { g: TicketGroup }) {
             <View style={[styles.ticketIcon, s.key === 'ready' && { backgroundColor: colors.accentSoft }]}>
               <Icon name={s.key === 'ready' ? 'ticket' : s.key === 'gift' ? 'gift' : s.key === 'cancelled' ? 'alert' : 'ticket'} size={18} color={s.key === 'ready' ? colors.accent : colors.muted} />
             </View>
-            <View style={{ flex: 1, gap: 2 }}>
-              <Txt variant="bodyStrong" numberOfLines={1}>
-                {tk.ticketType.name}
-              </Txt>
+            <View style={{ flex: 1, gap: 4 }}>
+              <TierChip tier={tk.ticketType} />
               <Txt variant="small" color={colors.muted} numberOfLines={1}>
                 {seatLine(tk)}
               </Txt>

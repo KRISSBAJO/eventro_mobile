@@ -1,5 +1,9 @@
 /** Shapes of the API responses the app uses (see eventro-be/src). Money is in minor units of `currency`. */
 import type { VenueListing } from './bookings';
+import type { TierLook } from './tiers';
+
+/** What every ticket type sent to fans carries for its design: perks, badge, the organizer's pick and the resolved look. */
+export type TierFields = { perks?: string[]; badge?: string | null; style?: TierLook | null; look?: TierLook };
 
 export type Role = 'FAN' | 'ORGANIZER' | 'ADMIN';
 export type User = { id: string; email: string; name: string; roles: Role[] };
@@ -62,6 +66,10 @@ export type TicketType = {
   sortOrder: number;
   perks: string[];
   badge: string | null;
+  /** the organizer's pick; null = Auto */
+  style?: TierLook | null;
+  /** the look fans see (lib/tiers.ts lookOf falls back to the name when it's missing) */
+  look?: TierLook;
   available: number;
 };
 
@@ -151,7 +159,7 @@ export type Hold = {
   expiresAt: string;
   section: { id: string; label: string; level: string | null; seating: 'reserved' | 'ga' } | null;
   seats: SeatPick[];
-  ticketType: { id: string; name: string; description: string | null; priceCents: number };
+  ticketType: { id: string; name: string; description: string | null; priceCents: number } & TierFields;
   event: {
     slug: string;
     title: string;
@@ -205,7 +213,7 @@ export type Order = {
   totalCents: number;
   promoCode: string | null;
   event: { slug: string; title: string; startsAt: string; venue: { name: string; city: string | null } | null };
-  ticketType: { name: string };
+  ticketType: { name: string } & TierFields;
   tickets: { id: string; section: string | null; row: string | null; seat: number | null; status: string; holderName: string }[];
   paymentStatus?: string;
   createdAt?: string;
@@ -237,7 +245,7 @@ export type MyOrder = {
   paidAt: string | null;
   resale: boolean;
   event: { slug: string; title: string; startsAt: string; timezone: string | null; imageUrl: string | null; status: string; venue: { name: string; city: string | null } | null };
-  ticketType: { name: string };
+  ticketType: { name: string } & TierFields;
   gift: { recipientName: string; sendAt: string; sentAt: string | null; claimedAt: string | null } | null;
   refundRequest: RefundRequest | null;
 };
@@ -295,7 +303,7 @@ export type Ticket = {
   /** ACTIVE tickets only: base64url seed for making door codes offline (see door-code.ts) */
   qrSeed?: string;
   qrVersion?: number;
-  ticketType: { name: string; priceCents: number };
+  ticketType: { name: string; priceCents: number } & TierFields;
   order: {
     id: string;
     createdAt: string;
@@ -336,7 +344,7 @@ export type IncomingTransfer = {
   holderName: string;
   transferExpiresAt: string | null;
   event: { title: string; startsAt: string };
-  ticketType: { name: string };
+  ticketType: { name: string } & TierFields;
   /** Set when these tickets are a gift: accepting one claims the whole gift. */
   gift?: { id: string; from: string; message: string | null } | null;
 };
@@ -395,7 +403,7 @@ export type MyListing = {
 export type MyResale = { listings: MyListing[]; totals: { owedCents: number; paidCents: number } };
 
 /** GET /events/:slug/resale */
-export type EventResale = { enabled: boolean; listings: { id: string; priceCents: number; faceCents: number; currency: string; ticketType: { id: string; name: string } }[] };
+export type EventResale = { enabled: boolean; listings: { id: string; priceCents: number; faceCents: number; currency: string; ticketType: { id: string; name: string } & TierFields }[] };
 
 /** GET /gifts/:token (details only once delivered) */
 export type Gift = {
@@ -405,7 +413,7 @@ export type Gift = {
   sendAt: string;
   message?: string;
   event?: { slug: string; title: string; subtitle: string; startsAt: string; imageUrl: string | null; online: boolean; timezone: string | null; venue: { name: string; city: string | null } | null };
-  ticketType?: { name: string; perks: string[] };
+  ticketType?: { name: string; perks: string[] } & TierFields;
   quantity?: number;
   seats?: { section: string | null; sectionName: string | null; row: string | null; seat: number | null }[];
   totalCents?: number;

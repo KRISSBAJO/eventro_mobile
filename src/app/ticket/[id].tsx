@@ -16,6 +16,7 @@ import { CountdownRing } from '@/components/countdown-ring';
 import { Icon } from '@/components/icons';
 import { KeepAwake } from '@/components/keep-awake';
 import { QrCode } from '@/components/qr';
+import { TierBadge, TierGlyph, TierSurface } from '@/components/tier-look';
 import { Button, EmptyState, IconButton, Notice, Skeleton, Txt } from '@/components/ui';
 import { api, errorText, isOffline } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
@@ -26,6 +27,7 @@ import { useMyResale, useMyTickets, useRefreshWallet } from '@/lib/queries';
 import { blockedLine, blockers, breakdown, fmt, RESALE_FEE_PERMILLE, rulesOf, transferExpiry } from '@/lib/resale';
 import { readJson, writeJson } from '@/lib/storage';
 import { seatLine, ticketCurrency, ticketState } from '@/lib/tickets';
+import { lookOf } from '@/lib/tiers';
 import type { QrToken, Ticket } from '@/lib/types';
 import { colors, font, gutter, radius, space } from '@/theme';
 
@@ -118,6 +120,7 @@ function TicketCard({ t, offline, feePermille, userId }: { t: Ticket; offline: b
   const d = when(t.event.startsAt);
   const abbr = zoneAbbr(t.event.timezone, t.event.startsAt);
   const state = ticketState(t);
+  const look = lookOf(t.ticketType);
   const qrSize = Math.min(260, width - gutter * 2 - space.xxxl * 2);
   const live = state.key === 'ready';
   const [now] = useState(() => Date.now());
@@ -161,6 +164,23 @@ function TicketCard({ t, offline, feePermille, userId }: { t: Ticket; offline: b
   return (
     <View style={{ gap: space.md }}>
       <View style={styles.card}>
+        {/* The tier's band: its gradient, glyph and name. The QR below stays on a white panel, so it scans. */}
+        <TierSurface look={look} edge="top" style={styles.band}>
+          <View style={styles.bandRow} accessible accessibilityLabel={`${t.ticketType.name} ticket${t.ticketType.badge ? `, ${t.ticketType.badge}` : ''}`}>
+            <View style={[styles.bandGlyph, { backgroundColor: look.ink === '#ffffff' || look.ink === '#f7f2f2' ? 'rgba(255,255,255,0.16)' : 'rgba(255,255,255,0.42)' }]}>
+              <TierGlyph look={look} size={18} />
+            </View>
+            <View style={{ flex: 1, gap: 1 }}>
+              <Txt variant="eyebrow" color={look.inkSoft} style={{ fontSize: 10, lineHeight: 12 }}>
+                Admit one
+              </Txt>
+              <Txt variant="h3" color={look.ink} numberOfLines={1}>
+                {t.ticketType.name}
+              </Txt>
+            </View>
+            {t.ticketType.badge ? <TierBadge label={t.ticketType.badge} look={look} /> : null}
+          </View>
+        </TierSurface>
         <View style={styles.cardTop}>
           <Image source={t.event.imageUrl ? { uri: t.event.imageUrl } : null} style={styles.cardImage} contentFit="cover" />
           <View style={{ flex: 1, gap: 2 }}>
@@ -440,7 +460,10 @@ const styles = StyleSheet.create({
   pagerChip: { width: 40, height: 40, borderRadius: 20, borderWidth: 1, borderColor: colors.line2, alignItems: 'center', justifyContent: 'center' },
   pagerChipOn: { backgroundColor: colors.accent, borderColor: colors.accent },
   card: { backgroundColor: colors.paper, borderRadius: radius.panel, overflow: 'hidden', gap: space.lg },
-  cardTop: { flexDirection: 'row', gap: space.md, alignItems: 'center', padding: space.xl, paddingBottom: 0 },
+  cardTop: { flexDirection: 'row', gap: space.md, alignItems: 'center', paddingHorizontal: space.xl, paddingTop: 0 },
+  band: { borderWidth: 0 },
+  bandRow: { flexDirection: 'row', alignItems: 'center', gap: space.md, paddingHorizontal: space.xl, paddingVertical: space.md + 2 },
+  bandGlyph: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
   cardImage: { width: 64, height: 64, borderRadius: radius.md, backgroundColor: '#ddd' },
   perforation: { height: 24, justifyContent: 'center' },
   notch: { position: 'absolute', width: 24, height: 24, borderRadius: 12, backgroundColor: colors.bg },

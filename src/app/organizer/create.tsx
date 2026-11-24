@@ -8,6 +8,9 @@
  * photos; online events need their stream link; seat maps are designed on the website after saving. The venue fields
  * are shared with Change venue (components/venue-fields.tsx).
  *
+ * Tickets: preset tiles (as on the website) add a tier with suggested perks and badge, slotted in by rank; each tier
+ * has a perks checklist, an optional badge and a look (Auto from the name, or one of six), with a live mini ticket.
+ *
  * "Book a venue on Eventro" sits next to the organizer's own venue: search the venues taking bookings, request a
  * time there (POST …/venue-bookings, held for 48 hours), and the event is saved with `venueBookingId`, in the
  * venue's zone. It waits for the venue to confirm before it can be submitted (instant-book venues confirm at once),
@@ -28,6 +31,7 @@ import { CoverUpload } from '@/components/cover-upload';
 import { ChoiceRow, ChoiceTile, GradientButton, Section } from '@/components/form-ui';
 import { Label, OrgScreen, WebButton } from '@/components/org-ui';
 import { StockPicker } from '@/components/stock-picker';
+import { TierExtras, TierPresets } from '@/components/tier-editor';
 import { placeErrors, VenueFields, type VenuePlace } from '@/components/venue-fields';
 import { Button, Chip, EmptyState, Field, Notice, TextArea, Txt } from '@/components/ui';
 import { api, errorText } from '@/lib/api';
@@ -48,6 +52,7 @@ import { isLiveBooking, rangeLabel, useBooking, useOrgBookings, type Booking, ty
 import { useMyOrgs } from '@/lib/queries';
 import type { UploadedCover } from '@/lib/media-upload';
 import { defaultCover } from '@/lib/stock-covers';
+import { cleanPerks, presetIndex, type TierLook, type TierPreset } from '@/lib/tiers';
 import type { Category } from '@/lib/types';
 import { colors, font, radius, space, touch } from '@/theme';
 
@@ -56,7 +61,9 @@ const STEPS = ['Basics', 'When and where', 'Tickets', 'Cover photo', 'Review'];
 const SHORT = ['Basics', 'When & where', 'Tickets', 'Cover', 'Review'];
 const CATEGORIES = Object.keys(CATEGORY_NAME) as Category[];
 
-type Tier = { key: string; name: string; price: string; qty: string };
+/** One ticket type; `style` null is Auto (the look comes from the name). */
+type Tier = { key: string; name: string; price: string; qty: string; perks: string[]; badge: string; style: TierLook | null };
+const newTier = (name = '', perks: string[] = [], badge = ''): Tier => ({ key: `t${Date.now()}${Math.random().toString(36).slice(2, 6)}`, name, price: '', qty: '', perks, badge, style: null });
 type Draft = {
   title: string;
   category: Category | '';
@@ -115,7 +122,7 @@ const EMPTY: Draft = {
   currency: '',
   currencyChosen: false,
   feeMode: 'BUYER',
-  tiers: [{ key: 't0', name: 'General admission', price: '', qty: '' }],
+  tiers: [{ key: 't0', name: 'General admission', price: '', qty: '', perks: [], badge: '', style: null }],
   cover: '',
 };
 
@@ -199,6 +206,14 @@ export default function CreateEvent() {
   const errors = useMemo(() => (show ? validate(step, d, today) : {}), [show, step, d, today]);
   const set = <K extends keyof Draft>(k: K, v: Draft[K]) => setD((p) => ({ ...p, [k]: v }));
   const patchTier = (key: string, p: Partial<Tier>) => setD((x) => ({ ...x, tiers: x.tiers.map((t) => (t.key === key ? { ...t, ...p } : t)) }));
+  /** A preset is slotted in by how premium it is (as on the website); a blank tier goes at the end. */
+  const addTier = (preset?: TierPreset) =>
+    setD((p) => {
+      if (p.tiers.length >= 20) return p;
+      const t = preset ? newTier(preset.name, [...preset.perks], preset.badge ?? '') : newTier();
+      const at = preset ? presetIndex(p.tiers.map((x) => x.name), preset.level) : p.tiers.length;
+      return { ...p, tiers: [...p.tiers.slice(0, at), t, ...p.tiers.slice(at)] };
+    });
   const cur = d.currency || 'USD';
   /** Held at a booked venue that hasn't confirmed yet: it can be saved, not submitted. */
   const waiting = d.format === 'book' && !!d.booking && d.booking.status !== 'CONFIRMED';
@@ -288,7 +303,14 @@ export default function CreateEvent() {
             currency: cur,
             feeMode: d.feeMode,
             visibility: 'PUBLIC',
-            ticketTypes: d.tiers.map((t) => ({ name: t.name.trim(), basePriceCents: parseMoney(t.price) ?? 0, capacity: Number(t.qty) })),
+            ticketTypes: d.tiers.map((t) => ({
+              name: t.name.trim(),
+              basePriceCents: parseMoney(t.price) ?? 0,
+              capacity: Number(t.qty),
+              ...(t.perks.length ? { perks: cleanPerks(t.perks) } : {}),
+              ...(t.badge.trim() ? { badge: t.badge.trim() } : {}),
+              ...(t.style ? { style: t.style } : {}),
+            })),
           },
         });
         id = ev.id;
@@ -596,17 +618,26 @@ export default function CreateEvent() {
                     Free ticket
                   </Txt>
                 ) : null}
+                <View style={styles.tierDivider} />
+                <TierExtras
+                  name={t.name}
+                  price={fan ? money(fan, cur) : base === 0 ? 'Free' : undefined}
+                  value={{ perks: t.perks, badge: t.badge, style: t.style }}
+                  onChange={(patch) => patchTier(t.key, patch)}
+                />
               </View>
             );
           })}
-          <Button
-            label="Add a ticket type"
-            variant="ghost"
-            size="md"
-            icon="plus"
-            disabled={d.tiers.length >= 20}
-            onPress={() => setD((p) => ({ ...p, tiers: [...p.tiers, { key: `t${Date.now()}`, name: '', price: '', qty: '' }] }))}
-          />
+          {d.tiers.length < 20 ? (
+            <View style={styles.addTier}>
+              <TierPresets names={d.tiers.map((t) => t.name)} onPick={(p) => addTier(p)} />
+              <Button label="Blank tier" variant="ghost" size="md" icon="plus" onPress={() => addTier()} />
+            </View>
+          ) : (
+            <Txt variant="small" color={colors.dim}>
+              That’s 20 ticket types, the most one event can have.
+            </Txt>
+          )}
           </Section>
 
           <Section icon="receipt" title="Eventro’s 3.5% fee" sub={d.feeMode === 'BUYER' ? 'Added to your price, so you get your price in full.' : 'Fans pay your price; the fee comes out of it.'}>
@@ -678,7 +709,8 @@ export default function CreateEvent() {
             />
             {d.tiers.map((t) => {
               const base = parseMoney(t.price) ?? 0;
-              return <ReviewLine key={t.key} icon="ticket" text={`${t.name.trim()} · ${base ? `${money(buyerPrice(base, d.feeMode), cur)} all-in` : 'Free'} · ${Number(t.qty).toLocaleString('en-US')}`} onEdit={() => setStep(2)} />;
+              const extras = [t.badge.trim(), t.perks.length ? `${t.perks.length} ${t.perks.length === 1 ? 'perk' : 'perks'}` : ''].filter(Boolean).join(', ');
+              return <ReviewLine key={t.key} icon="ticket" text={`${t.name.trim()} · ${base ? `${money(buyerPrice(base, d.feeMode), cur)} all-in` : 'Free'} · ${Number(t.qty).toLocaleString('en-US')}${extras ? ` · ${extras}` : ''}`} onEdit={() => setStep(2)} />;
             })}
           </View>
           {d.format === 'book' && d.booking ? (
@@ -915,6 +947,8 @@ const styles = StyleSheet.create({
   wrap: { flexDirection: 'row', flexWrap: 'wrap', gap: space.sm },
   row2: { flexDirection: 'row', gap: space.md },
   tier: { gap: space.sm, padding: space.md, borderRadius: radius.card, borderWidth: 1, borderColor: colors.line, backgroundColor: colors.surface },
+  tierDivider: { height: 1, backgroundColor: colors.line, marginVertical: space.xs },
+  addTier: { gap: space.md, padding: space.md, borderRadius: radius.card, borderWidth: 1, borderStyle: 'dashed', borderColor: colors.line2 },
   mini: { width: touch, height: touch, borderRadius: touch / 2, alignItems: 'center', justifyContent: 'center' },
   pick: { flexDirection: 'row', alignItems: 'center', gap: space.sm, minHeight: 52, paddingHorizontal: space.lg, borderRadius: radius.md, borderWidth: 1, borderColor: colors.fieldLine, backgroundColor: colors.field },
   cover: { width: '100%', aspectRatio: 16 / 9, borderRadius: radius.card, overflow: 'hidden', backgroundColor: colors.surface2 },

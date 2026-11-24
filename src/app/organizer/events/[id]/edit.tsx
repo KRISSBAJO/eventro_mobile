@@ -3,7 +3,7 @@
  *
  *   PATCH /organizer/events/:id                          title, tagline, description, start (and doors), a stock cover
  *   PUT   /organizer/events/:id/media                    a photo uploaded from the phone becomes the cover (first item)
- *   PATCH /organizer/events/:id/ticket-types/:ttId       name, price, quantity (a lower price may alert watchers)
+ *   PATCH /organizer/events/:id/ticket-types/:ttId       name, price, quantity, perks, badge, look (a lower price may alert watchers)
  *   POST  /organizer/events/:id/ticket-types             a new ticket type
  *   DELETE /organizer/events/:id/ticket-types/:ttId      only when none are sold and it isn't on the seat map
  *   PUT   /organizer/events/:id/ticket-types/order       the order fans see them in, top tier first
@@ -24,6 +24,7 @@ import { Icon, type IconName } from '@/components/icons';
 import { CoverUpload } from '@/components/cover-upload';
 import { Label, OrgScreen, WebButton } from '@/components/org-ui';
 import { StockPicker } from '@/components/stock-picker';
+import { TierExtras, TierPresets } from '@/components/tier-editor';
 import { Button, ErrorState, Field, Notice, Skeleton, Txt } from '@/components/ui';
 import { api, errorText } from '@/lib/api';
 import { CATEGORY_NAME, currencySymbol, money, num, todayYmd } from '@/lib/format';
@@ -43,9 +44,11 @@ import {
 } from '@/lib/organizer';
 import { useAuth } from '@/lib/auth';
 import { useMyOrgs } from '@/lib/queries';
+import { cleanPerks, isTierLook, presetIndex, samePerks, type TierLook, type TierPreset } from '@/lib/tiers';
 import { colors, radius, space, touch } from '@/theme';
 
-type Tier = { key: string; id: string | null; name: string; price: string; qty: string; sold: number; mapped: boolean };
+/** `style` null is Auto: the look comes from the name. */
+type Tier = { key: string; id: string | null; name: string; price: string; qty: string; sold: number; mapped: boolean; perks: string[]; badge: string; style: TierLook | null };
 
 export default function EditEvent() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -86,7 +89,7 @@ function Editor({ e }: { e: OrgEventDetail }) {
   const fromApi = (): Tier[] =>
     [...e.ticketTypes]
       .sort((a, b) => a.sortOrder - b.sortOrder)
-      .map((t) => ({ key: t.id, id: t.id, name: t.name, price: moneyInput(t.priceCents), qty: String(t.capacity), sold: t.sold, mapped: mappedIds.has(t.id) }));
+      .map((t) => ({ key: t.id, id: t.id, name: t.name, price: moneyInput(t.priceCents), qty: String(t.capacity), sold: t.sold, mapped: mappedIds.has(t.id), perks: t.perks ?? [], badge: t.badge ?? '', style: isTierLook(t.style) ? t.style : null }));
 
   const [title, setTitle] = useState(e.title);
   const [subtitle, setSubtitle] = useState(e.subtitle ?? '');
@@ -119,9 +122,15 @@ function Editor({ e }: { e: OrgEventDetail }) {
       return next;
     });
   };
-  const addTier = () => {
+  /** A preset is slotted in by how premium it is (as on the website); a blank tier goes at the end. */
+  const addTier = (preset?: TierPreset) => {
     haptic.select();
-    setTiers((list) => [...list, { key: `new-${Date.now()}`, id: null, name: '', price: '', qty: '', sold: 0, mapped: false }]);
+    setTiers((list) => {
+      if (list.length >= 20) return list;
+      const t: Tier = { key: `new-${Date.now()}`, id: null, name: preset?.name ?? '', price: '', qty: '', sold: 0, mapped: false, perks: preset ? [...preset.perks] : [], badge: preset?.badge ?? '', style: null };
+      const at = preset ? presetIndex(list.map((x) => x.name), preset.level) : list.length;
+      return [...list.slice(0, at), t, ...list.slice(at)];
+    });
   };
   const removeTier = async (t: Tier) => {
     if (!t.id) return setTiers((list) => list.filter((x) => x.key !== t.key));
@@ -196,8 +205,13 @@ function Editor({ e }: { e: OrgEventDetail }) {
         if (!t.id) continue;
         const was = byId.get(t.id);
         if (!was) continue;
-        const b: Record<string, string | number> = {};
+        const b: Record<string, string | number | string[] | null> = {};
         if (t.name.trim() !== was.name) b.name = t.name.trim();
+        const perks = cleanPerks(t.perks);
+        if (!samePerks(perks, was.perks ?? [])) b.perks = perks;
+        if (t.badge.trim() !== (was.badge ?? '')) b.badge = t.badge.trim();
+        // null sends it back to Auto
+        if (t.style !== (isTierLook(was.style) ? was.style : null)) b.style = t.style;
         if (cents !== was.priceCents) b.basePriceCents = baseFromAllIn(cents!, e.feeMode);
         if (!t.mapped && qty !== was.capacity) b.capacity = qty;
         if (!Object.keys(b).length) continue;
@@ -213,7 +227,16 @@ function Editor({ e }: { e: OrgEventDetail }) {
           ids.push(t.id);
           continue;
         }
-        const made = await api<{ id: string }>(`${path}/ticket-types`, { body: { name: t.name.trim(), basePriceCents: baseFromAllIn(cents!, e.feeMode), capacity: qty } });
+        const made = await api<{ id: string }>(`${path}/ticket-types`, {
+          body: {
+            name: t.name.trim(),
+            basePriceCents: baseFromAllIn(cents!, e.feeMode),
+            capacity: qty,
+            ...(t.perks.length ? { perks: cleanPerks(t.perks) } : {}),
+            ...(t.badge.trim() ? { badge: t.badge.trim() } : {}),
+            ...(t.style ? { style: t.style } : {}),
+          },
+        });
         ids.push(made.id);
         patchTier(t.key, { id: made.id, key: made.id });
       }
@@ -368,9 +391,24 @@ function Editor({ e }: { e: OrgEventDetail }) {
                 Sold tickets can’t be deleted. Lowering the price tells fans watching this event.
               </Txt>
             ) : null}
+            <View style={styles.divider} />
+            <TierExtras
+              name={t.name}
+              price={(() => {
+                const c = parseMoney(t.price);
+                return c === null ? undefined : c === 0 ? 'Free' : money(c, e.currency);
+              })()}
+              value={{ perks: t.perks, badge: t.badge, style: t.style }}
+              onChange={(patch) => patchTier(t.key, patch)}
+            />
           </View>
         ))}
-        <Button label="Add a ticket type" variant="ghost" size="md" icon="plus" onPress={addTier} disabled={tiers.length >= 20} />
+        {tiers.length < 20 ? (
+          <View style={styles.addTier}>
+            <TierPresets names={tiers.map((t) => t.name)} onPick={(p) => addTier(p)} />
+            <Button label="Blank tier" variant="ghost" size="md" icon="plus" onPress={() => addTier()} />
+          </View>
+        ) : null}
         {e.seatMap ? <WebButton label="Edit the seat map on the web" path={webPaths.seating(e.id)} /> : null}
       </View>
     </OrgScreen>
@@ -398,5 +436,7 @@ const styles = StyleSheet.create({
   card: { gap: space.md, padding: space.lg, borderRadius: radius.card, borderWidth: 1, borderColor: colors.line, backgroundColor: colors.surface },
   cover: { width: '100%', aspectRatio: 16 / 9, borderRadius: radius.md, overflow: 'hidden', backgroundColor: colors.surface2 },
   tier: { gap: space.sm, padding: space.md, borderRadius: radius.md, borderWidth: 1, borderColor: colors.line2 },
+  divider: { height: 1, backgroundColor: colors.line, marginVertical: space.xs },
+  addTier: { gap: space.md, padding: space.md, borderRadius: radius.md, borderWidth: 1, borderStyle: 'dashed', borderColor: colors.line2 },
   mini: { width: touch, height: touch, borderRadius: touch / 2, alignItems: 'center', justifyContent: 'center' },
 });
