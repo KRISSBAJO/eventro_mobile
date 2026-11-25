@@ -10,6 +10,7 @@
  */
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useSyncExternalStore } from 'react';
+import { upcoming } from './dates';
 import { api, errorText } from './api';
 import { useAuth } from './auth';
 import { haptic } from './haptics';
@@ -63,6 +64,10 @@ export function cardOf(e: EventDetail): EventCard {
     lng: e.venue?.lng ?? null,
     currency: e.currency,
     fromCents: e.fromCents,
+    // multiple dates: the next one and how many are still to come
+    dateMode: e.dateMode,
+    nextDate: e.nextDate ?? null,
+    dateCount: e.dateMode && e.dateMode !== 'SINGLE' ? upcoming(e.dates, 0).length : 0,
   };
 }
 

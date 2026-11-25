@@ -14,7 +14,8 @@ import { Badge, EmptyState, ErrorState, Skeleton, Txt } from '@/components/ui';
 import { errorText } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { donationLabel } from '@/lib/donations';
-import { money, when } from '@/lib/format';
+import { ticketWhen } from '@/lib/dates';
+import { money } from '@/lib/format';
 import { haptic } from '@/lib/haptics';
 import { orderStatus, refundStatus, useMyOrders } from '@/lib/orders';
 import type { MyOrder } from '@/lib/types';
@@ -80,7 +81,8 @@ export default function Orders() {
 function OrderRow({ o }: { o: MyOrder }) {
   const s = orderStatus(o.status);
   const refund = o.refundRequest ? refundStatus(o.refundRequest.status) : null;
-  const d = when(o.event.startsAt);
+  // The tickets' date (DATES) or days (DAYS), else the event's
+  const tw = ticketWhen(o, o.event.startsAt, { time: false });
   const comp = o.kind === 'COMP';
   const donation = o.donationCents ?? 0;
   const price = comp || !o.totalCents ? 'Free' : money(o.totalCents, o.currency);
@@ -99,7 +101,7 @@ function OrderRow({ o }: { o: MyOrder }) {
           {o.event.title}
         </Txt>
         <Txt variant="small" color={colors.muted} numberOfLines={1}>
-          {o.quantity} {o.quantity === 1 ? 'ticket' : 'tickets'} · {d.short}
+          {o.quantity} {o.quantity === 1 ? 'ticket' : 'tickets'} · {tw.line}
         </Txt>
         {donation ? (
           <Txt variant="tiny" color={colors.dim} numberOfLines={1}>

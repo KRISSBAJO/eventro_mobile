@@ -78,7 +78,7 @@ export const isComp = (t: Pick<Ticket, 'guarantee' | 'order'>) => t.guarantee?.n
 const path = (ticketId: string) => `/tickets/${encodeURIComponent(ticketId)}/guarantee-claims`;
 
 /** Sends a claim; the answer may already be DECLINED (scanned in), otherwise PENDING. Throws ApiError (status 0 offline). */
-export const submitClaim = (ticketId: string, body: { reason: GuaranteeReason; details?: string }) => api<GuaranteeClaim>(path(ticketId), { body, timeoutMs: 15_000 });
+export const submitClaim = (ticketId: string, body: { reason: GuaranteeReason; details?: string; eventDateId?: string }) => api<GuaranteeClaim>(path(ticketId), { body, timeoutMs: 15_000 });
 
 /** The ticket's guarantee and claim (holder only). */
 export const fetchClaim = (ticketId: string) => api<GuaranteeAnswer>(path(ticketId));
@@ -119,8 +119,15 @@ export function claimBlocker(t: Ticket, now: number): string | null {
   if (t.status === 'VOID') return 'This ticket no longer works.';
   if (t.status === 'LISTED') return 'This ticket is listed for resale. Remove the listing to claim on it.';
   if (t.status === 'TRANSFER_PENDING') return 'This ticket is being transferred. Cancel the transfer to claim on it.';
+  if (t.date?.status === 'CANCELLED') return 'This date was cancelled, so your order is refunded in full automatically.';
+  // A multi-day pass: each day has its own window; one open day is enough.
+  if (g.days?.length) {
+    if (g.days.some((d) => windowOf(d, now) === 'open')) return null;
+    const next = g.days.find((d) => windowOf(d, now) === 'before');
+    return next ? `Claims open 3 hours before each day starts: next from ${stamp(next.opensAt)}.` : `The claim window closed ${stamp(g.closesAt)}.`;
+  }
   const w = windowOf(g, now);
-  if (w === 'before') return `Claims open 3 hours before the event starts: from ${stamp(g.opensAt)}.`;
+  if (w === 'before') return `Claims open 3 hours before ${t.date ? 'your date' : 'the event'} starts: from ${stamp(g.opensAt)}.`;
   if (w === 'closed') return `The claim window closed ${stamp(g.closesAt)}.`;
   return null;
 }
@@ -146,7 +153,8 @@ export function claimView(c: GuaranteeClaim): { tone: 'success' | 'warning' | 'p
 
 /* ---------- claims waiting on this phone ---------- */
 
-export type QueuedClaim = { ticketId: string; reason: GuaranteeReason; details: string | null; queuedAt: string };
+/** `eventDateId`: a multi-day pass's claim is about one day. */
+export type QueuedClaim = { ticketId: string; reason: GuaranteeReason; details: string | null; eventDateId?: string | null; queuedAt: string };
 
 /** What happened to a claim sent from the queue: the server's claim, or its refusal. */
 export type ClaimOutcome = { ticketId: string; at: string } & ({ kind: 'sent'; claim: GuaranteeClaim } | { kind: 'refused'; message: string; status: number });
@@ -221,7 +229,7 @@ export function flushClaims(userId: string, changed?: () => void) {
     for (const q of [...store.queue]) {
       if (store.userId !== userId) break;
       try {
-        const claim = await submitClaim(q.ticketId, { reason: q.reason, ...(q.details ? { details: q.details } : {}) });
+        const claim = await submitClaim(q.ticketId, { reason: q.reason, ...(q.details ? { details: q.details } : {}), ...(q.eventDateId ? { eventDateId: q.eventDateId } : {}) });
         sent++;
         update(userId, (s) => ({ queue: s.queue.filter((x) => x.ticketId !== q.ticketId), outcomes: [{ ticketId: q.ticketId, at: new Date().toISOString(), kind: 'sent', claim }, ...s.outcomes.filter((o) => o.ticketId !== q.ticketId)] }));
       } catch (e) {

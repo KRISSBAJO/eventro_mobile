@@ -11,6 +11,7 @@ import { TierChip } from '@/components/tier-look';
 import { Badge, Button, ErrorState, FadeIn, Notice, Skeleton, Txt } from '@/components/ui';
 import { api, errorText } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
+import { cardWhen, dateLine, rangeLine, ticketWhen } from '@/lib/dates';
 import { CATEGORY_NAME, cityOnly, countryName, firstName, localStamp, money, when } from '@/lib/format';
 import { haptic } from '@/lib/haptics';
 import { rankNear, usePlace } from '@/lib/place';
@@ -129,7 +130,7 @@ export default function Tickets() {
               ) : null}
 
               {groups.upcoming.map((g, i) => (
-                <FadeIn key={g.slug} delay={i * 60}>
+                <FadeIn key={g.key} delay={i * 60}>
                   <GroupCard g={g} />
                 </FadeIn>
               ))}
@@ -151,7 +152,7 @@ export default function Tickets() {
               <>
                 <ListNote>{`${groups.past.length} past ${groups.past.length === 1 ? 'event' : 'events'} · your tickets stay here as a keepsake`}</ListNote>
                 {groups.past.map((g, i) => (
-                  <FadeIn key={g.slug} delay={i * 60}>
+                  <FadeIn key={g.key} delay={i * 60}>
                     <GroupCard g={g} />
                   </FadeIn>
                 ))}
@@ -321,7 +322,9 @@ function Picks() {
 }
 
 function PickRow({ e }: { e: EventCard }) {
-  const d = when(e.startsAt);
+  // Multiple dates: the next date, and "+2 more dates" / "3 days"
+  const cw = cardWhen(e);
+  const d = when(cw.startsAt);
   const open = () => {
     haptic.select();
     router.push({ pathname: '/event/[slug]', params: { slug: e.slug } });
@@ -354,6 +357,11 @@ function PickRow({ e }: { e: EventCard }) {
         {e.subtitle ? (
           <Txt variant="small" color={colors.muted} numberOfLines={1}>
             {e.subtitle}
+          </Txt>
+        ) : null}
+        {cw.more ? (
+          <Txt variant="tiny" color={colors.muted} numberOfLines={1}>
+            {`${d.short} · ${cw.more}`}
           </Txt>
         ) : null}
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
@@ -419,7 +427,7 @@ function IncomingTransfers({ items }: { items: IncomingTransfer[] }) {
                   {comp ? `You’re on the guest list: ${x.event.title}` : `🎁 A gift from ${x.gift.from}: ${x.event.title}`}
                 </Txt>
                 <Txt variant="small" color={colors.muted}>
-                  {comp ? `Complimentary ticket from ${x.gift.from}${x.gift.group ? ` · ${x.gift.group}` : ''}` : `${n} × ${x.ticketType.name}`} · {when(x.event.startsAt).short}
+                  {comp ? `Complimentary ticket from ${x.gift.from}${x.gift.group ? ` · ${x.gift.group}` : ''}` : `${n} × ${x.ticketType.name}`} · {ticketWhen(x, x.event.startsAt, { time: false }).line}
                 </Txt>
                 {x.gift.message ? (
                   <Txt variant="small" color={colors.text} numberOfLines={3}>
@@ -438,7 +446,7 @@ function IncomingTransfers({ items }: { items: IncomingTransfer[] }) {
                 {x.event.title}
               </Txt>
               <Txt variant="small" color={colors.muted}>
-                {x.ticketType.name} · {when(x.event.startsAt).short} · from {x.holderName}
+                {x.ticketType.name} · {ticketWhen(x, x.event.startsAt, { time: false }).line} · from {x.holderName}
               </Txt>
               {left !== null ? (
                 <Txt variant="tiny" color={left < 24 * 3600_000 ? colors.accentHi : colors.dim}>
@@ -460,18 +468,22 @@ function IncomingTransfers({ items }: { items: IncomingTransfer[] }) {
 }
 
 function GroupCard({ g }: { g: TicketGroup }) {
-  const d = when(g.event.startsAt);
+  const d = when(g.start);
+  // DATES: the performance; DAYS: the event's days; else the event's start.
+  const days = g.event.dateMode === 'DAYS' ? (g.event.dates ?? []).filter((x) => x.status !== 'CANCELLED') : [];
+  const whenText = g.date ? dateLine(g.date) : days.length ? `${rangeLine(days)}${days.length > 1 ? ` · ${days.length} days` : ''}` : `${d.short} · ${d.time}`;
+  const dateCancelled = g.date?.status === 'CANCELLED' && g.event.status !== 'CANCELLED';
   const dim = g.past || g.cancelled;
   const ready = g.tickets.filter((x) => ticketState(x).key === 'ready').length;
   return (
     <View style={[styles.group, dim && { opacity: 0.85 }]}>
-      <Pressable accessibilityRole="link" accessibilityLabel={`${g.event.title}, ${d.date}`} onPress={() => router.push({ pathname: '/event/[slug]', params: { slug: g.slug } })}>
+      <Pressable accessibilityRole="link" accessibilityLabel={`${g.event.title}, ${whenText}`} onPress={() => router.push({ pathname: '/event/[slug]', params: { slug: g.slug } })}>
         <View style={styles.banner}>
           <Image source={g.event.imageUrl ? { uri: g.event.imageUrl } : null} style={[StyleSheet.absoluteFill, dim && { opacity: 0.45 }]} contentFit="cover" transition={200} />
           <LinearGradient colors={[colors.fade0, colors.fade]} locations={[0.2, 1]} style={StyleSheet.absoluteFill} />
           <View style={styles.bannerText}>
             <View style={{ flexDirection: 'row', gap: 6, flexWrap: 'wrap' }}>
-              {g.cancelled ? <Badge label={g.refunded ? 'Event cancelled · refunded' : 'Event cancelled · refund pending'} tone="accent" /> : null}
+              {g.cancelled ? <Badge label={`${dateCancelled ? 'Date' : 'Event'} cancelled · ${g.refunded ? 'refunded' : 'refund pending'}`} tone="accent" /> : null}
               {!g.cancelled && ready ? <Badge label={`${ready} ready`} tone="success" /> : null}
               {g.past && !g.cancelled ? <Badge label="Ended" tone="glass" /> : null}
             </View>
@@ -479,7 +491,7 @@ function GroupCard({ g }: { g: TicketGroup }) {
               {g.event.title}
             </Txt>
             <Txt variant="small" color={colors.onImageSoft} numberOfLines={1}>
-              {d.short} · {d.time}
+              {whenText}
               {g.event.venue ? ` · ${g.event.venue.name}` : g.event.online ? ' · Online' : ''}
             </Txt>
           </View>
@@ -504,7 +516,8 @@ function GroupCard({ g }: { g: TicketGroup }) {
             <View style={{ flex: 1, gap: 4 }}>
               <TierChip tier={tk.ticketType} />
               <Txt variant="small" color={colors.muted} numberOfLines={1}>
-                {seatLine(tk)}
+                {/* a multi-day pass leads with its days */}
+                {tk.validDates?.length ? [ticketWhen(tk, g.event.startsAt).line, seatLine(tk) === 'General admission' ? '' : seatLine(tk)].filter(Boolean).join(' · ') : seatLine(tk)}
               </Txt>
               {s.key !== 'ready' ? (
                 <Txt variant="tiny" color={s.tone === 'accent' ? colors.accentHi : s.tone === 'warning' ? colors.warning : colors.dim} numberOfLines={1}>

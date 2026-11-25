@@ -9,6 +9,7 @@ import { emailOk, useAuth } from '@/lib/auth';
 import { haptic } from '@/lib/haptics';
 import { useMyTickets, useRefreshWallet } from '@/lib/queries';
 import { blockers, rulesOf, transferTerms } from '@/lib/resale';
+import { ticketWhen } from '@/lib/dates';
 import { seatLine } from '@/lib/tickets';
 import { colors, radius, space } from '@/theme';
 
@@ -81,7 +82,7 @@ export default function Transfer() {
   };
 
   return (
-    <AuthShell title="Transfer ticket" icon="send" subtitle={`${t.ticketType.name} · ${seatLine(t)} · ${t.event.title}`}>
+    <AuthShell title="Transfer ticket" icon="send" subtitle={`${t.ticketType.name} · ${seatLine(t)} · ${t.event.title}${t.date || t.validDates?.length ? ` · ${ticketWhen(t, t.event.startsAt, { time: false }).line}` : ''}`}>
       <Txt color={colors.muted}>They accept it from My tickets when they sign in with this email. Then it moves to their account and your code stops working.</Txt>
       <View style={{ padding: space.md, borderRadius: radius.md, backgroundColor: colors.bg2, borderWidth: 1, borderColor: colors.line }}>
         <Txt variant="small" color={colors.muted}>

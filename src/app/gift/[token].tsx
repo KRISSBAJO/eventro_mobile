@@ -22,6 +22,7 @@ import { TierBadge, TierGlyph, TierSurface } from '@/components/tier-look';
 import { Badge, Button, EmptyState, IconButton, Notice, Skeleton, Txt } from '@/components/ui';
 import { api, ApiError, errorText } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
+import { daysList } from '@/lib/dates';
 import { firstName, localStamp, money, when } from '@/lib/format';
 import { haptic } from '@/lib/haptics';
 import { useRefreshWallet } from '@/lib/queries';
@@ -259,7 +260,10 @@ function Revealed({ gift, token, onStatus }: { gift: Gift; token: string; onStat
               {e.title}
             </Txt>
             <Txt variant="small" color={colors.inkMuted}>
-              {when(e.startsAt).date} · {when(e.startsAt).time}
+              {/* The tickets' own date (DATES), their days (DAYS), or the event's start */}
+              {gift.validDates?.length
+                ? `Valid ${daysList(gift.validDates)}`
+                : `${when(gift.date?.startsAt ?? e.startsAt).date} · ${when(gift.date?.startsAt ?? e.startsAt).time}${gift.date?.label ? ` · ${gift.date.label}` : ''}`}
             </Txt>
             <Txt variant="small" color={colors.inkMuted}>
               {e.online ? 'Online event' : [e.venue?.name, e.venue?.city].filter(Boolean).join(', ')}

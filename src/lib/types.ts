@@ -1,5 +1,6 @@
 /** Shapes of the API responses the app uses (see eventro-be/src). Money is in minor units of `currency`. */
 import type { VenueListing } from './bookings';
+import type { Dated, DateMode, EventDate } from './dates';
 import type { TierLook } from './tiers';
 
 /** What every ticket type sent to fans carries for its design: perks, badge, the organizer's pick and the resolved look. */
@@ -55,6 +56,12 @@ export type EventCard = {
   resaleCount?: number;
   /** with ?currency=: fromCents converted to that currency (approximate, for display) */
   fromCentsIn?: { currency: string; cents: number };
+  /** multiple dates (lib/dates.ts); older APIs leave them out (SINGLE) */
+  dateMode?: DateMode;
+  /** DATES/DAYS: the first upcoming active date */
+  nextDate?: { id: string; startsAt: string } | null;
+  /** DATES/DAYS: active dates still to come (0 for SINGLE) */
+  dateCount?: number;
 };
 
 export type EventPage = { total: number; page: number; pageSize: number; items: EventCard[] };
@@ -89,6 +96,11 @@ export type TicketType = {
   /** the look fans see (lib/tiers.ts lookOf falls back to the name when it's missing) */
   look?: TierLook;
   available: number;
+  /** DATES: the date this tier copy is for (copies of one tier share `tierKey`) */
+  eventDateId?: string | null;
+  tierKey?: string | null;
+  /** DAYS: the days this type admits on */
+  validDateIds?: string[];
 };
 
 export type MediaItem = {
@@ -146,6 +158,12 @@ export type EventDetail = {
   feeMode?: FeeMode;
   feePermille?: number;
   donations?: Donations | null;
+  /** multiple dates (lib/dates.ts); older APIs leave them out (SINGLE, no dates) */
+  dateMode?: DateMode;
+  dates?: EventDate[];
+  nextDate?: { id: string; startsAt: string } | null;
+  /** DATES: the date the seat map's `available` numbers are for */
+  seatMapDateId?: string | null;
 };
 
 /** A seat map section (GET /events/:slug). Reserved sections are `rows` × `seatsPerRow`; rows are A, B, … Z, AA … */
@@ -173,8 +191,8 @@ export type SeatPick = { section: string; row: string | null; seat: number | nul
 /** POST /holds */
 export type HoldCreated = { id: string; quantity: number; expiresAt: string; sectionId: string | null; ticketTypeId: string; seats: SeatPick[] | null; amountCents?: number | null };
 
-/** GET /holds/:id */
-export type Hold = {
+/** GET /holds/:id (`date` for DATES, `validDates` for DAYS) */
+export type Hold = Dated & {
   id: string;
   status: 'ACTIVE' | 'EXPIRED' | 'RELEASED' | 'CONVERTED' | string;
   quantity: number;
@@ -248,7 +266,7 @@ export type OrderExtras = {
 };
 
 /** POST /orders/:id/pay and /verify */
-export type Order = OrderExtras & {
+export type Order = OrderExtras & Dated & {
   id: string;
   status: 'PENDING' | 'PAID' | 'CANCELLED' | 'REFUNDED' | 'PARTIALLY_REFUNDED';
   provider: string;
@@ -280,7 +298,7 @@ export type RefundRequestStatus = 'OPEN' | 'APPROVED' | 'PARTIAL' | 'DENIED';
 export type RefundRequest = { id: string; status: RefundRequestStatus; reason?: string; amountCents: number | null; createdAt: string; decidedAt: string | null };
 
 /** GET /me/orders rows, newest first */
-export type MyOrder = OrderExtras & {
+export type MyOrder = OrderExtras & Dated & {
   id: string;
   status: Order['status'];
   quantity: number;
@@ -328,15 +346,15 @@ export type VenuePage = {
   managed?: boolean;
   eventsHosted: number;
   layout: { sections: number; places: number } | null;
-  events: { slug: string; title: string; subtitle: string; startsAt: string; imageUrl: string | null; category: Category; currency: string; fromCents: number }[];
+  events: { slug: string; title: string; subtitle: string; startsAt: string; imageUrl: string | null; category: Category; currency: string; fromCents: number; nextDate?: { id: string; startsAt: string } | null }[];
   /** Terms for hiring the venue on Eventro; null when it isn't taking bookings (see lib/bookings.ts) */
   listing?: VenueListing | null;
 };
 
 export type TicketStatus = 'ACTIVE' | 'TRANSFER_PENDING' | 'LISTED' | 'CHECKED_IN' | 'VOID';
 
-/** GET /me/tickets items. */
-export type Ticket = {
+/** GET /me/tickets items (`date` for DATES, `validDates` for DAYS). */
+export type Ticket = Dated & {
   id: string;
   orderId: string;
   holderName: string;
@@ -391,6 +409,9 @@ export type Ticket = {
     resaleRoyaltyPermille?: number;
     transfersEnabled?: boolean;
     transferCutoffMinutes?: number;
+    dateMode?: DateMode;
+    /** every date of the event (cancelled ones too) */
+    dates?: EventDate[];
   };
   /**
    * The Eventro Guarantee (the scan guarantee): always set by the API, covered or not. Missing (or null) only in
@@ -428,6 +449,8 @@ export type GuaranteeClaim = {
   refundedAt: string | null;
   /** a status line written by the server, ready to show */
   message: string;
+  /** DAYS: the day the claim is about */
+  eventDateId?: string | null;
 };
 
 /**
@@ -448,12 +471,14 @@ export type TicketGuarantee = {
   /** covered and inside the window when the API answered */
   open: boolean;
   claim: GuaranteeClaim | null;
+  /** DAYS passes: each day's claim window and share (the top level spans the first to the last day) */
+  days?: { eventDateId: string; opensAt: string; closesAt: string; open: boolean; refundCents: number }[];
 };
 
 /** GET /tickets/:id/guarantee-claims (holder only). */
 export type GuaranteeAnswer = TicketGuarantee;
 
-export type IncomingTransfer = {
+export type IncomingTransfer = Dated & {
   id: string;
   holderName: string;
   transferExpiresAt: string | null;
@@ -512,12 +537,12 @@ export type MyListing = {
   paidOutAt: string | null;
   payoutNote: string | null;
   event: { slug: string; title: string; startsAt: string };
-  ticket: { id: string; section: string | null; sectionName?: string | null; row: string | null; seat: number | null; ticketType: { name: string } };
+  ticket: Dated & { id: string; section: string | null; sectionName?: string | null; row: string | null; seat: number | null; ticketType: { name: string } };
 };
 export type MyResale = { listings: MyListing[]; totals: { owedCents: number; paidCents: number } };
 
 /** One listing of GET /events/:slug/resale (active only, cheapest first). */
-export type ResaleListing = {
+export type ResaleListing = Dated & {
   id: string;
   priceCents: number;
   faceCents: number;
@@ -537,7 +562,7 @@ export type EventResale = { enabled: boolean; listings: ResaleListing[] };
 export type ResaleHoldCreated = { listingId: string; holdKey: string; heldUntil: string; priceCents: number; currency: string };
 
 /** GET /gifts/:token (details only once delivered). A comp is a gift from the organizer (`from` is their name). */
-export type Gift = {
+export type Gift = Dated & {
   from: string;
   to: string;
   /** cancelled: a comp the organizer revoked */
@@ -576,12 +601,19 @@ export type DoorEvent = {
   /** non-void tickets (the door pack has the same ones) */
   ticketsIssued: number;
   checkedIn: number;
+  /** DATES/DAYS only (SINGLE rows leave them out): each date with its entries, and the door's default date */
+  dateMode?: DateMode;
+  dates?: (EventDate & { checkedIn?: number })[];
+  currentDateId?: string | null;
 };
 
 /** POST /organizer/events/:id/check-in */
-export type DoorTicket = { id: string; holderName: string; ticketType: string; section: string | null; row: string | null; seat: number | null; comp?: boolean; compGroup?: string | null };
+export type DoorTicket = Dated & { id: string; holderName: string; ticketType: string; section: string | null; row: string | null; seat: number | null; comp?: boolean; compGroup?: string | null };
 export type CheckInAnswer = {
-  result: 'ok' | 'duplicate' | 'invalid' | 'wrong-event' | 'expired-code';
+  /** wrong-date: DATES, the ticket is for another date; DAYS, it isn't valid on the door's date */
+  result: 'ok' | 'duplicate' | 'invalid' | 'wrong-event' | 'expired-code' | 'wrong-date';
+  /** DATES/DAYS: the date the door checked against */
+  date?: EventDate | null;
   message: string;
   ticket?: DoorTicket;
   /* duplicate: the first scan */
@@ -606,6 +638,10 @@ export type DoorPackTicket = {
   seat: number | null;
   comp?: boolean;
   compGroup?: string | null;
+  /** DATES/DAYS: the ticket's date (DATES), the days it admits on (DAYS) and its entries so far */
+  eventDateId?: string | null;
+  validDateIds?: string[];
+  checkIns?: { eventDateId: string | null; at: string; deviceId: string | null }[];
 };
 export type DoorPack = {
   eventId: string;
@@ -619,6 +655,10 @@ export type DoorPack = {
   tickets: DoorPackTicket[];
   /** the guest list (no tickets), for checking guests in offline; older APIs leave it out */
   guestList?: GuestEntry[];
+  dateMode?: DateMode;
+  dates?: EventDate[];
+  /** the door's default date (DATES/DAYS) */
+  currentDateId?: string | null;
 };
 
 /* ---------- guest list ---------- */
@@ -661,6 +701,8 @@ export type SyncResult = {
   checkedInBy?: { id: string; name: string | null } | null;
   checkedInDevice?: string | null;
   ticket?: DoorTicket;
+  /** DATES/DAYS: the date the scan counted for */
+  eventDateId?: string | null;
 };
 export type SyncAnswer = { eventId: string; deviceId: string; summary: { checked_in: number; already: number; invalid: number }; results: SyncResult[] };
 
@@ -678,4 +720,7 @@ export type Attendee = {
   /** older APIs leave them out (PAID) */
   type?: 'PAID' | 'COMP';
   compGroup?: string | null;
+  /** DATES/DAYS: the ticket's date (DATES) and the dates it was checked in on */
+  eventDateId?: string | null;
+  checkedInDates?: string[];
 };

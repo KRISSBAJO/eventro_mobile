@@ -36,7 +36,8 @@ import { api, ApiError, errorText, WEB_URL } from '@/lib/api';
 import { emailOk, useAuth } from '@/lib/auth';
 import { NATIVE, openPaystack, providerFor, sleep } from '@/lib/checkout';
 import { DONATION_NO_REFUND, DONATION_ON_BEHALF, donationLabel, donationProblem } from '@/lib/donations';
-import { instantOf, money, when, zoneAbbr } from '@/lib/format';
+import { ownTimes, ticketWhen } from '@/lib/dates';
+import { instantOf, money, zoneAbbr } from '@/lib/format';
 import { haptic } from '@/lib/haptics';
 import { allInLine, allInOf, amountProblem, isPwyw, pickChips, PROMO_PWYW_NOTE, startAmount } from '@/lib/pwyw';
 import { useHealth } from '@/lib/queries';
@@ -147,7 +148,9 @@ export default function Checkout() {
     email: !emailOk(email) ? (gift.on ? 'Enter a valid email; your receipt goes there.' : 'Enter a valid email; your tickets go there.') : '',
   };
   // Event times are the venue's wall-clock time; with its zone this is the real start, which a gift must beat.
-  const eventStart = h ? (h.event.timezone ? instantOf(h.event.startsAt, h.event.timezone) : new Date(h.event.startsAt)).getTime() : 0;
+  // Multiple dates: the tickets' own date (DATES) or first day (DAYS).
+  const ownStart = h ? ownTimes(h, h.event).startsAt : '';
+  const eventStart = h ? (h.event.timezone ? instantOf(ownStart, h.event.timezone) : new Date(ownStart)).getTime() : 0;
   const giftErr = giftErrors(gift, email, eventStart, now);
   const valid = !errors.name && !errors.email && !giftErr.name && !giftErr.email && !giftErr.at;
 
@@ -372,8 +375,9 @@ export default function Checkout() {
 
   if (phase === 'done' && paid) return <CheckoutSuccess order={paid} eventSlug={h.event.slug} testMode={paid.provider === 'mock'} signedIn={!!user && user.email === paid.email} />;
 
-  const d = when(h.event.startsAt);
-  const abbr = zoneAbbr(h.event.timezone, h.event.startsAt);
+  // The tickets' date (DATES), days (DAYS) or the event's start
+  const tw = ticketWhen(h, h.event.startsAt);
+  const abbr = tw.days ? '' : zoneAbbr(h.event.timezone, tw.startsAt);
   const totals = quote.data;
   const mm = msLeft !== null ? Math.max(0, Math.floor(msLeft / 60000)) : 10;
   const ss = msLeft !== null ? String(Math.max(0, Math.floor((msLeft % 60000) / 1000))).padStart(2, '0') : '00';
@@ -421,7 +425,7 @@ export default function Checkout() {
               {h.event.title}
             </Txt>
             <Txt variant="small" color={colors.muted}>
-              {d.short} · {d.time}
+              {tw.line}
               {abbr ? ` ${abbr}` : ''}
             </Txt>
             {h.event.venue ? (

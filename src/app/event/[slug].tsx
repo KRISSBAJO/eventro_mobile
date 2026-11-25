@@ -8,6 +8,10 @@
  * Pay-what-you-want tiers (lib/pwyw.ts): the selected tier gets "Choose your price" (quick picks, the suggested price
  * picked to start, or another amount) with the all-in per ticket; the quantity applies at that amount, and the hold
  * carries it (`amountCents` on POST /holds, or on to the seat map).
+ *
+ * Multiple dates (lib/dates.ts): a DATES event starts the tickets with "Pick a date" (date cards with "Few left" /
+ * "Sold out"), then shows that date's tiers (each date has its own copy of every tier); `?date=` picks one. A DAYS
+ * event lists its days under When, and each ticket type says which days it covers. SINGLE events are as before.
  */
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -16,6 +20,7 @@ import { useRef, useState, type ReactNode } from 'react';
 import { Platform, Pressable, ScrollView, Share, StyleSheet, View, type LayoutChangeEvent, type ScrollViewInstance } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { AmountPicker } from '@/components/amount-picker';
+import { DateCards } from '@/components/date-cards';
 import { FanResale } from '@/components/fan-resale';
 import { Gallery } from '@/components/gallery';
 import { HeartButton } from '@/components/heart';
@@ -24,7 +29,8 @@ import { PriceAlert } from '@/components/price-alert';
 import { TierBadge, TierGlyph, TierSurface } from '@/components/tier-look';
 import { Badge, Button, EmptyState, ErrorState, FadeIn, IconButton, Notice, Skeleton, Stepper, Txt } from '@/components/ui';
 import { api, ApiError, errorText, WEB_URL } from '@/lib/api';
-import { CATEGORY_NAME, cityOnly, isPast, localTimeText, money, when, zoneAbbr } from '@/lib/format';
+import { activeOnly, coverLine, dateLine, eventEnded, rangeLine, upcoming } from '@/lib/dates';
+import { CATEGORY_NAME, cityOnly, localTimeText, money, when, zoneAbbr } from '@/lib/format';
 import { haptic } from '@/lib/haptics';
 import { openMaps } from '@/lib/maps';
 import { allInLine, allInOf, amountProblem, fromLabel, isPwyw, pickChips, PROMO_PWYW_NOTE, startAmount } from '@/lib/pwyw';
@@ -37,7 +43,7 @@ import { colors, gutter, radius, space } from '@/theme';
 const HERO = 360;
 
 export default function EventScreen() {
-  const { slug, resale } = useLocalSearchParams<{ slug: string; resale?: string }>();
+  const { slug, resale, date } = useLocalSearchParams<{ slug: string; resale?: string; date?: string }>();
   const insets = useSafeAreaInsets();
   const q = useEvent(slug);
   const e = q.data;
@@ -83,7 +89,7 @@ export default function EventScreen() {
       </View>
     );
   }
-  return <EventBody e={e} topBar={topBar} refetch={() => q.refetch()} jumpToResale={resale === '1'} />;
+  return <EventBody e={e} topBar={topBar} refetch={() => q.refetch()} jumpToResale={resale === '1'} dateParam={date} />;
 }
 
 function share(e: EventDetail) {
@@ -92,16 +98,31 @@ function share(e: EventDetail) {
   Share.share(Platform.OS === 'ios' ? { message: `${e.title} on Eventro`, url } : { message: `${e.title} on Eventro: ${url}` }).catch(() => undefined);
 }
 
-function EventBody({ e, topBar, refetch, jumpToResale }: { e: EventDetail; topBar: ReactNode; refetch: () => void; jumpToResale: boolean }) {
+function EventBody({ e, topBar, refetch, jumpToResale, dateParam }: { e: EventDetail; topBar: ReactNode; refetch: () => void; jumpToResale: boolean; dateParam?: string }) {
   const insets = useSafeAreaInsets();
   const d = when(e.startsAt);
   const tz = e.timezone || e.venue?.timezone || null;
   const abbr = zoneAbbr(tz, e.startsAt);
   const yours = localTimeText(e.startsAt, tz);
   const cancelled = e.status === 'CANCELLED';
-  const ended = isPast(e.startsAt, 3);
-  const types = [...e.ticketTypes].sort((a, b) => a.sortOrder - b.sortOrder);
-  const onSale = !cancelled && !ended && !e.salesPaused && types.some((t) => t.available > 0);
+  // Multiple dates (lib/dates.ts): DATES fans pick a date first, then that date's tiers; DAYS types cover days.
+  const mode = e.dateMode ?? 'SINGLE';
+  const byDate = mode === 'DATES';
+  const liveDates = activeOnly(e.dates);
+  const pickable = byDate ? upcoming(e.dates, 0) : [];
+  const ended = eventEnded(e, 3);
+  const allTypes = [...e.ticketTypes].sort((a, b) => a.sortOrder - b.sortOrder);
+  const onSale = !cancelled && !ended && !e.salesPaused && allTypes.some((t) => t.available > 0);
+
+  // DATES: the picked date (a link's ?date=, else the only date on sale, else none until the fan picks).
+  const [dateId, setDateId] = useState<string | null>(() => {
+    if (!byDate) return null;
+    if (dateParam && pickable.some((x) => x.id === dateParam)) return dateParam;
+    const open = pickable.filter((x) => !x.soldOut && x.available !== 0);
+    return open.length === 1 ? open[0].id : null;
+  });
+  const picked = byDate ? (pickable.find((x) => x.id === dateId) ?? null) : null;
+  const types = byDate ? allTypes.filter((t) => !!picked && t.eventDateId === picked.id) : allTypes;
 
   const [tierId, setTierId] = useState<string | null>(null);
   const tier = types.find((t) => t.id === tierId) ?? types.find((t) => t.available > 0) ?? types[0];
@@ -112,21 +133,32 @@ function EventBody({ e, topBar, refetch, jumpToResale }: { e: EventDetail; topBa
   const [error, setError] = useState('');
   const [aboutOpen, setAboutOpen] = useState(false);
   const [solid, setSolid] = useState(false);
-  // Pay what you want: the amount picked per tier (null while what's typed isn't an amount).
+  // Pay what you want: the amount picked per tier (null while what's typed isn't an amount). DATES copies of a tier share one.
   const [amounts, setAmounts] = useState<Record<string, number | null>>({});
   const pw = isPwyw(tier) ? tier.pwyw : null;
-  const amount = pw && tier ? (tier.id in amounts ? amounts[tier.id] : startAmount(pw)) : null;
+  const amountKey = tier ? (tier.tierKey ?? tier.id) : '';
+  const amount = pw && tier ? (amountKey in amounts ? amounts[amountKey] : startAmount(pw)) : null;
   const amountErr = pw ? amountProblem(amount, pw, e.currency) : null;
   const unit = pw ? (amount !== null && !amountErr ? allInOf(amount, pw.feePermille) : 0) : (tier?.priceCents ?? 0);
   const total = unit * qty;
-  const lowest = types.length ? Math.min(...types.map((t) => t.priceCents)) : e.fromCents;
+  const lowest = allTypes.length ? Math.min(...allTypes.map((t) => t.priceCents)) : e.fromCents;
   const seatMap = !!e.seatMap?.sections.length;
+
+  /** Another date: keep the same tier (its copy on that date) when it's on sale there. */
+  const pickDate = (id: string) => {
+    setError('');
+    const key = tier?.tierKey;
+    const same = key ? allTypes.find((t) => t.eventDateId === id && t.tierKey === key && t.available > 0) : undefined;
+    setTierId(same?.id ?? null);
+    setDateId(id);
+  };
+  const pickedWhen = picked ? when(picked.startsAt) : null;
   const city = e.venue?.city ?? null;
 
   // Fan resale: other fans' tickets, while the event is still ahead.
   const resaleQ = useEventResale(cancelled || ended ? undefined : e.slug);
   const listings = !cancelled && !ended && resaleQ.data?.enabled ? resaleQ.data.listings : [];
-  const allSoldOut = types.length > 0 && types.every((t) => t.available === 0);
+  const allSoldOut = allTypes.length > 0 && allTypes.every((t) => t.available === 0);
   // Nothing from the organizer (sold out, or sales paused) but fans are selling: the bar points to resale.
   const resaleBar = !cancelled && !ended && !onSale && listings.length > 0;
   const scroller = useRef<ScrollViewInstance>(null);
@@ -136,6 +168,12 @@ function EventBody({ e, topBar, refetch, jumpToResale }: { e: EventDetail; topBa
     if (resaleY.current === null) return;
     haptic.select();
     scroller.current?.scrollTo({ y: Math.max(0, resaleY.current - 96), animated: true });
+  };
+  // DATES: the "Pick a date" row, for the bar's button before a date is picked.
+  const pickerY = useRef<number | null>(null);
+  const toPicker = () => {
+    haptic.select();
+    if (pickerY.current !== null) scroller.current?.scrollTo({ y: Math.max(0, pickerY.current - 96), animated: true });
   };
   const onResaleLayout = (ev: LayoutChangeEvent) => {
     resaleY.current = ev.nativeEvent.layout.y;
@@ -216,7 +254,20 @@ function EventBody({ e, topBar, refetch, jumpToResale }: { e: EventDetail; topBa
           {status}
 
           <View style={styles.info}>
-            <InfoRow icon="calendar" title={d.date} lines={[`${d.time}${abbr ? ` ${abbr}` : ''}${e.doorsAt ? ` · Doors ${when(e.doorsAt).time}` : ''}`, yours]} />
+            {mode === 'DAYS' && liveDates.length ? (
+              // A multi-day event: its days, one line each.
+              <InfoRow icon="calendar" title={`${rangeLine(liveDates)}${liveDates.length > 1 ? ` · ${liveDates.length} days` : ''}`} lines={liveDates.map((x) => `${dateLine(x)}${x.doorsAt ? ` · Doors ${when(x.doorsAt).time}` : ''}`)} />
+            ) : byDate && pickedWhen && picked ? (
+              <InfoRow
+                icon="calendar"
+                title={pickedWhen.date}
+                lines={[`${pickedWhen.time}${zoneAbbr(tz, picked.startsAt) ? ` ${zoneAbbr(tz, picked.startsAt)}` : ''}${picked.doorsAt ? ` · Doors ${when(picked.doorsAt).time}` : ''}${picked.label ? ` · ${picked.label}` : ''}`, localTimeText(picked.startsAt, tz), pickable.length > 1 ? `${pickable.length} dates · ${rangeLine(pickable)}` : null]}
+              />
+            ) : byDate && liveDates.length ? (
+              <InfoRow icon="calendar" title={`${pickable.length || liveDates.length} ${(pickable.length || liveDates.length) === 1 ? 'date' : 'dates'}`} lines={[rangeLine(pickable.length ? pickable : liveDates), onSale ? 'Pick a date below' : null]} />
+            ) : (
+              <InfoRow icon="calendar" title={d.date} lines={[`${d.time}${abbr ? ` ${abbr}` : ''}${e.doorsAt ? ` · Doors ${when(e.doorsAt).time}` : ''}`, yours]} />
+            )}
             <View style={styles.infoDivider} />
             {e.online ? (
               <InfoRow icon="stream" title="Online event" lines={['The stream link appears on your ticket.']} />
@@ -265,7 +316,7 @@ function EventBody({ e, topBar, refetch, jumpToResale }: { e: EventDetail; topBa
           </View>
         ) : null}
 
-        {!cancelled && !ended && types.length ? (
+        {!cancelled && !ended && allTypes.length ? (
           <View style={{ paddingHorizontal: gutter, marginTop: space.xxl, gap: space.md }}>
             <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline' }}>
               <Txt variant="h2" accessibilityRole="header">
@@ -275,8 +326,23 @@ function EventBody({ e, topBar, refetch, jumpToResale }: { e: EventDetail; topBa
                 From <Txt variant="smallStrong">{money(lowest, e.currency)}</Txt> all-in
               </Txt>
             </View>
+            {byDate ? (
+              <View
+                style={{ gap: space.sm }}
+                onLayout={(ev) => {
+                  pickerY.current = ev.nativeEvent.layout.y;
+                }}>
+                <Txt variant="bodyStrong">Pick a date</Txt>
+                <DateCards dates={pickable} value={dateId} onChange={pickDate} stock />
+                {!pickable.length ? (
+                  <Txt variant="small" color={colors.muted}>
+                    No dates are on sale right now.
+                  </Txt>
+                ) : null}
+              </View>
+            ) : null}
             {types.map((t) => (
-              <TierCard key={t.id} t={t} currency={e.currency} on={t.id === tier?.id} disabled={e.salesPaused} onPress={() => setTierId(t.id)} />
+              <TierCard key={t.id} t={t} currency={e.currency} on={t.id === tier?.id} disabled={e.salesPaused} onPress={() => setTierId(t.id)} days={mode === 'DAYS' ? coverLine(t.validDateIds ?? [], e.dates ?? []) : undefined} />
             ))}
             {onSale && tier && pw && tier.available > 0 ? (
               <View style={styles.pwyw}>
@@ -293,7 +359,7 @@ function EventBody({ e, topBar, refetch, jumpToResale }: { e: EventDetail; topBa
                   value={amount}
                   onChange={(c) => {
                     setError('');
-                    setAmounts((m) => ({ ...m, [tier.id]: c }));
+                    setAmounts((m) => ({ ...m, [amountKey]: c }));
                   }}
                   currency={e.currency}
                   error={amountErr ?? undefined}
@@ -319,7 +385,7 @@ function EventBody({ e, topBar, refetch, jumpToResale }: { e: EventDetail; topBa
                 <Stepper value={qty} max={max} onChange={setQty} label="Number of tickets" />
               </View>
             ) : null}
-            {onSale && seatMap ? (
+            {onSale && seatMap && tier ? (
               <Pressable accessibilityRole="button" onPress={getTickets} disabled={busy} hitSlop={8} style={{ alignSelf: 'flex-start' }}>
                 <Txt variant="smallStrong" color={colors.accent}>
                   {busy ? 'Holding…' : 'Skip the map: hold the best seats together'}
@@ -331,7 +397,7 @@ function EventBody({ e, topBar, refetch, jumpToResale }: { e: EventDetail; topBa
               {[
                 // The Eventro Guarantee covers paid tickets only: free ones have nothing to refund.
                 // A pay-what-you-want ticket that can be free is only covered when it's paid for ("from" is 0 then).
-                types.every((t) => t.priceCents <= 0 && !isPwyw(t)) ? null : types.some((t) => t.priceCents <= 0) ? 'Paid tickets covered by the Eventro Guarantee' : 'Covered by the Eventro Guarantee',
+                allTypes.every((t) => t.priceCents <= 0 && !isPwyw(t)) ? null : allTypes.some((t) => t.priceCents <= 0) ? 'Paid tickets covered by the Eventro Guarantee' : 'Covered by the Eventro Guarantee',
                 'Instant mobile delivery',
                 seatMap ? 'Pick your exact seats, or let us find the best together' : 'Prices include all fees',
                 e.donations ? `Add an optional donation to ${e.donations.cause} at checkout` : null,
@@ -374,6 +440,26 @@ function EventBody({ e, topBar, refetch, jumpToResale }: { e: EventDetail; topBa
         </View>
       ) : null}
 
+      {onSale && byDate && !tier ? (
+        // Multiple dates, none picked yet: the bar points at the dates.
+        <View style={[styles.bar, { paddingBottom: Math.max(insets.bottom, space.md) }]}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.lg }}>
+            <View style={{ flex: 1 }}>
+              <Txt variant="small" color={colors.dim} numberOfLines={1}>
+                {`${pickable.length} ${pickable.length === 1 ? 'date' : 'dates'} · ${rangeLine(pickable)}`}
+              </Txt>
+              <Txt variant="priceLg" style={{ fontSize: 26, lineHeight: 30 }} numberOfLines={1}>
+                <Txt variant="small" color={colors.dim}>
+                  {'from '}
+                </Txt>
+                {money(lowest, e.currency)}
+              </Txt>
+            </View>
+            <Button label="Pick a date" icon="calendar" onPress={toPicker} style={{ minWidth: 140 }} feedback="firm" />
+          </View>
+        </View>
+      ) : null}
+
       {onSale && tier ? (
         <View style={[styles.bar, { paddingBottom: Math.max(insets.bottom, space.md) }]}>
           {error ? <Notice tone="accent">{error}</Notice> : null}
@@ -381,6 +467,7 @@ function EventBody({ e, topBar, refetch, jumpToResale }: { e: EventDetail; topBa
             <View style={{ flex: 1 }}>
               <Txt variant="small" color={colors.dim} numberOfLines={1}>
                 {qty} × {tier.name}
+                {pickedWhen ? ` · ${pickedWhen.short}` : ''}
                 {pw && !amountErr ? ` at ${money(unit, e.currency)}` : ''}
               </Txt>
               <Txt variant="priceLg" style={{ fontSize: 26, lineHeight: 30 }} accessibilityLabel={amountErr ? 'Choose your price first' : `Total ${money(total, e.currency)}, fees included`} numberOfLines={1}>
@@ -401,7 +488,7 @@ function EventBody({ e, topBar, refetch, jumpToResale }: { e: EventDetail; topBa
                     setError(amountErr);
                     return;
                   }
-                  router.push({ pathname: '/seats/[slug]', params: { slug: e.slug, tier: tier.id, qty: String(qty), ...(pw && amount !== null ? { amount: String(amount) } : {}) } });
+                  router.push({ pathname: '/seats/[slug]', params: { slug: e.slug, tier: tier.id, qty: String(qty), ...(pw && amount !== null ? { amount: String(amount) } : {}), ...(picked ? { date: picked.id } : {}) } });
                 }}
                 style={{ minWidth: 140 }}
                 feedback="firm"
@@ -478,7 +565,7 @@ function InfoRow({ icon, title, lines, action, onTitle }: { icon: 'calendar' | '
 }
 
 /** A tier in its look: the gradient head (glyph, name, badge, price), then what's included. Premium looks glow. */
-function TierCard({ t, currency, on, disabled, onPress }: { t: TicketType; currency: string; on: boolean; disabled?: boolean; onPress: () => void }) {
+function TierCard({ t, currency, on, disabled, onPress, days }: { t: TicketType; currency: string; on: boolean; disabled?: boolean; onPress: () => void; days?: string }) {
   const [open, setOpen] = useState(false);
   const out = t.available === 0;
   const look = lookOf(t);
@@ -486,12 +573,12 @@ function TierCard({ t, currency, on, disabled, onPress }: { t: TicketType; curre
   const glow = look.colors[look.colors.length - 1];
   const pw = isPwyw(t) ? t.pwyw : null;
   const price = pw ? fromLabel(pw, currency) : money(t.priceCents, currency);
-  const hasBody = !!t.description || perks.length > 0 || out || t.available < 50 || !!pw;
+  const hasBody = !!t.description || perks.length > 0 || out || t.available < 50 || !!pw || !!days;
   return (
     <Pressable
       accessibilityRole="radio"
       accessibilityState={{ checked: on, disabled: out || !!disabled }}
-      accessibilityLabel={`${t.name}${t.badge ? `, ${t.badge}` : ''}, ${pw ? `pay what you want, ${price.toLowerCase()}` : `${price} each`}${out ? ', sold out' : t.available < 50 ? `, only ${t.available} left` : ''}`}
+      accessibilityLabel={`${t.name}${t.badge ? `, ${t.badge}` : ''}${days ? `, valid ${days}` : ''}, ${pw ? `pay what you want, ${price.toLowerCase()}` : `${price} each`}${out ? ', sold out' : t.available < 50 ? `, only ${t.available} left` : ''}`}
       disabled={out || disabled}
       onPress={() => {
         haptic.select();
@@ -522,6 +609,15 @@ function TierCard({ t, currency, on, disabled, onPress }: { t: TicketType; curre
         </TierSurface>
         {hasBody ? (
           <View style={styles.tierBody}>
+            {days ? (
+              // A multi-day event: the days this ticket gets you in.
+              <View style={{ flexDirection: 'row', gap: 6, alignItems: 'center' }}>
+                <Icon name="calendar" size={14} color={colors.accent} />
+                <Txt variant="smallStrong" style={{ flex: 1 }}>
+                  {days}
+                </Txt>
+              </View>
+            ) : null}
             {pw ? (
               <Txt variant="smallStrong" color={colors.text}>
                 Pay what you want

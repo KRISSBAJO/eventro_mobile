@@ -9,11 +9,15 @@
  * badge. Org admins (`canRefund`) can refund what's left of a donation (POST …/orders/:orderId/refund-donation, with
  * an optional reason): it goes back to the buyer's card and the tickets are kept. When the organizer had already been
  * paid for that order, the amount is recorded as owed to Eventro (`donationOwedCents`), and the screen says so.
+ *
+ * Multiple dates: date chips filter the list (`?date=`; also opened from the dashboard's "By date"): a run's tickets
+ * for that date, or a multi-day event's passes valid that day, where "Checked in" means entered that day. Check-ins
+ * from here are for the chosen date (a run's ticket: its own date when none is chosen).
  */
 import { useQueryClient } from '@tanstack/react-query';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { useConfirm } from '@/components/confirm';
 import { Segmented } from '@/components/form-ui';
 import { Icon } from '@/components/icons';
@@ -21,7 +25,8 @@ import { OrgScreen } from '@/components/org-ui';
 import { Badge, Button, Chip, EmptyState, ErrorState, Field, Notice, Skeleton, Txt } from '@/components/ui';
 import { api, errorText } from '@/lib/api';
 import { deviceId } from '@/lib/device';
-import { localStamp, money, num } from '@/lib/format';
+import { dateLine, shortDay } from '@/lib/dates';
+import { localStamp, money, num, when } from '@/lib/format';
 import { haptic } from '@/lib/haptics';
 import { useAttendees, useEventDonations, useEventStats, useOrgEvent, type DonationOrder, type DonationRefund, type EventDonations } from '@/lib/organizer';
 import type { Attendee, CheckInAnswer } from '@/lib/types';
@@ -43,13 +48,18 @@ type Show = 'tickets' | 'donations';
 const REASON_MAX = 300;
 
 export default function Attendees() {
-  const { id } = useLocalSearchParams<{ id: string }>();
+  const { id, date: dateParam } = useLocalSearchParams<{ id: string; date?: string }>();
   const ev = useOrgEvent(id);
   const [text, setText] = useState('');
   const [q, setQ] = useState('');
   const [filter, setFilter] = useState<Filter>('');
   const [kind, setKind] = useState<Kind>('');
-  const list = useAttendees(id, q, filter, kind);
+  // Multiple dates: '' is every date.
+  const [dateId, setDateId] = useState(dateParam ?? '');
+  const mode = ev.data?.dateMode ?? 'SINGLE';
+  const dates = mode === 'SINGLE' ? [] : (ev.data?.dates ?? []);
+  const dateOf = (x: string | null | undefined) => dates.find((d) => d.id === x);
+  const list = useAttendees(id, q, filter, kind, dates.length ? dateId : '');
   const stats = useEventStats(id);
   const s = stats.data;
   const donations = useEventDonations(id);
@@ -68,7 +78,8 @@ export default function Attendees() {
 
   const toggle = async (a: Attendee) => {
     setMessage(null);
-    const undo = a.status === 'CHECKED_IN';
+    // A multi-day pass with a day chosen: in or not that day.
+    const undo = mode === 'DAYS' && dateId ? !!a.checkedInDates?.includes(dateId) : a.status === 'CHECKED_IN';
     if (undo) {
       const yes = await confirm({ title: `Undo ${a.holderName}’s check-in?`, message: 'Their ticket works at the door again.', confirmLabel: 'Undo check-in', destructive: true });
       if (!yes) return;
@@ -76,11 +87,13 @@ export default function Attendees() {
     setBusy(a.id);
     try {
       if (undo) {
-        await api(`/organizer/events/${encodeURIComponent(id!)}/check-in/${encodeURIComponent(a.id)}`, { method: 'DELETE' });
+        await api(`/organizer/events/${encodeURIComponent(id!)}/check-in/${encodeURIComponent(a.id)}${mode === 'DAYS' && dateId ? `?eventDateId=${encodeURIComponent(dateId)}` : ''}`, { method: 'DELETE' });
         haptic.success();
         setMessage({ ok: true, text: `${a.holderName} is no longer checked in.` });
       } else {
-        const r = await api<CheckInAnswer>(`/organizer/events/${encodeURIComponent(id!)}/check-in`, { body: { code: a.id, deviceId: await deviceId() } });
+        // The chosen date; a run's ticket otherwise goes in on its own date.
+        const on = dateId || (mode === 'DATES' ? a.eventDateId : '') || '';
+        const r = await api<CheckInAnswer>(`/organizer/events/${encodeURIComponent(id!)}/check-in`, { body: { code: a.id, deviceId: await deviceId(), ...(on ? { eventDateId: on } : {}) } });
         if (r.result === 'ok') haptic.success();
         else haptic.warning();
         setMessage({ ok: r.result === 'ok', text: r.result === 'ok' ? `${a.holderName} is checked in.` : r.message });
@@ -119,6 +132,20 @@ export default function Attendees() {
         <Donations eventId={id!} data={donations.data!} currency={ev.data?.currency ?? donations.data!.items[0]?.currency ?? 'USD'} />
       ) : (
         <>
+          {dates.length ? (
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: space.sm }} accessibilityLabel="Date">
+              <Chip label="All dates" active={!dateId} onPress={() => setDateId('')} />
+              {dates.map((d) => (
+                <Chip
+                  key={d.id}
+                  label={`${mode === 'DAYS' ? shortDay(d.startsAt) : `${shortDay(d.startsAt)} · ${when(d.startsAt).time}`}${d.status === 'CANCELLED' ? ' · cancelled' : ''}`}
+                  accessibilityLabel={dateLine(d)}
+                  active={dateId === d.id}
+                  onPress={() => setDateId(d.id)}
+                />
+              ))}
+            </ScrollView>
+          ) : null}
           <Field label="Search" placeholder="Name, email or ticket number" value={text} onChangeText={setText} autoCapitalize="none" autoCorrect={false} returnKeyType="search" clearButtonMode="while-editing" />
           <View style={styles.chips}>
             {FILTERS.map((f) => (
@@ -152,7 +179,10 @@ export default function Attendees() {
                 {rows.length >= 5000 ? ' (the first 5,000: search to narrow it down)' : ''}
               </Txt>
               {rows.slice(0, 300).map((a) => {
-                const inside = a.status === 'CHECKED_IN';
+                const inside = mode === 'DAYS' && dateId ? !!a.checkedInDates?.includes(dateId) : a.status === 'CHECKED_IN';
+                // Multiple dates: the ticket's date (a run) or the days it was used (multi-day).
+                const own = mode === 'DATES' ? dateOf(a.eventDateId) : undefined;
+                const usedOn = mode === 'DAYS' ? (a.checkedInDates ?? []).map((x) => dateOf(x)).filter((x): x is NonNullable<typeof x> => !!x) : [];
                 const seat = [a.section, a.row ? `Row ${a.row}` : null, a.seat !== null ? `Seat ${a.seat}` : null].filter(Boolean).join(' · ');
                 return (
                   <View key={a.id} style={styles.row}>
@@ -163,14 +193,20 @@ export default function Attendees() {
                       <Txt variant="small" color={colors.muted} numberOfLines={1}>
                         {a.ticketType.name}
                         {seat ? ` · ${seat}` : ''}
+                        {own && !dateId ? ` · ${dateLine(own, { label: false })}` : ''}
                       </Txt>
+                      {usedOn.length ? (
+                        <Txt variant="tiny" color={colors.dim} numberOfLines={1}>
+                          {`In on ${usedOn.map((x) => shortDay(x.startsAt)).join(', ')}`}
+                        </Txt>
+                      ) : null}
                       <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
                         <Badge label={a.type === 'COMP' ? (a.compGroup ? `Comp · ${a.compGroup}` : 'Comp') : 'Paid'} tone={a.type === 'COMP' ? 'accent' : 'plain'} />
                       </View>
                       <Txt variant="mono" color={colors.dim} numberOfLines={1}>
                         {a.id}
                       </Txt>
-                      {inside && a.checkedInAt ? <Badge label={`In · ${localStamp(new Date(a.checkedInAt).getTime())}`} tone="success" style={{ marginTop: 4 }} /> : a.status === 'TRANSFER_PENDING' ? <Badge label="Transfer pending" tone="warning" style={{ marginTop: 4 }} /> : null}
+                      {inside && a.checkedInAt && !(mode === 'DAYS' && dateId) ? <Badge label={`In · ${localStamp(new Date(a.checkedInAt).getTime())}`} tone="success" style={{ marginTop: 4 }} /> : a.status === 'TRANSFER_PENDING' ? <Badge label="Transfer pending" tone="warning" style={{ marginTop: 4 }} /> : null}
                     </View>
                     <Pressable
                       accessibilityRole="button"

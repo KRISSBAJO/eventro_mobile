@@ -13,6 +13,7 @@ import { useAuth } from './auth';
 import { haptic } from './haptics';
 import type { EventBooking } from './bookings';
 import type { Attendee, Category, GuestList, MyOrg } from './types';
+import type { DateMode, EventDate } from './dates';
 import { colors } from '@/theme';
 import type { TierLook } from './tiers';
 
@@ -56,6 +57,10 @@ export type OrgTicketType = {
   pwywSuggestedCents?: number | null;
   pwywMaxCents?: number | null;
   pwywQuickPicks?: number[];
+  /** multiple dates: the date of this tier copy (DATES; copies share `tierKey`) or the days it admits on (DAYS) */
+  eventDateId?: string | null;
+  tierKey?: string | null;
+  validDateIds?: string[];
 };
 
 /** An event's donation settings (GET /organizer/events/:id; also what create and edit send). */
@@ -98,6 +103,10 @@ export type OrgEvent = {
   /** donations, net of refunds (separate from ticket sales), and live comps issued */
   donationsCents?: number;
   comps?: number;
+  /** multiple dates (lib/dates.ts); totals above are across every date */
+  dateMode?: DateMode;
+  dates?: EventDate[];
+  nextDate?: { id: string; startsAt: string } | null;
 };
 
 /** GET /organizer/events/:id (the event row with its venue, promos and media) */
@@ -130,6 +139,9 @@ export type OrgEventDetail = DonationSettings & {
   venueBooking?: EventBooking | null;
   /** most live comps the event allows (null: no limit) */
   compLimit?: number | null;
+  /** multiple dates (lib/dates.ts): DATES performances or DAYS days, cancelled ones too, in start order */
+  dateMode?: DateMode;
+  dates?: EventDate[];
 };
 
 /**
@@ -142,7 +154,9 @@ export type EventStats = {
   grossCents: number;
   netCents: number;
   checkedIn: number;
-  byTicketType: { id: string; name: string; sold: number; capacity: number; priceCents: number; comps?: number }[];
+  byTicketType: { id: string; name: string; sold: number; capacity: number; priceCents: number; comps?: number; eventDateId?: string | null; tierKey?: string | null; validDateIds?: string[] }[];
+  /** multiple dates: per date (DAYS: a pass counts on each of its days; gross split evenly over them); [] for SINGLE */
+  byDate?: { dateId: string; startsAt: string; label: string | null; status: string; sold: number; comps?: number; capacity: number; checkedIn: number; grossCents: number }[];
   daily: { date: string; tickets: number; cents: number }[];
   /** cents: net of donation refunds */
   donations?: { orders: number; cents: number; refundedCents: number; cause: string | null };
@@ -309,6 +323,32 @@ export type CancelPreview = {
   resaleListings: number;
 };
 
+/** GET /organizer/events/:id/dates/:dateId/cancel-preview (DATES, org admins) */
+export type CancelDatePreview = {
+  id: string;
+  title: string;
+  date: EventDate;
+  paidOrders: number;
+  refundCents: { currency: string; cents: number }[];
+  tickets: number;
+  resaleListings: number;
+  /** it's the last active date: cancelling it cancels the event */
+  cancelsEvent: boolean;
+};
+
+/** POST /organizer/events/:id/dates/:dateId/cancel */
+export type CancelDateSummary = {
+  status: 'CANCELLED';
+  dateId: string;
+  eventCancelled: boolean;
+  alreadyCancelled: boolean;
+  refunded: number;
+  failed: { orderId: string; message: string }[];
+  totalRefundedCents: Record<string, number> | number;
+  ticketsVoided: number;
+  listingsCancelled: number;
+};
+
 /** POST /organizer/events/:id/cancel */
 export type CancelSummary = {
   status: 'CANCELLED';
@@ -363,11 +403,12 @@ export function useGuaranteeRefunds(id: string | undefined, enabled = true) {
   return useQuery({ queryKey: ['organizer', 'guarantee-refunds', id], queryFn: () => api<GuaranteeRefunds>(`/organizer/events/${enc(id!)}/guarantee-refunds`), enabled: on && !!id && enabled, staleTime: 60_000, retry: 0 });
 }
 
-export function useAttendees(id: string | undefined, q: string, status: '' | 'checked-in' | 'not-checked-in', type: '' | 'paid' | 'comp' = '') {
+/** `date`: multiple dates, that date's tickets (DATES) or the tickets valid that day (DAYS; status is then "entered that day"). */
+export function useAttendees(id: string | undefined, q: string, status: '' | 'checked-in' | 'not-checked-in', type: '' | 'paid' | 'comp' = '', date = '') {
   const on = useSignedIn();
   return useQuery({
-    queryKey: ['organizer', 'attendees', id, q, status, type],
-    queryFn: ({ signal }) => api<Attendee[]>(`/organizer/events/${enc(id!)}/attendees${qs({ q: q.trim() || undefined, status: status || undefined, type: type || undefined })}`, { signal }),
+    queryKey: ['organizer', 'attendees', id, q, status, type, date],
+    queryFn: ({ signal }) => api<Attendee[]>(`/organizer/events/${enc(id!)}/attendees${qs({ q: q.trim() || undefined, status: status || undefined, type: type || undefined, date: date || undefined })}`, { signal }),
     enabled: on && !!id,
     staleTime: 10_000,
     placeholderData: (prev) => prev,
@@ -430,10 +471,13 @@ export const membershipOf = (orgs: MyOrg[] | undefined, orgId: string | undefine
 
 export type EventStatus = 'On sale' | 'Paused' | 'Sold out' | 'Ended' | 'In review' | 'Rejected' | 'Draft' | 'Cancelled';
 
-/** As the website's statusOf (org-data.ts). Times are wall-clock UTC, so "ended" compares the date as stored. */
-export function statusOf(e: { status: OrgStatus; startsAt: string; salesPaused: boolean; sold: number; capacity: number }, now = Date.now()): EventStatus {
+/**
+ * As the website's statusOf (org-data.ts). Times are wall-clock UTC, so "ended" compares the date as stored. An event
+ * with more than one date has ended when its last active date has started.
+ */
+export function statusOf(e: { status: OrgStatus; startsAt: string; salesPaused: boolean; sold: number; capacity: number; dateMode?: string; dates?: EventDate[] }, now = Date.now()): EventStatus {
   if (e.status === 'CANCELLED') return 'Cancelled';
-  if (new Date(e.startsAt).getTime() < now) return 'Ended';
+  if (new Date(lastStart(e)).getTime() < now) return 'Ended';
   if (e.status === 'DRAFT') return 'Draft';
   if (e.status === 'IN_REVIEW') return 'In review';
   if (e.status === 'REJECTED') return 'Rejected';
@@ -452,6 +496,31 @@ export const STATUS_TONE: Record<EventStatus, 'plain' | 'accent' | 'success' | '
   Draft: 'plain',
   Cancelled: 'accent',
 };
+
+/* ---------- multiple dates ---------- */
+
+/** The last active date's start (the event's own start for one date). */
+export function lastStart(e: { startsAt: string; dateMode?: string; dates?: EventDate[] }) {
+  const live = (e.dates ?? []).filter((d) => d.status !== 'CANCELLED');
+  if (!e.dateMode || e.dateMode === 'SINGLE' || !live.length) return e.startsAt;
+  return live.map((d) => d.startsAt).sort().pop()!;
+}
+
+/**
+ * DATES events store one ticket type per tier and date (copies share `tierKey`). The tiers as the organizer thinks of
+ * them: one entry per tier with the copy on the earliest active date as its face, every copy, and the totals.
+ */
+export function tiersOf<T extends OrgTicketType>(types: T[], dates: EventDate[] = []): { tier: T; copies: T[]; sold: number; capacity: number }[] {
+  const order = new Map(dates.map((d, i) => [d.id, d.status === 'CANCELLED' ? 1000 + i : i]));
+  const groups = new Map<string, T[]>();
+  for (const t of types) groups.set(t.tierKey ?? t.id, [...(groups.get(t.tierKey ?? t.id) ?? []), t]);
+  return [...groups.values()]
+    .map((copies) => {
+      const sorted = [...copies].sort((a, b) => (order.get(a.eventDateId ?? '') ?? 0) - (order.get(b.eventDateId ?? '') ?? 0));
+      return { tier: sorted[0], copies: sorted, sold: copies.reduce((n, c) => n + c.sold, 0), capacity: copies.reduce((n, c) => n + c.capacity, 0) };
+    })
+    .sort((a, b) => a.tier.sortOrder - b.tier.sortOrder);
+}
 
 /* ---------- money ---------- */
 

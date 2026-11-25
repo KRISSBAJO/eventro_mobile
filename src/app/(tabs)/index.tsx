@@ -85,7 +85,8 @@ export default function Discover() {
   // "What's on in NY?" when we know the city (a short name keeps the headline to two lines).
   const headlineCity = place && place.source !== 'precise' && place.city ? shortCity(place.city) : place?.source === 'precise' && inCity.length ? 'your area' : '';
   const weekCount = local.filter((r) => {
-    const t = new Date(r.event.startsAt).getTime();
+    // multiple dates: the next one
+    const t = new Date(r.event.nextDate?.startsAt ?? r.event.startsAt).getTime();
     return t - openedAt < 7 * 86_400_000;
   }).length;
   // Events per category: near you when there are any, else everything on sale.

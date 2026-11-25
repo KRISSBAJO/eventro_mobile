@@ -10,12 +10,15 @@
  * (VENUE_BOOKING_UNAVAILABLE) needs another venue, or the venue kept without the booking. Drafts held in person can
  * use one of the organization's venue bookings (organizer/events/[id]/booking.tsx), switch to another, or drop it
  * (DELETE /organizer/events/:id/venue-booking; the booking itself stays).
+ *
+ * Multiple dates: "By date" lists each date's sales, capacity and check-ins (stats `byDate`; a multi-day pass counts on
+ * each of its days) and opens the attendees for that date; a run's ticket types are added up across dates.
  */
 import { useQueryClient } from '@tanstack/react-query';
 import { Image } from 'expo-image';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useState } from 'react';
-import { Platform, Share, StyleSheet, View } from 'react-native';
+import { Platform, Pressable, Share, StyleSheet, View } from 'react-native';
 import { useConfirm } from '@/components/confirm';
 import { BookingBadge } from '@/components/booking-ui';
 import { Icon } from '@/components/icons';
@@ -25,6 +28,7 @@ import { api, errorText } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { localMoment, rangeLabel } from '@/lib/bookings';
 import { donationLabel } from '@/lib/donations';
+import { dateLine, rangeLine } from '@/lib/dates';
 import { money, num, when } from '@/lib/format';
 import { haptic } from '@/lib/haptics';
 import {
@@ -87,6 +91,23 @@ export default function EventDashboard() {
   const capacity = s?.capacity ?? e.ticketTypes.reduce((n, t) => n + t.capacity, 0);
   const st = statusOf({ ...e, sold, capacity });
   const d = when(e.startsAt);
+  // Multiple dates: the run's dates, and the tiers added up across them.
+  const liveDates = (e.dates ?? []).filter((x) => x.status !== 'CANCELLED');
+  const multi = !!e.dateMode && e.dateMode !== 'SINGLE' && liveDates.length > 0;
+  const whenText = multi ? `${rangeLine(liveDates)} · ${liveDates.length} ${e.dateMode === 'DAYS' ? (liveDates.length === 1 ? 'day' : 'days') : liveDates.length === 1 ? 'date' : 'dates'}` : null;
+  const byType = (() => {
+    const rows = s?.byTicketType ?? [];
+    if (e.dateMode !== 'DATES') return rows;
+    const by = new Map<string, (typeof rows)[number]>();
+    // a cancelled date's copies don't count any more
+    const gone = new Set((e.dates ?? []).filter((x) => x.status === 'CANCELLED').map((x) => x.id));
+    for (const t of rows.filter((x) => !gone.has(x.eventDateId ?? ''))) {
+      const k = t.tierKey ?? t.id;
+      const was = by.get(k);
+      by.set(k, was ? { ...was, sold: was.sold + t.sold, capacity: was.capacity + t.capacity, comps: (was.comps ?? 0) + (t.comps ?? 0) } : { ...t });
+    }
+    return [...by.values()];
+  })();
   const cancelled = e.status === 'CANCELLED';
   const draft = e.status === 'DRAFT' || e.status === 'REJECTED';
   const canPause = editor && e.status === 'PUBLISHED' && st !== 'Ended';
@@ -184,7 +205,7 @@ export default function EventDashboard() {
   return (
     <OrgScreen
       title={e.title}
-      eyebrow={`${d.short} · ${d.time}`}
+      eyebrow={whenText ?? `${d.short} · ${d.time}`}
       onRefresh={refresh}
       footer={
         draft && editor ? (
@@ -200,7 +221,7 @@ export default function EventDashboard() {
         <View style={{ flex: 1, gap: 6 }}>
           <StatusBadge status={st} />
           <Txt variant="small" color={colors.muted} numberOfLines={2}>
-            {d.date}
+            {whenText ?? d.date}
             {'\n'}
             {e.online ? 'Online event' : e.venue ? `${e.venue.name}, ${e.venue.city}` : ''}
           </Txt>
@@ -258,7 +279,7 @@ export default function EventDashboard() {
             {editor && draft && !(held && vb.status !== 'PENDING') ? <Button label="Remove from event" variant="ghost" size="sm" loading={busy === 'detach'} onPress={() => void detach()} /> : null}
           </View>
         </View>
-      ) : editor && draft && !e.online ? (
+      ) : editor && draft && !e.online && (!e.dateMode || e.dateMode === 'SINGLE') ? (
         <View style={styles.card}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.md }}>
             <View style={styles.useIcon}>
@@ -326,9 +347,47 @@ export default function EventDashboard() {
             </View>
           ) : null}
 
+          {s.byDate?.length ? (
+            <View style={styles.card}>
+              <Label>By date</Label>
+              {s.byDate.map((x) => {
+                const off = x.status === 'CANCELLED';
+                return (
+                  <Pressable
+                    key={x.dateId}
+                    accessibilityRole="button"
+                    accessibilityLabel={`${dateLine(x)}${off ? ', cancelled' : ''}: ${num(x.sold)} of ${num(x.capacity)} sold, ${num(x.checkedIn)} checked in. See attendees`}
+                    onPress={() => router.push({ pathname: '/organizer/events/[id]/attendees', params: { id: e.id, date: x.dateId } })}
+                    style={({ pressed }) => [{ gap: 6 }, off && { opacity: 0.55 }, pressed && { opacity: 0.7 }]}>
+                    <View style={{ flexDirection: 'row', gap: space.sm, alignItems: 'baseline' }}>
+                      <Txt variant="bodyStrong" style={{ flex: 1 }} numberOfLines={1}>
+                        {dateLine(x)}
+                      </Txt>
+                      <Txt variant="small" color={off ? colors.accentHi : colors.muted}>
+                        {off ? 'Cancelled' : `${num(x.sold)} / ${num(x.capacity)}${x.comps ? ` + ${num(x.comps)}` : ''} · ${num(x.checkedIn)} in`}
+                      </Txt>
+                    </View>
+                    {!off ? <Progress value={x.sold + (x.comps ?? 0)} max={x.capacity} /> : null}
+                    {!off && x.grossCents ? (
+                      <Txt variant="tiny" color={colors.dim}>
+                        {money(x.grossCents, e.currency)}
+                        {e.dateMode === 'DAYS' ? ' · passes split evenly over their days' : ''}
+                      </Txt>
+                    ) : null}
+                  </Pressable>
+                );
+              })}
+            </View>
+          ) : null}
+
           <View style={styles.card}>
             <Label>By ticket type</Label>
-            {s.byTicketType.map((t) => (
+            {e.dateMode === 'DATES' ? (
+              <Txt variant="small" color={colors.dim}>
+                All dates together.
+              </Txt>
+            ) : null}
+            {byType.map((t) => (
               <View key={t.id} style={{ gap: 6 }}>
                 <View style={{ flexDirection: 'row', gap: space.sm }}>
                   <Txt variant="bodyStrong" style={{ flex: 1 }} numberOfLines={1}>

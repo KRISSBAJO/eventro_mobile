@@ -6,7 +6,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Badge, EmptyState, ErrorState, IconButton, Notice, Skeleton, Txt } from '@/components/ui';
 import { api, errorText } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
-import { when } from '@/lib/format';
+import { ticketWhen } from '@/lib/dates';
 import { haptic } from '@/lib/haptics';
 import { useMyResale, useRefreshWallet } from '@/lib/queries';
 import { fmt, LISTING_CHIP, payoutLabel, shortDate, sumBy, vsFace } from '@/lib/resale';
@@ -125,7 +125,7 @@ function ListingRow({ l, first, busy, onUnlist }: { l: MyListing; first: boolean
         </Txt>
       </Pressable>
       <Txt variant="small" color={colors.muted}>
-        {[l.ticket.ticketType.name, seat].filter(Boolean).join(' · ')} · {when(l.event.startsAt).short}
+        {[l.ticket.ticketType.name, seat].filter(Boolean).join(' · ')} · {ticketWhen(l.ticket, l.event.startsAt, { time: false }).line}
       </Txt>
       <Txt variant="tiny" color={colors.dim}>
         Listed {shortDate(l.createdAt)}

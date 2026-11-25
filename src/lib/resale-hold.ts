@@ -7,9 +7,10 @@
  * drops out of GET /events/:slug/resale, so the seat, prices and tier travel with it.
  */
 import { Platform } from 'react-native';
+import type { Dated } from './dates';
 import type { ResaleHoldCreated, ResaleListing } from './types';
 
-export type ResaleHold = {
+export type ResaleHold = Dated & {
   listingId: string;
   holdKey: string;
   /** ISO time the hold runs out (10 minutes after it was made) */
@@ -48,6 +49,9 @@ export const holdFrom = (h: ResaleHoldCreated, l: ResaleListing, slug: string): 
   sectionName: l.sectionName ?? null,
   row: l.row ?? null,
   seat: l.seat ?? null,
+  // multiple dates: the ticket's date (DATES) or days (DAYS)
+  date: l.date ?? null,
+  validDates: l.validDates ?? [],
 });
 
 export function saveResaleHold(h: ResaleHold) {

@@ -10,6 +10,10 @@
  *
  * A pay-what-you-want tier is held at the amount picked on the event page (`?amount=`, base cents), or its suggested
  * price when it comes from somewhere else; the fan can still change it at checkout.
+ *
+ * Multiple dates (DATES): one seat map for every date, seats sold per date. `?date=` is the date picked on the event
+ * page (else the API's next date); sections point at tiers (`tierKey`), so each section sells that tier's copy on the
+ * date, and availability and taken seats are asked for that date.
  */
 import { useQuery } from '@tanstack/react-query';
 import { router, useLocalSearchParams } from 'expo-router';
@@ -20,6 +24,7 @@ import { Icon } from '@/components/icons';
 import { ScreenHeader } from '@/components/screen-header';
 import { Badge, Button, EmptyState, ErrorState, Notice, Skeleton, Stepper, Txt } from '@/components/ui';
 import { api, ApiError, errorText } from '@/lib/api';
+import { dateLine } from '@/lib/dates';
 import { money } from '@/lib/format';
 import { allInOf, amountProblem, isPwyw, startAmount } from '@/lib/pwyw';
 import { haptic } from '@/lib/haptics';
@@ -52,7 +57,7 @@ type SeatChoice = { row: string; seat: number };
 const key = (p: SeatChoice) => `${p.row}:${p.seat}`;
 
 export default function Seats() {
-  const { slug, tier: tierParam, qty: qtyParam, amount: amountParam } = useLocalSearchParams<{ slug: string; tier?: string; qty?: string; amount?: string }>();
+  const { slug, tier: tierParam, qty: qtyParam, amount: amountParam, date: dateParam } = useLocalSearchParams<{ slug: string; tier?: string; qty?: string; amount?: string; date?: string }>();
   const insets = useSafeAreaInsets();
   const ev = useEvent(slug);
   const e = ev.data;
@@ -75,20 +80,27 @@ export default function Seats() {
       </View>
     );
   }
-  return <Picker e={e} tierParam={tierParam} qtyParam={Number(qtyParam) || 2} amountParam={amountParam} />;
+  return <Picker e={e} tierParam={tierParam} qtyParam={Number(qtyParam) || 2} amountParam={amountParam} dateParam={dateParam} />;
 }
 
-function Picker({ e, tierParam, qtyParam, amountParam }: { e: EventDetail; tierParam?: string; qtyParam: number; amountParam?: string }) {
+function Picker({ e, tierParam, qtyParam, amountParam, dateParam }: { e: EventDetail; tierParam?: string; qtyParam: number; amountParam?: string; dateParam?: string }) {
   const insets = useSafeAreaInsets();
-  const types = new Map(e.ticketTypes.map((t) => [t.id, t]));
+  // DATES: the date these seats are for, and each section's tier as its copy on that date.
+  const byDate = e.dateMode === 'DATES';
+  const date = byDate ? ((e.dates ?? []).find((d) => d.id === dateParam) ?? (e.dates ?? []).find((d) => d.id === e.seatMapDateId) ?? null) : null;
+  const dateQ = date ? `&date=${encodeURIComponent(date.id)}` : '';
+  const copies = byDate ? e.ticketTypes.filter((t) => t.eventDateId === date?.id && t.tierKey) : [];
+  const types = new Map(byDate ? copies.map((t) => [t.tierKey!, t]) : e.ticketTypes.map((t) => [t.id, t]));
+  // tierParam is a ticket type id; DATES sections are keyed by its tierKey
+  const tierRef = byDate ? (e.ticketTypes.find((t) => t.id === tierParam)?.tierKey ?? undefined) : tierParam;
   const sections = (e.seatMap?.sections ?? []).filter((s) => types.has(s.ticketTypeId));
   const [qty, setQty] = useState(Math.max(1, Math.min(8, qtyParam)));
   const [openId, setOpenId] = useState<string | null>(null);
-  const [onlyTier, setOnlyTier] = useState<string | null>(tierParam && types.has(tierParam) ? tierParam : null);
+  const [onlyTier, setOnlyTier] = useState<string | null>(tierRef && types.has(tierRef) ? tierRef : null);
 
   const avail = useQuery({
-    queryKey: ['event', e.slug, 'availability', qty],
-    queryFn: () => api<Availability>(`/events/${encodeURIComponent(e.slug)}/availability?qty=${qty}`),
+    queryKey: ['event', e.slug, 'availability', qty, date?.id ?? null],
+    queryFn: () => api<Availability>(`/events/${encodeURIComponent(e.slug)}/availability?qty=${qty}${dateQ}`),
     staleTime: 10_000,
     placeholderData: (prev) => prev,
   });
@@ -99,6 +111,7 @@ function Picker({ e, tierParam, qtyParam, amountParam }: { e: EventDetail; tierP
     .sort((x, y) => Number(!!y.a?.fits) - Number(!!x.a?.fits) || x.t.priceCents - y.t.priceCents);
   const open = shown.find((x) => x.s.id === openId) ?? null;
   const tiersInMap = [...new Set(sections.map((s) => s.ticketTypeId))].map((id) => types.get(id)!).sort((a, b) => a.priceCents - b.priceCents);
+  const eyebrow = date ? `${e.title} · ${dateLine(date, { label: false })}` : e.title;
 
   if (!sections.length) {
     return (
@@ -112,16 +125,30 @@ function Picker({ e, tierParam, qtyParam, amountParam }: { e: EventDetail; tierP
   if (open) {
     // Pay what you want: the amount from the event page for that tier, else where its suggested price starts.
     const pw = isPwyw(open.t) ? open.t.pwyw : null;
-    const asked = open.t.id === tierParam && amountParam && /^\d+$/.test(amountParam) ? Number(amountParam) : null;
+    const asked = (open.t.id === tierParam || (!!tierRef && open.t.tierKey === tierRef)) && amountParam && /^\d+$/.test(amountParam) ? Number(amountParam) : null;
     const amount = pw ? (asked !== null && !amountProblem(asked, pw, e.currency) ? asked : startAmount(pw)) : null;
-    return <SectionSeatsView e={e} section={open.s} tier={open.t} qty={qty} amount={amount} best={open.a?.row ? open.a.seats.map((n) => ({ row: open.a!.row!, seat: n })) : []} onBack={() => setOpenId(null)} onQty={setQty} />;
+    return (
+      <SectionSeatsView
+        e={e}
+        section={open.s}
+        tier={open.t}
+        qty={qty}
+        amount={amount}
+        best={open.a?.row ? open.a.seats.map((n) => ({ row: open.a!.row!, seat: n })) : []}
+        left={open.a?.available ?? open.s.available}
+        dateQ={dateQ}
+        dateText={date ? dateLine(date, { label: false }) : null}
+        onBack={() => setOpenId(null)}
+        onQty={setQty}
+      />
+    );
   }
 
   const maxQty = Math.max(1, Math.min(8, ...tiersInMap.map((t) => t.maxPerOrder)));
   return (
     <View style={{ flex: 1, backgroundColor: colors.bg }}>
       <ScrollView contentContainerStyle={{ paddingTop: insets.top + space.sm, paddingHorizontal: gutter, paddingBottom: insets.bottom + space.huge, gap: space.lg }}>
-        <ScreenHeader title="Choose seats" eyebrow={e.title} />
+        <ScreenHeader title="Choose seats" eyebrow={eyebrow} />
         <View style={styles.qtyRow}>
           <View style={{ flex: 1 }}>
             <Txt variant="bodyStrong">How many?</Txt>
@@ -135,9 +162,10 @@ function Picker({ e, tierParam, qtyParam, amountParam }: { e: EventDetail; tierP
         {tiersInMap.length > 1 ? (
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: space.sm }}>
             <TierChip label="All prices" on={!onlyTier} onPress={() => setOnlyTier(null)} />
-            {tiersInMap.map((t) => (
-              <TierChip key={t.id} label={`${t.name} · ${money(t.priceCents, e.currency)}`} on={onlyTier === t.id} onPress={() => setOnlyTier(t.id)} />
-            ))}
+            {tiersInMap.map((t) => {
+              const ref = byDate ? t.tierKey! : t.id;
+              return <TierChip key={t.id} label={`${t.name} · ${money(t.priceCents, e.currency)}`} on={onlyTier === ref} onPress={() => setOnlyTier(ref)} />;
+            })}
           </ScrollView>
         ) : null}
 
@@ -210,14 +238,40 @@ function TierChip({ label, on, onPress }: { label: string; on: boolean; onPress:
   );
 }
 
-function SectionSeatsView({ e, section, tier, qty, amount, best, onBack, onQty }: { e: EventDetail; section: MapSection; tier: TicketType; qty: number; amount: number | null; best: SeatChoice[]; onBack: () => void; onQty: (n: number) => void }) {
+function SectionSeatsView({
+  e,
+  section,
+  tier,
+  qty,
+  amount,
+  best,
+  left,
+  dateQ,
+  dateText,
+  onBack,
+  onQty,
+}: {
+  e: EventDetail;
+  section: MapSection;
+  tier: TicketType;
+  qty: number;
+  amount: number | null;
+  best: SeatChoice[];
+  /** places left in the section (for the date) */
+  left?: number;
+  /** DATES: "&date=<id>" for the seats query, and the date in words */
+  dateQ: string;
+  dateText: string | null;
+  onBack: () => void;
+  onQty: (n: number) => void;
+}) {
   const insets = useSafeAreaInsets();
   const reserved = section.seating === 'reserved';
   const pw = isPwyw(tier) ? tier.pwyw : null;
   const unit = pw && amount !== null ? allInOf(amount, pw.feePermille) : tier.priceCents;
   const seats = useQuery({
-    queryKey: ['event', e.slug, 'section', section.id],
-    queryFn: () => api<SectionSeats>(`/events/${encodeURIComponent(e.slug)}/sections/${encodeURIComponent(section.id)}/seats`),
+    queryKey: ['event', e.slug, 'section', section.id, dateQ],
+    queryFn: () => api<SectionSeats>(`/events/${encodeURIComponent(e.slug)}/sections/${encodeURIComponent(section.id)}/seats${dateQ.replace('&', '?')}`),
     enabled: reserved,
     staleTime: 5_000,
   });
@@ -277,6 +331,7 @@ function SectionSeatsView({ e, section, tier, qty, amount, best, onBack, onQty }
             <View style={{ flex: 1 }}>
               <Txt variant="eyebrow" color={colors.accent} numberOfLines={1}>
                 {tier.name} · {money(unit, e.currency)} each{pw ? ', your price' : ''}
+                {dateText ? ` · ${dateText}` : ''}
               </Txt>
               <Txt variant="h2" accessibilityRole="header" numberOfLines={1}>
                 {sectionTitle(section)}
@@ -310,7 +365,7 @@ function SectionSeatsView({ e, section, tier, qty, amount, best, onBack, onQty }
         {!reserved ? (
           <View style={{ paddingHorizontal: gutter }}>
             <Notice tone="plain" icon="users" title="Standing area">
-              {`No seat numbers here: find your spot on the night. ${section.available ?? ''} places left.`.replace('  ', ' ')}
+              {`No seat numbers here: find your spot on the night.${left !== undefined ? ` ${left} places left.` : ''}`}
             </Notice>
           </View>
         ) : seats.isPending ? (

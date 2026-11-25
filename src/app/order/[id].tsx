@@ -14,6 +14,7 @@ import { Badge, Button, Card, EmptyState, ErrorState, Field, Notice, Skeleton, T
 import { api, ApiError, errorText } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { DONATION_NO_REFUND, donationLabel } from '@/lib/donations';
+import { daysList } from '@/lib/dates';
 import { localStamp, money, when } from '@/lib/format';
 import { haptic } from '@/lib/haptics';
 import { orderStatus, providerLabel, REFUND_REASON_MAX, REFUND_REASON_MIN, refundStatus, useOrder } from '@/lib/orders';
@@ -58,7 +59,9 @@ export default function OrderScreen() {
 
 function Receipt({ o }: { o: Order }) {
   const s = orderStatus(o.status);
-  const d = when(o.event.startsAt);
+  // The tickets' date (DATES) or the event's; DAYS tickets list their days
+  const d = when(o.date?.startsAt ?? o.event.startsAt);
+  const whenText = o.validDates?.length ? `Valid ${daysList(o.validDates)}` : `${d.date} · ${d.time}${o.date?.label ? ` · ${o.date.label}` : ''}`;
   const refunded = o.refundedCents ?? 0;
   const requests = o.refundRequests ?? [];
   const latest = requests[0] ?? null;
@@ -80,7 +83,7 @@ function Receipt({ o }: { o: Order }) {
         <Pressable accessibilityRole="link" onPress={() => router.push({ pathname: '/event/[slug]', params: { slug: o.event.slug } })} hitSlop={6}>
           <Txt variant="title">{o.event.title}</Txt>
           <Txt variant="small" color={colors.muted}>
-            {d.date} · {d.time}
+            {whenText}
             {o.event.venue ? ` · ${[o.event.venue.name, o.event.venue.city].filter(Boolean).join(', ')}` : ''}
           </Txt>
         </Pressable>

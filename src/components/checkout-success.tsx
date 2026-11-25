@@ -8,6 +8,7 @@ import { useEffect, useState } from 'react';
 import { ScrollView, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { DONATION_NO_REFUND, donationLabel } from '@/lib/donations';
+import { daysList } from '@/lib/dates';
 import { localStamp, money, when } from '@/lib/format';
 import { enablePush, markPushOffered, shouldOfferPush } from '@/lib/push';
 import type { Order } from '@/lib/types';
@@ -77,7 +78,9 @@ function PushOffer() {
 
 export function CheckoutSuccess({ order, eventSlug, testMode, signedIn, resale }: { order: Order; eventSlug: string; testMode: boolean; signedIn: boolean; resale?: boolean }) {
   const insets = useSafeAreaInsets();
-  const d = when(order.event.startsAt);
+  // The tickets' own date (DATES) or the event's start; DAYS tickets list their days.
+  const d = when(order.date?.startsAt ?? order.event.startsAt);
+  const whenText = order.validDates?.length ? `Valid ${daysList(order.validDates)}` : `${d.date} · ${d.time}${order.date?.label ? ` · ${order.date.label}` : ''}`;
   // Delivery runs right after payment, so a gift that's due now is on its way; read once so rendering stays pure.
   const [scheduled] = useState(() => !!order.gift && new Date(order.gift.sendAt).getTime() > Date.now() + 60_000);
   const ticketId = resale ? order.tickets[0]?.id : undefined;
@@ -121,7 +124,7 @@ export function CheckoutSuccess({ order, eventSlug, testMode, signedIn, resale }
         <Txt variant="title">{order.event.title}</Txt>
         <TierChip tier={order.ticketType} label={`${order.quantity} × ${order.ticketType.name}`} />
         <Txt variant="small" color={colors.muted}>
-          {d.date} · {d.time}
+          {whenText}
           {order.event.venue ? `\n${[order.event.venue.name, order.event.venue.city].filter(Boolean).join(', ')}` : ''}
         </Txt>
         <View style={{ gap: 6, paddingTop: space.sm, borderTopWidth: 1, borderTopColor: colors.line }}>

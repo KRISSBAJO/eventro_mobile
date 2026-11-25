@@ -2,6 +2,7 @@
  * Selling and transferring rules and wording, as on the website (eventro components/my-resale.tsx): the organizer's
  * rules for an event, why an action is off, transfer expiry, the resale price breakdown and payout labels.
  */
+import { ownTimes } from './dates';
 import { isPast, money, when } from './format';
 import type { MyListing, Ticket } from './types';
 
@@ -48,17 +49,21 @@ export function inTime(ms: number) {
 export const closedNow = (startsAt: string, cutoffMinutes: number | undefined, now: number) =>
   cutoffMinutes !== undefined && now > new Date(startsAt).getTime() - cutoffMinutes * 60_000;
 
-/** Why a ticket can't be sold or transferred right now ('' = it can, as far as we know). */
+/**
+ * Why a ticket can't be sold or transferred right now ('' = it can, as far as we know). Multiple dates: the cut-offs
+ * run from the ticket's own date (DATES) or its first valid day (DAYS), as the API's do.
+ */
 export function blockers(t: Ticket, rules: Rules, now: number) {
-  if (t.event.status === 'CANCELLED') {
-    const why = 'This event was cancelled, so its tickets can’t be sold or sent.';
+  if (t.event.status === 'CANCELLED' || t.date?.status === 'CANCELLED') {
+    const why = t.event.status === 'CANCELLED' ? 'This event was cancelled, so its tickets can’t be sold or sent.' : 'This date was cancelled, so its tickets can’t be sold or sent.';
     return { sell: why, transfer: why };
   }
-  if (isPast(t.event.startsAt, 6)) {
-    const why = 'This event has already happened.';
+  const start = ownTimes(t, t.event).startsAt;
+  if (isPast(start, 6)) {
+    const why = t.date ? 'This date has already happened.' : t.validDates?.length ? 'This pass has already been used from its first day.' : 'This event has already happened.';
     return { sell: why, transfer: why };
   }
-  const closed = closedNow(t.event.startsAt, rules.cutoffMinutes, now);
+  const closed = closedNow(start, rules.cutoffMinutes, now);
   const before = rules.cutoffMinutes ? `${span(rules.cutoffMinutes)} before the start` : 'at the start';
   return {
     sell:

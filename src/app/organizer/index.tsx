@@ -21,7 +21,8 @@ import { useAuth } from '@/lib/auth';
 import { savedDoorEvents, sweepEndedDoors } from '@/lib/door';
 import { isPast, money, num, when } from '@/lib/format';
 import { haptic } from '@/lib/haptics';
-import { canEdit, convert, isAdmin, openWeb, ROLE_NAME, statusOf, useOrgEvents, usePayouts, useRates, useRecentOrders, webPaths, type OrgEvent } from '@/lib/organizer';
+import { upcoming as upcomingDates } from '@/lib/dates';
+import { canEdit, convert, isAdmin, lastStart, openWeb, ROLE_NAME, statusOf, useOrgEvents, usePayouts, useRates, useRecentOrders, webPaths, type OrgEvent } from '@/lib/organizer';
 import { useMyOrgs } from '@/lib/queries';
 import { readJson, writeJson } from '@/lib/storage';
 import type { DoorEvent, MyOrg } from '@/lib/types';
@@ -132,8 +133,9 @@ function Dashboard({ org }: { org: MyOrg }) {
   const week = list.reduce((s, e) => s + e.daily.tickets.slice(-7).reduce((a, b) => a + b, 0), 0);
   const revenue = list.reduce((s, e) => s + (convert(e.grossCents, e.currency, display, rates.data) ?? 0), 0);
   const approx = list.some((e) => e.currency !== display && e.grossCents > 0);
-  const upcoming = list.filter((e) => e.status !== 'CANCELLED' && !isPast(e.startsAt));
-  const past = list.filter((e) => e.status === 'CANCELLED' || isPast(e.startsAt)).reverse();
+  // Multiple dates: an event is past once its last date is.
+  const upcoming = list.filter((e) => e.status !== 'CANCELLED' && !isPast(lastStart(e)));
+  const past = list.filter((e) => e.status === 'CANCELLED' || isPast(lastStart(e))).reverse();
   const onSale = upcoming.filter((e) => statusOf(e) === 'On sale').length;
 
   return (
@@ -239,7 +241,10 @@ function Dashboard({ org }: { org: MyOrg }) {
 }
 
 function EventRow({ e }: { e: OrgEvent }) {
-  const d = when(e.startsAt);
+  // Multiple dates: the next one, and how many more
+  const next = upcomingDates(e.dates, 0);
+  const more = e.dateMode === 'DATES' && next.length > 1 ? ` · +${next.length - 1} more` : e.dateMode === 'DAYS' && next.length > 1 ? ` · ${next.length} days` : '';
+  const d = when(e.nextDate?.startsAt ?? e.startsAt);
   const st = statusOf(e);
   return (
     <Pressable
@@ -257,6 +262,7 @@ function EventRow({ e }: { e: OrgEvent }) {
         </Txt>
         <Txt variant="small" color={colors.muted} numberOfLines={1}>
           {d.short} · {d.time}
+          {more}
           {e.online ? ' · Online' : e.venue ? ` · ${e.venue.name}` : ''}
         </Txt>
         <View style={{ flexDirection: 'row', gap: 6, flexWrap: 'wrap' }}>
@@ -306,7 +312,8 @@ function DoorList({ org }: { org: MyOrg }) {
   if (events.isPending) return <Skeleton height={86} radius={radius.card} />;
   if (events.error) return <ErrorState message={errorText(events.error)} onRetry={() => void events.refetch()} />;
   // The scanner is for events not over yet.
-  const live = (events.data ?? []).filter((e) => !isPast(e.startsAt, 12));
+  // Multiple dates: until the last date is over; the card shows the door's date.
+  const live = (events.data ?? []).filter((e) => !isPast(lastStart(e), 12));
   return (
     <View style={{ gap: space.sm }}>
       <Txt color={colors.muted}>Scan tickets at the door. Pick an event to open its scanner. It works offline once you download the guest list.</Txt>
@@ -314,7 +321,9 @@ function DoorList({ org }: { org: MyOrg }) {
         <EmptyState compact icon="scan" title="No upcoming events" body="Events show up here two months before they start." />
       ) : (
         live.map((e) => {
-          const d = when(e.startsAt);
+          const today = e.dates?.find((x) => x.id === e.currentDateId);
+          const d = when(today?.startsAt ?? e.startsAt);
+          const count = (e.dates ?? []).filter((x) => x.status !== 'CANCELLED').length;
           return (
             <Pressable
               key={e.id}
@@ -339,6 +348,7 @@ function DoorList({ org }: { org: MyOrg }) {
                 </Txt>
                 <Txt variant="small" color={colors.muted} numberOfLines={1}>
                   {d.short} · {d.time}
+                  {count > 1 ? ` · ${count} ${e.dateMode === 'DAYS' ? 'days' : 'dates'}` : ''}
                   {e.venue ? ` · ${e.venue.name}` : e.online ? ' · Online' : ''}
                 </Txt>
                 <View style={{ flexDirection: 'row', gap: 6, marginTop: 2, flexWrap: 'wrap' }}>

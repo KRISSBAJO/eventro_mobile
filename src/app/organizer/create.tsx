@@ -20,6 +20,12 @@
  * and its times have to sit inside the booking (doors included). "Your bookings" lists the organization's pending
  * and confirmed bookings not used by an event yet: picking one uses it as it is (no new request) and fills the date
  * and times from it. `?booking=<id>` (from a booking's "Use for an event") preselects one and keeps its organization.
+ *
+ * When: "One date / Multiple dates / Multi-day" (components/date-list.tsx, lib/dates.ts). Multiple dates (DATES) is a
+ * run of performances: each ticket type is sold per date, with the same quantity on every date unless "Set per date"
+ * (`capacityByDate`). Multi-day (DAYS) is a festival or conference: each ticket type says which days it's valid on
+ * (`validDates`). Both send `dateMode` and `dates`; date refs are indexes into `dates` as sent. Venue bookings on
+ * Eventro are for one-date events only (the API's rule).
  */
 import { useQueryClient } from '@tanstack/react-query';
 import { Image } from 'expo-image';
@@ -27,6 +33,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useMemo, useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
+import { DateList, dateListErrors, datesBody, DayChips, draftLine, ModePicker, newDate, PerDateFields, type DateDraft } from '@/components/date-list';
 import { DateField, dateLabel, TimeField, timeLabel } from '@/components/date-time';
 import { Icon } from '@/components/icons';
 import { BookingBadge, BookingRequestForm, BookingRow, TermsCard, VenueSearch } from '@/components/booking-ui';
@@ -60,6 +67,7 @@ import type { UploadedCover } from '@/lib/media-upload';
 import { defaultCover } from '@/lib/stock-covers';
 import { cleanPerks, presetIndex, type TierLook, type TierPreset } from '@/lib/tiers';
 import type { Category } from '@/lib/types';
+import { shortDay, type DateMode } from '@/lib/dates';
 import { colors, font, radius, space, touch } from '@/theme';
 
 const STEPS = ['Basics', 'When and where', 'Tickets', 'Cover photo', 'Review'];
@@ -67,14 +75,34 @@ const STEPS = ['Basics', 'When and where', 'Tickets', 'Cover photo', 'Review'];
 const SHORT = ['Basics', 'When & where', 'Tickets', 'Cover', 'Review'];
 const CATEGORIES = Object.keys(CATEGORY_NAME) as Category[];
 
-/** One ticket type; `style` null is Auto (the look comes from the name). `pwyw` is used when `pricing` is PWYW. */
-type Tier = { key: string; name: string; price: string; qty: string; perks: string[]; badge: string; style: TierLook | null; pricing: Pricing; pwyw: PwywDraft };
-const newTier = (name = '', perks: string[] = [], badge = ''): Tier => ({ key: `t${Date.now()}${Math.random().toString(36).slice(2, 6)}`, name, price: '', qty: '', perks, badge, style: null, pricing: 'FIXED', pwyw: NO_PWYW });
+/**
+ * One ticket type; `style` null is Auto (the look comes from the name). `pwyw` is used when `pricing` is PWYW.
+ * Multiple dates: `perDate` with `byDate` (date key → quantity) sets quantities per date; multi-day: `days` are the
+ * date keys it's valid on (null: every day).
+ */
+type Tier = {
+  key: string;
+  name: string;
+  price: string;
+  qty: string;
+  perks: string[];
+  badge: string;
+  style: TierLook | null;
+  pricing: Pricing;
+  pwyw: PwywDraft;
+  perDate: boolean;
+  byDate: Record<string, string>;
+  days: string[] | null;
+};
+const newTier = (name = '', perks: string[] = [], badge = ''): Tier => ({ key: `t${Date.now()}${Math.random().toString(36).slice(2, 6)}`, name, price: '', qty: '', perks, badge, style: null, pricing: 'FIXED', pwyw: NO_PWYW, perDate: false, byDate: {}, days: null });
 type Draft = {
   title: string;
   category: Category | '';
   subtitle: string;
   description: string;
+  /** one date, a run of dates, or a multi-day event; the list is for the last two */
+  dateMode: DateMode;
+  dates: DateDraft[];
   date: string;
   start: string;
   doors: string;
@@ -112,6 +140,8 @@ const EMPTY: Draft = {
   category: '',
   subtitle: '',
   description: '',
+  dateMode: 'SINGLE',
+  dates: [newDate()],
   date: '',
   start: '',
   doors: '',
@@ -132,7 +162,7 @@ const EMPTY: Draft = {
   currency: '',
   currencyChosen: false,
   feeMode: 'BUYER',
-  tiers: [{ key: 't0', name: 'General admission', price: '', qty: '', perks: [], badge: '', style: null, pricing: 'FIXED', pwyw: NO_PWYW }],
+  tiers: [{ key: 't0', name: 'General admission', price: '', qty: '', perks: [], badge: '', style: null, pricing: 'FIXED', pwyw: NO_PWYW, perDate: false, byDate: {}, days: null }],
   donations: NO_DONATIONS,
   compLimit: '',
   cover: '',
@@ -146,12 +176,17 @@ function validate(step: number, d: Draft, today: string) {
     if (d.description.trim().length < 20) e.description = 'Tell people what to expect (at least 20 characters).';
   }
   if (step === 1) {
-    if (!d.date) e.date = 'Choose a date.';
-    else if (d.date < today) e.date = 'The date is in the past.';
-    if (!d.start) e.start = 'Add a start time.';
-    if (d.end && d.start && d.end <= d.start) e.end = 'The end time must be after the start.';
-    if (d.doors && d.start && d.doors > d.start) e.doors = 'Doors usually open before the start time.';
-    if (d.format === 'venue') {
+    if (d.dateMode !== 'SINGLE') Object.assign(e, dateListErrors(d.dateMode, d.dates, today));
+    else {
+      if (!d.date) e.date = 'Choose a date.';
+      else if (d.date < today) e.date = 'The date is in the past.';
+      if (!d.start) e.start = 'Add a start time.';
+      if (d.end && d.start && d.end <= d.start) e.end = 'The end time must be after the start.';
+      if (d.doors && d.start && d.doors > d.start) e.doors = 'Doors usually open before the start time.';
+    }
+    if (d.format === 'book' && d.dateMode !== 'SINGLE') {
+      e.booking = 'Venue bookings on Eventro are for one-date events for now. Use your own venue, or switch to One date.';
+    } else if (d.format === 'venue') {
       Object.assign(e, placeErrors(d));
     } else if (d.format === 'book') {
       if (!d.booking) e.booking = d.pick ? `Request a time at ${d.pick.venue.name} first.` : 'Find a venue and request a time.';
@@ -179,6 +214,14 @@ function validate(step: number, d: Draft, today: string) {
       const q = Number(t.qty);
       if (!Number.isInteger(q) || q < 1) e[`${t.key}-qty`] = 'Enter a quantity.';
       else if (q > 200_000) e[`${t.key}-qty`] = 'At most 200,000.';
+      // Multiple dates: quantities per date (empty: the same as above); multi-day: at least one day.
+      if (d.dateMode === 'DATES' && t.perDate) {
+        for (const x of d.dates) {
+          const v = t.byDate[x.key];
+          if (v !== undefined && v !== '' && (!Number.isInteger(Number(v)) || Number(v) > 200_000)) e[`${t.key}-qty-${x.key}`] = 'A whole number up to 200,000.';
+        }
+      }
+      if (d.dateMode === 'DAYS' && t.days && !t.days.some((k) => d.dates.some((x) => x.key === k))) e[`${t.key}-days`] = 'Pick the days this ticket is valid on.';
     }
     for (const [k, v] of Object.entries(donationErrors(d.donations))) e[`donation-${k}`] = v;
     const limit = d.compLimit.trim() ? Number(d.compLimit) : null;
@@ -223,6 +266,14 @@ export default function CreateEvent() {
   const today = todayYmd();
   const errors = useMemo(() => (show ? validate(step, d, today) : {}), [show, step, d, today]);
   const set = <K extends keyof Draft>(k: K, v: Draft[K]) => setD((p) => ({ ...p, [k]: v }));
+  /** One date / Multiple dates / Multi-day: a single date already filled in becomes the first of the list. */
+  const setMode = (m: DateMode) =>
+    setD((p) => {
+      if (m === p.dateMode) return p;
+      const seed = p.dateMode === 'SINGLE' && p.date && p.dates.length === 1 && !p.dates[0].date ? [{ ...p.dates[0], date: p.date, start: p.start, doors: p.doors, end: p.end }] : p.dates;
+      const back = m === 'SINGLE' && !p.date && seed[0]?.date ? { date: seed[0].date, start: seed[0].start, doors: seed[0].doors, end: seed[0].end } : {};
+      return { ...p, dateMode: m, dates: seed, ...back };
+    });
   const patchTier = (key: string, p: Partial<Tier>) => setD((x) => ({ ...x, tiers: x.tiers.map((t) => (t.key === key ? { ...t, ...p } : t)) }));
   /** A preset is slotted in by how premium it is (as on the website); a blank tier goes at the end. */
   const addTier = (preset?: TierPreset) =>
@@ -291,6 +342,10 @@ export default function CreateEvent() {
       if (!id) {
         // A booked venue brings its own zone.
         const zone = d.format === 'online' ? deviceZone() : d.format === 'book' ? '' : d.zone;
+        // Multiple dates: refs to a date are its index in `dates` as sent.
+        const multi = d.dateMode !== 'SINGLE';
+        const sent = d.dates.filter((x) => !x.cancelled);
+        const ref = (key: string) => String(sent.findIndex((x) => x.key === key));
         const ev = await api<{ id: string }>(`/organizer/orgs/${encodeURIComponent(org.org.id)}/events`, {
           body: {
             title: d.title.trim(),
@@ -299,9 +354,13 @@ export default function CreateEvent() {
             category: d.category,
             imageUrl: d.cover,
             // Times are the venue's local wall-clock time, stored as UTC (the website does the same).
-            startsAt: wallIso(d.date, d.start),
-            ...(d.doors ? { doorsAt: wallIso(d.date, d.doors) } : {}),
-            ...(d.end ? { endsAt: wallIso(d.date, d.end) } : {}),
+            ...(multi
+              ? { dateMode: d.dateMode, dates: datesBody(sent) }
+              : {
+                  startsAt: wallIso(d.date, d.start),
+                  ...(d.doors ? { doorsAt: wallIso(d.date, d.doors) } : {}),
+                  ...(d.end ? { endsAt: wallIso(d.date, d.end) } : {}),
+                }),
             ...(d.format === 'online'
               ? { online: true, streamUrl: d.link.trim() }
               : d.format === 'book' && d.booking
@@ -326,6 +385,13 @@ export default function CreateEvent() {
               // Pay what you want: the API ignores the base price (sent as 0) and uses the PWYW amounts.
               ...(t.pricing === 'PWYW' ? { basePriceCents: 0, ...pwywBody(t.pwyw) } : { basePriceCents: parseMoney(t.price) ?? 0 }),
               capacity: Number(t.qty),
+              ...(d.dateMode === 'DATES' && t.perDate
+                ? (() => {
+                    const by = Object.fromEntries(sent.filter((x) => (t.byDate[x.key] ?? '') !== '').map((x) => [ref(x.key), Number(t.byDate[x.key])]));
+                    return Object.keys(by).length ? { capacityByDate: by } : {};
+                  })()
+                : {}),
+              ...(d.dateMode === 'DAYS' ? { validDates: sent.filter((x) => !t.days || t.days.includes(x.key)).map((x) => ref(x.key)) } : {}),
               ...(t.perks.length ? { perks: cleanPerks(t.perks) } : {}),
               ...(t.badge.trim() ? { badge: t.badge.trim() } : {}),
               ...(t.style ? { style: t.style } : {}),
@@ -380,13 +446,17 @@ export default function CreateEvent() {
 
   // What the event card will look like, for the cover and review steps (a pay-what-you-want tier from its minimum).
   const lowest = d.tiers.map((t) => parseMoney(t.pricing === 'PWYW' ? t.pwyw.min : t.price)).filter((p): p is number => p !== null).sort((a, b) => a - b)[0];
+  // Multiple dates: the card shows the first date and "+2 more dates" / "3 days".
+  const multi = d.dateMode !== 'SINGLE';
+  const ordered = [...d.dates].filter((x) => x.date).sort((a, b) => `${a.date}${a.start}`.localeCompare(`${b.date}${b.start}`));
+  const first = multi ? ordered[0] : null;
   const preview: PreviewProps = {
     cover: d.cover,
     title: d.title.trim() || 'Your event name',
     subtitle: d.subtitle.trim(),
     category: d.category ? CATEGORY_NAME[d.category] : '',
-    date: d.date,
-    time: d.start ? timeLabel(d.start) : '',
+    date: multi ? (first?.date ?? '') : d.date,
+    time: multi ? `${first?.start ? timeLabel(first.start) : ''}${ordered.length > 1 ? `${first?.start ? ' · ' : ''}${d.dateMode === 'DAYS' ? `${ordered.length} days` : `+${ordered.length - 1} more ${ordered.length === 2 ? 'date' : 'dates'}`}` : ''}` : d.start ? timeLabel(d.start) : '',
     place:
       d.format === 'online'
         ? 'Online'
@@ -471,7 +541,20 @@ export default function CreateEvent() {
           <Section
             icon="calendar"
             title="Date & schedule"
-            sub={d.format === 'book' && d.booking ? `Inside your booking: ${rangeLabel(d.booking.startsAt, d.booking.endsAt)}, doors included.` : 'Doors and the end time are optional.'}>
+            sub={
+              d.dateMode === 'DATES'
+                ? 'A run of shows: fans pick a date, then tickets. Each date sells its own tickets.'
+                : d.dateMode === 'DAYS'
+                  ? 'A festival or conference: each ticket type is valid on the days you choose.'
+                  : d.format === 'book' && d.booking
+                    ? `Inside your booking: ${rangeLabel(d.booking.startsAt, d.booking.endsAt)}, doors included.`
+                    : 'Doors and the end time are optional.'
+            }>
+            {!(d.format === 'book' && d.booking) ? <ModePicker value={d.dateMode} onChange={(m) => setMode(m)} /> : null}
+            {d.dateMode !== 'SINGLE' ? (
+              <DateList mode={d.dateMode} list={d.dates} onChange={(list) => set('dates', list)} errors={errors} today={today} />
+            ) : (
+              <>
             <DateField label="Date" value={d.date} onChange={(v) => set('date', v)} min={today} error={errors.date} />
             <View style={styles.row2}>
               <TimeField label="Starts" value={d.start} onChange={(v) => set('start', v)} error={errors.start} />
@@ -490,16 +573,22 @@ export default function CreateEvent() {
                 </Txt>
               </View>
             ) : null}
+              </>
+            )}
           </Section>
 
           <Section icon="pin" title="Where is it happening?" sub="At your own venue, a venue you hire on Eventro, or online.">
             <ChoiceRow>
               <ChoiceTile icon="pin" label="My venue" sub="Your own place" on={d.format === 'venue'} onPress={() => set('format', 'venue')} />
-              <ChoiceTile icon="building" label="Book one" sub="Hire on Eventro" on={d.format === 'book'} onPress={() => set('format', 'book')} />
+              <ChoiceTile icon="building" label="Book one" sub={d.dateMode === 'SINGLE' ? 'Hire on Eventro' : 'One date only'} on={d.format === 'book'} onPress={() => set('format', 'book')} />
               <ChoiceTile icon="stream" label="Online" sub="Live stream" on={d.format === 'online'} onPress={() => set('format', 'online')} />
             </ChoiceRow>
           {d.format === 'venue' ? (
             <VenueFields value={d} onChange={patchPlace} errors={errors} />
+          ) : d.format === 'book' && d.dateMode !== 'SINGLE' ? (
+            <Notice tone="warning" icon="calendar" title="One date only">
+              Venue bookings on Eventro are for one-date events for now. Use your own venue for a run of dates or a multi-day event, or switch to One date.
+            </Notice>
           ) : d.format === 'book' ? (
             <View style={{ gap: space.lg }}>
               <Txt variant="small" color={colors.muted}>
@@ -632,14 +721,14 @@ export default function CreateEvent() {
                 <PricingMode value={t.pricing} onChange={(pricing) => patchTier(t.key, { pricing })} />
                 {pwyw ? (
                   <>
-                    <Field label="Quantity" placeholder="100" keyboardType="number-pad" value={t.qty} onChangeText={(v) => patchTier(t.key, { qty: v.replace(/\D/g, '') })} error={errors[`${t.key}-qty`]} />
+                    <Field label={d.dateMode === 'DATES' ? 'Quantity per date' : 'Quantity'} placeholder="100" keyboardType="number-pad" value={t.qty} onChangeText={(v) => patchTier(t.key, { qty: v.replace(/\D/g, '') })} error={errors[`${t.key}-qty`]} />
                     <PwywFields value={t.pwyw} onChange={(p) => patchTier(t.key, { pwyw: { ...t.pwyw, ...p } })} currency={cur} feeMode={d.feeMode} errors={errors} errorKey={t.key} />
                   </>
                 ) : (
                   <>
                     <View style={styles.row2}>
                       <Field style={{ flex: 1 }} label={`Your price (${currencySymbol(cur)})`} placeholder="0 = free" keyboardType="decimal-pad" value={t.price} onChangeText={(v) => patchTier(t.key, { price: v.replace(/[^\d.]/g, '') })} error={errors[`${t.key}-price`]} />
-                      <Field style={{ flex: 1 }} label="Quantity" placeholder="100" keyboardType="number-pad" value={t.qty} onChangeText={(v) => patchTier(t.key, { qty: v.replace(/\D/g, '') })} error={errors[`${t.key}-qty`]} />
+                      <Field style={{ flex: 1 }} label={d.dateMode === 'DATES' ? 'Per date' : 'Quantity'} placeholder="100" keyboardType="number-pad" value={t.qty} onChangeText={(v) => patchTier(t.key, { qty: v.replace(/\D/g, '') })} error={errors[`${t.key}-qty`]} />
                     </View>
                     {fan ? (
                       <Txt variant="small" color={colors.muted}>
@@ -652,6 +741,8 @@ export default function CreateEvent() {
                     ) : null}
                   </>
                 )}
+                {d.dateMode === 'DATES' ? <PerDate t={t} dates={d.dates} errors={errors} onChange={(p) => patchTier(t.key, p)} /> : null}
+                {d.dateMode === 'DAYS' ? <DayChips name={t.name} dates={d.dates} value={t.days} error={errors[`${t.key}-days`]} onChange={(days) => patchTier(t.key, { days })} /> : null}
                 <View style={styles.tierDivider} />
                 <TierExtras
                   name={t.name}
@@ -750,7 +841,11 @@ export default function CreateEvent() {
               </View>
             </View>
             <ReviewLine icon="tag" text={d.category ? CATEGORY_NAME[d.category] : ''} onEdit={() => setStep(0)} />
-            <ReviewLine icon="calendar" text={`${dateLabel(d.date)} · ${timeLabel(d.start)}${d.doors ? ` (doors ${timeLabel(d.doors)})` : ''}${d.end ? ` to ${timeLabel(d.end)}` : ''}`} onEdit={() => setStep(1)} />
+            {multi ? (
+              <ReviewLine icon="calendar" text={`${d.dateMode === 'DAYS' ? `${ordered.length} days` : `${ordered.length} ${ordered.length === 1 ? 'date' : 'dates'}`}: ${ordered.map(draftLine).join('; ')}`} onEdit={() => setStep(1)} />
+            ) : (
+              <ReviewLine icon="calendar" text={`${dateLabel(d.date)} · ${timeLabel(d.start)}${d.doors ? ` (doors ${timeLabel(d.doors)})` : ''}${d.end ? ` to ${timeLabel(d.end)}` : ''}`} onEdit={() => setStep(1)} />
+            )}
             <ReviewLine
               icon={d.format === 'online' ? 'stream' : 'pin'}
               text={
@@ -767,7 +862,10 @@ export default function CreateEvent() {
               const min = parseMoney(t.pwyw.min) ?? 0;
               const price = t.pricing === 'PWYW' ? `Pay what you want${min ? `, from ${money(min, cur)}` : ''}` : base ? `${money(buyerPrice(base, d.feeMode), cur)} all-in` : 'Free';
               const extras = [t.badge.trim(), t.perks.length ? `${t.perks.length} ${t.perks.length === 1 ? 'perk' : 'perks'}` : ''].filter(Boolean).join(', ');
-              return <ReviewLine key={t.key} icon="ticket" text={`${t.name.trim()} · ${price} · ${Number(t.qty).toLocaleString('en-US')}${extras ? ` · ${extras}` : ''}`} onEdit={() => setStep(2)} />;
+              // Multiple dates: per date; multi-day: the days it covers.
+              const qty = `${Number(t.qty).toLocaleString('en-US')}${d.dateMode === 'DATES' ? (t.perDate && Object.values(t.byDate).some((v) => v !== '') ? ' per date (some set per date)' : ' per date') : ''}`;
+              const days = d.dateMode === 'DAYS' ? ` · ${daysText(t, d.dates)}` : '';
+              return <ReviewLine key={t.key} icon="ticket" text={`${t.name.trim()} · ${price} · ${qty}${days}${extras ? ` · ${extras}` : ''}`} onEdit={() => setStep(2)} />;
             })}
             {d.donations.on ? <ReviewLine icon="heart" text={`Donations to ${d.donations.cause.trim()}`} onEdit={() => setStep(2)} /> : null}
             {d.compLimit.trim() ? <ReviewLine icon="gift" text={`Up to ${Number(d.compLimit).toLocaleString('en-US')} ${Number(d.compLimit) === 1 ? 'comp' : 'comps'} at once`} onEdit={() => setStep(2)} /> : null}
@@ -816,6 +914,8 @@ function withBooking(p: Draft, b: Booking, made: boolean): Draft {
   const end = b.endsAt.slice(0, 10) === date ? b.endsAt.slice(11, 16) : '';
   return {
     ...p,
+    // venue bookings are for one-date events
+    dateMode: 'SINGLE',
     format: 'book',
     pick: null,
     booking: b,
@@ -827,6 +927,30 @@ function withBooking(p: Draft, b: Booking, made: boolean): Draft {
     doors: '',
     ...(b.venue.country && !p.currencyChosen ? { currency: currencyForCountry(b.venue.country) } : {}),
   };
+}
+
+/** "Sat 13 + Sun 14" or "every day" for a multi-day ticket. */
+function daysText(t: Tier, dates: DateDraft[]) {
+  const live = dates.filter((x) => x.date && !x.cancelled);
+  const on = live.filter((x) => !t.days || t.days.includes(x.key));
+  if (!t.days || on.length === live.length) return 'every day';
+  return on.map((x) => shortDay(`${x.date}T12:00:00.000Z`)).join(' + ') || 'no days yet';
+}
+
+/** Multiple dates: the same quantity on every date, or "Set per date" (empty = the quantity above). */
+function PerDate({ t, dates, errors, onChange }: { t: Tier; dates: DateDraft[]; errors: Record<string, string>; onChange: (p: Partial<Tier>) => void }) {
+  return (
+    <PerDateFields
+      on={t.perDate}
+      onToggle={(on) => onChange(on ? { perDate: true } : { perDate: false, byDate: {} })}
+      dates={dates}
+      base={t.qty}
+      values={t.byDate}
+      onChange={(byDate) => onChange({ byDate })}
+      errors={errors}
+      errorKey={t.key}
+    />
+  );
 }
 
 const swap = <T,>(list: T[], i: number, j: number) => {

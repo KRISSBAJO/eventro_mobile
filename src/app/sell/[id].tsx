@@ -10,6 +10,7 @@ import { Icon } from '@/components/icons';
 import { Button, Chip, Field, Notice, Txt } from '@/components/ui';
 import { api, errorText } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
+import { ticketWhen } from '@/lib/dates';
 import { currencySymbol, money } from '@/lib/format';
 import { haptic } from '@/lib/haptics';
 import { useEventResale, useMyTickets, useRefreshWallet } from '@/lib/queries';
@@ -52,7 +53,9 @@ export default function Sell() {
   const { fee, royalty, payout } = breakdown(cents, feePermille, rules.royaltyPermille);
   const overCap = capCents !== null && cents > capCents;
   const tooLow = cents < 100;
-  const others = (market.data?.listings ?? []).filter((l) => l.ticketType.name === t.ticketType.name);
+  // Other fans selling the same ticket (DATES: for the same date)
+  const others = (market.data?.listings ?? []).filter((l) => l.ticketType.name === t.ticketType.name && (l.date?.id ?? null) === (t.date?.id ?? null));
+  const multi = !!t.date || !!t.validDates?.length;
   const lowest = others.length ? Math.min(...others.map((l) => l.priceCents)) : null;
 
   if (done) {
@@ -115,7 +118,8 @@ export default function Sell() {
   return (
     <AuthShell title="Sell ticket" icon="tag">
       <Txt color={colors.muted}>
-        <Txt variant="bodyStrong">{seatLine(t)}</Txt> · face value {fmt(faceCents, currency)}. Listing is free, and buyers pay exactly your price.
+        <Txt variant="bodyStrong">{seatLine(t)}</Txt>
+        {multi ? ` · ${ticketWhen(t, t.event.startsAt).line}` : ''} · face value {fmt(faceCents, currency)}. Listing is free, and buyers pay exactly your price.
       </Txt>
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: space.sm }} keyboardShouldPersistTaps="handled">
         {presets(faceCents, capCents).map(([label, c]) => (
@@ -135,7 +139,7 @@ export default function Sell() {
       <Breakdown price={cents} fee={fee} royalty={royalty} payout={payout} currency={currency} feePermille={feePermille} royaltyPermille={rules.royaltyPermille} />
       <Txt variant="small" color={colors.dim}>
         {rules.capPercent === undefined ? 'The organizer may cap resale prices; if yours is over, we’ll tell you the most you can ask. ' : ''}
-        Your payout becomes available a day after the event starts; then the Eventro team sends it.
+        {t.date ? 'Your payout becomes available a day after your date; then the Eventro team sends it.' : t.validDates?.length ? 'Your payout becomes available a day after the last day of your pass; then the Eventro team sends it.' : 'Your payout becomes available a day after the event starts; then the Eventro team sends it.'}
       </Txt>
       {error ? <Notice icon="alert">{error}</Notice> : null}
       <Button label={busy ? 'Listing…' : `List for ${fmt(cents, currency)}`} loading={busy} disabled={overCap || tooLow} onPress={submit} />

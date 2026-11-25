@@ -18,15 +18,59 @@
  * it, which replaces the phone's copy; check-ins refused because everyone was already in (another scanner got there
  * first) or the entry was removed become conflicts. Offline "−" can only take back this phone's check-ins that haven't
  * been sent yet (and aren't being sent right now); arrivals Eventro already has need a connection to undo.
+ *
+ * Multiple dates (lib/dates.ts): the door works on one date at a time (`dateId`: the API's current date, or the one
+ * picked). Online scans, manual check-ins and synced scans carry `eventDateId`. Offline, a run's ticket (DATES) is
+ * only good on its own date and a multi-day pass (DAYS) on its valid days, once per day: the pack has each ticket's
+ * `eventDateId` / `validDateIds` and its entries per date (`checkIns`), and this phone's own admissions are kept per
+ * ticket and date (`inKey`). Anything else is a "Wrong date" result, as the API's `wrong-date`.
  */
 import * as Crypto from 'expo-crypto';
 import { api } from './api';
 import { checkCode, parseCode } from './door-code';
+import { dateLine, daysList, type EventDate } from './dates';
 import { isPast } from './format';
 import type { CheckInAnswer, DoorPack, DoorPackTicket, DoorTicket, GuestEntry, GuestSyncAnswer, SyncAnswer } from './types';
 import { listVault, readVault, writeVault } from './vault';
 
-export type QueuedScan = { ticketId: string; scannedAt: string; code?: string };
+/** `eventDateId`: the door's date when it was scanned (multiple dates). */
+export type QueuedScan = { ticketId: string; scannedAt: string; code?: string; eventDateId?: string };
+
+/** This phone's admissions are kept per ticket, and per date for events with more than one. */
+export const inKey = (ticketId: string, dateId?: string | null) => (dateId ? `${ticketId}@${dateId}` : ticketId);
+
+/* ---------- the door's date ---------- */
+
+/** The venue's wall clock now, written as UTC like stored event times (this phone's own clock without a zone). */
+export function wallNow(tz: string | null | undefined, now = new Date()) {
+  try {
+    if (tz && tz !== 'UTC') {
+      const f = new Intl.DateTimeFormat('en-US', { timeZone: tz, hourCycle: 'h23', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
+      const p: Record<string, number> = {};
+      for (const x of f.formatToParts(now)) if (x.type !== 'literal') p[x.type] = Number(x.value);
+      return new Date(Date.UTC(p.year, p.month - 1, p.day, p.hour % 24, p.minute));
+    }
+  } catch {
+    /* fall through to the phone's clock */
+  }
+  return new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate(), now.getHours(), now.getMinutes()));
+}
+
+/**
+ * The date the door works on by default, as the API's doorDate: the active date on today's calendar day at the venue
+ * (the latest one that has started), else one still running, else the next one, else the last.
+ */
+export function defaultDoorDate(dates: EventDate[] | undefined, tz: string | null | undefined, now = new Date()): EventDate | null {
+  const live = (dates ?? []).filter((d) => d.status !== 'CANCELLED').sort((a, b) => a.startsAt.localeCompare(b.startsAt));
+  if (!live.length) return null;
+  const wall = wallNow(tz, now);
+  const today = wall.toISOString().slice(0, 10);
+  const on = live.filter((d) => d.startsAt.slice(0, 10) === today);
+  if (on.length) return [...on].reverse().find((d) => new Date(d.startsAt) <= wall) ?? on[0];
+  const running = live.find((d) => new Date(d.startsAt) <= wall && new Date(d.endsAt ?? new Date(new Date(d.startsAt).getTime() + 6 * 3600_000).toISOString()) >= wall);
+  if (running) return running;
+  return live.find((d) => new Date(d.startsAt) > wall) ?? live[live.length - 1];
+}
 
 /** A scan the API answered differently from this phone (another scanner was first, or the code was refused). */
 export type Conflict = { ticketId: string; holderName: string | null; scannedAt: string; kind: 'already' | 'invalid'; at?: string | null; by?: string | null; device?: string | null; reason?: string };
@@ -67,12 +111,13 @@ export const dropDoor = (eventId: string) => writeVault(key(eventId), null);
 /** Event ids with a door pack or queued scans on this phone. */
 export const savedDoorEvents = () => listVault('door-').map((n) => n.slice('door-'.length));
 
-/** Deletes packs for events that are over (12 h after the start) once nothing is waiting to sync. */
+/** Deletes packs for events that are over (12 h after the (last) start) once nothing is waiting to sync. */
 export async function sweepEndedDoors() {
   for (const id of savedDoorEvents()) {
     const s = await readVault<DoorStore>(`door-${id}`);
     if (!s) continue;
-    const ended = s.pack ? isPast(s.pack.startsAt, 12) : true;
+    const last = (s.pack?.dates ?? []).filter((d) => d.status !== 'CANCELLED').map((d) => d.startsAt).sort().pop();
+    const ended = s.pack ? isPast(last ?? s.pack.startsAt, 12) : true;
     if (ended && !s.queue?.length && !s.guestQueue?.length) await writeVault(`door-${id}`, null);
   }
 }
@@ -84,14 +129,15 @@ export async function downloadPack(eventId: string): Promise<DoorPack> {
 /* ---------- verdicts ---------- */
 
 export type Verdict = {
-  tone: 'admit' | 'already' | 'invalid';
+  /** wrong: a ticket for another date (DATES) or a pass not valid on the door's date (DAYS) */
+  tone: 'admit' | 'already' | 'invalid' | 'wrong';
   title: string;
   ticket?: DoorTicket | null;
   detail?: string;
   /** checked against the downloaded list rather than the API */
   offline?: boolean;
-  /** what "Undo" reverses */
-  undo?: { ticketId: string; offline: boolean };
+  /** what "Undo" reverses (and on which date) */
+  undo?: { ticketId: string; offline: boolean; dateId?: string | null };
 };
 
 export const seatText = (t: { sectionName?: string | null; section: string | null; row: string | null; seat: number | null }) =>
@@ -107,7 +153,26 @@ export function clock(iso: string | null | undefined) {
   return today ? t : `${['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][d.getDay()]} ${t}`;
 }
 
-const view = (t: DoorPackTicket): DoorTicket => ({ id: t.id, holderName: t.holderName, ticketType: t.ticketType, section: t.sectionName ?? t.section, row: t.row, seat: t.seat, comp: !!t.comp, compGroup: t.compGroup ?? null });
+const viewOf = (t: DoorPackTicket, dates: EventDate[] = []): DoorTicket => ({
+  id: t.id,
+  holderName: t.holderName,
+  ticketType: t.ticketType,
+  section: t.sectionName ?? t.section,
+  row: t.row,
+  seat: t.seat,
+  comp: !!t.comp,
+  compGroup: t.compGroup ?? null,
+  // multiple dates: its date, or the days it's good for
+  date: t.eventDateId ? (dates.find((d) => d.id === t.eventDateId) ?? null) : null,
+  validDates: (t.validDateIds ?? []).map((id) => dates.find((d) => d.id === id)).filter((d): d is EventDate => !!d),
+});
+
+/** "This ticket is for Sat, Dec 13 · 8:00 PM" / "Valid Sat 12, Sun 13" for a ticket on the wrong date. */
+export function wrongDateText(t: Pick<DoorTicket, 'date' | 'validDates'> | null | undefined, fallback?: string) {
+  if (t?.date) return `This ticket is for ${dateLine(t.date)}.`;
+  if (t?.validDates?.length) return `Not valid today. Valid ${daysList(t.validDates)}.`;
+  return fallback ?? 'This ticket isn’t for this date.';
+}
 
 /** "Comp · Press" (or "Comp") for a complimentary ticket, null for a paid one. */
 export const compLabel = (t: { comp?: boolean; compGroup?: string | null } | null | undefined) => (t?.comp ? (t.compGroup ? `Comp · ${t.compGroup}` : 'Comp') : null);
@@ -125,16 +190,17 @@ export function firstScanText(a: Pick<CheckInAnswer, 'checkedInAt' | 'checkedInB
 export function verdictOf(a: CheckInAnswer, deviceId: string, pack: DoorPack | null): Verdict {
   const fromPack = a.ticket ? pack?.tickets.find((t) => t.id === a.ticket!.id) : undefined;
   const ticket = a.ticket ? { ...a.ticket, section: fromPack?.sectionName ?? a.ticket.section, comp: a.ticket.comp ?? fromPack?.comp, compGroup: a.ticket.compGroup ?? fromPack?.compGroup ?? null } : null;
-  if (a.result === 'ok') return { tone: 'admit', title: 'Admit', ticket, undo: a.ticket ? { ticketId: a.ticket.id, offline: false } : undefined };
-  if (a.result === 'duplicate') return { tone: 'already', title: 'Already scanned', ticket, detail: firstScanText(a, deviceId, fromPack) };
+  if (a.result === 'ok') return { tone: 'admit', title: 'Admit', ticket, undo: a.ticket ? { ticketId: a.ticket.id, offline: false, dateId: a.date?.id ?? null } : undefined };
+  if (a.result === 'wrong-date') return { tone: 'wrong', title: 'Wrong date', ticket, detail: wrongDateText(a.ticket, a.message) };
+  if (a.result === 'duplicate') return { tone: 'already', title: 'Already scanned', ticket, detail: a.date && /today/i.test(a.message) ? `Already in today. ${firstScanText(a, deviceId, fromPack)}` : firstScanText(a, deviceId, fromPack) };
   return { tone: 'invalid', title: 'Not valid', ticket, detail: a.message };
 }
 
 /**
  * Offline: checks a scanned code (or a typed ticket id when `manual`) against the door pack and this phone's own
- * check-ins. Admitting returns the scan to queue; the caller saves it.
+ * check-ins. Admitting returns the scan to queue; the caller saves it. `dateId`: the door's date (multiple dates).
  */
-export function verifyOffline(s: DoorStore, raw: string, now = Date.now(), manual = false): { verdict: Verdict; scan?: QueuedScan } {
+export function verifyOffline(s: DoorStore, raw: string, now = Date.now(), manual = false, dateId: string | null = null): { verdict: Verdict; scan?: QueuedScan } {
   const pack = s.pack;
   if (!pack) return { verdict: { tone: 'invalid', title: 'Not valid', detail: 'Download the door list to check tickets offline.', offline: true } };
   const p = parseCode(raw);
@@ -142,47 +208,93 @@ export function verifyOffline(s: DoorStore, raw: string, now = Date.now(), manua
   if (!p && !manual) return { verdict: { tone: 'invalid', title: 'Not valid', detail: 'Not a valid Eventro code.', offline: true } };
   const t = pack.tickets.find((x) => x.id === id);
   if (!t) return { verdict: { tone: 'invalid', title: 'Not valid', detail: p ? 'Not a valid Eventro code.' : 'Ticket not found for this event.', offline: true } };
+  const dated = (pack.dateMode === 'DATES' || pack.dateMode === 'DAYS') && !!dateId;
+  const view = (x: DoorPackTicket) => viewOf(x, pack.dates);
   if (p) {
     const c = checkCode(p, t.seed, now);
     // A code made from an older seed (before a transfer) or for another ticket fails the signature.
     if (c === 'bad-signature') return { verdict: { tone: 'invalid', title: 'Not valid', ticket: view(t), detail: 'Not a valid Eventro code. If the ticket changed hands, ask them to refresh their app.', offline: true } };
     if (c === 'expired') return { verdict: { tone: 'invalid', title: 'Code expired', ticket: view(t), detail: 'This code has expired. Ask them to reopen the ticket. (Screenshots won’t scan.)', offline: true } };
   }
-  const mine = s.localIn[t.id];
-  if (mine) return { verdict: { tone: 'already', title: 'Already scanned', ticket: view(t), detail: `Already scanned at ${clock(mine)} on this device.`, offline: true } };
-  if (t.status === 'CHECKED_IN') {
-    return { verdict: { tone: 'already', title: 'Already scanned', ticket: view(t), detail: `Already scanned at ${clock(t.checkedInAt)}${t.checkedInDevice ? ' on another scanner' : ''}.`, offline: true } };
+  if (dated) {
+    // The API's order: void, transfer pending, wrong date, already in, admit.
+    if (t.status === 'VOID') return { verdict: { tone: 'invalid', title: 'Not valid', ticket: view(t), detail: 'This ticket was refunded or cancelled.', offline: true } };
+    if (t.status === 'TRANSFER_PENDING') return { verdict: { tone: 'invalid', title: 'Not valid', ticket: view(t), detail: 'This ticket is being transferred.', offline: true } };
+    const ok = pack.dateMode === 'DATES' ? t.eventDateId === dateId : (t.validDateIds ?? []).includes(dateId!);
+    if (!ok) return { verdict: { tone: 'wrong', title: 'Wrong date', ticket: view(t), detail: wrongDateText(view(t)), offline: true } };
+    const mine = s.localIn[inKey(t.id, dateId)] ?? (pack.dateMode === 'DATES' ? s.localIn[t.id] : undefined);
+    if (mine) return { verdict: { tone: 'already', title: 'Already scanned', ticket: view(t), detail: `Already scanned at ${clock(mine)} on this device.`, offline: true } };
+    // DAYS: once per day (entries on other days don't count); DATES: once.
+    const entry = (t.checkIns ?? []).find((c) => c.eventDateId === dateId);
+    if (entry || (pack.dateMode === 'DATES' && t.status === 'CHECKED_IN')) {
+      const at = entry?.at ?? t.checkedInAt;
+      const device = entry ? entry.deviceId : t.checkedInDevice;
+      return { verdict: { tone: 'already', title: 'Already scanned', ticket: view(t), detail: `Already ${pack.dateMode === 'DAYS' ? 'in today' : 'scanned'} at ${clock(at)}${device ? ' on another scanner' : ''}.`, offline: true } };
+    }
+  } else {
+    const mine = s.localIn[t.id];
+    if (mine) return { verdict: { tone: 'already', title: 'Already scanned', ticket: view(t), detail: `Already scanned at ${clock(mine)} on this device.`, offline: true } };
+    if (t.status === 'CHECKED_IN') {
+      return { verdict: { tone: 'already', title: 'Already scanned', ticket: view(t), detail: `Already scanned at ${clock(t.checkedInAt)}${t.checkedInDevice ? ' on another scanner' : ''}.`, offline: true } };
+    }
+    if (t.status === 'VOID') return { verdict: { tone: 'invalid', title: 'Not valid', ticket: view(t), detail: 'This ticket was refunded or cancelled.', offline: true } };
+    if (t.status === 'TRANSFER_PENDING') return { verdict: { tone: 'invalid', title: 'Not valid', ticket: view(t), detail: 'This ticket is being transferred.', offline: true } };
   }
-  if (t.status === 'VOID') return { verdict: { tone: 'invalid', title: 'Not valid', ticket: view(t), detail: 'This ticket was refunded or cancelled.', offline: true } };
-  if (t.status === 'TRANSFER_PENDING') return { verdict: { tone: 'invalid', title: 'Not valid', ticket: view(t), detail: 'This ticket is being transferred.', offline: true } };
-  // ACTIVE or LISTED (the online check-in admits listed tickets too).
+  // ACTIVE or LISTED (the online check-in admits listed tickets too), or a multi-day pass back on another day.
   const scannedAt = new Date(now).toISOString();
   return {
-    verdict: { tone: 'admit', title: 'Admit', ticket: view(t), offline: true, undo: { ticketId: t.id, offline: true } },
-    scan: { ticketId: t.id, scannedAt, ...(p ? { code: raw.trim() } : {}) },
+    verdict: { tone: 'admit', title: 'Admit', ticket: view(t), offline: true, undo: { ticketId: t.id, offline: true, dateId: dated ? dateId : null } },
+    scan: { ticketId: t.id, scannedAt, ...(p ? { code: raw.trim() } : {}), ...(dated ? { eventDateId: dateId! } : {}) },
   };
 }
 
+
 /** Records an offline admission in the store (returns a new store). */
-export const admitLocally = (s: DoorStore, scan: QueuedScan): DoorStore => ({ ...s, localIn: { ...s.localIn, [scan.ticketId]: scan.scannedAt }, queue: [...s.queue, scan] });
+export const admitLocally = (s: DoorStore, scan: QueuedScan): DoorStore => ({ ...s, localIn: { ...s.localIn, [inKey(scan.ticketId, scan.eventDateId)]: scan.scannedAt }, queue: [...s.queue, scan] });
 
-/** Reverses an offline admission that hasn't synced yet. */
-export function undoLocal(s: DoorStore, ticketId: string): DoorStore {
+/** Reverses an offline admission that hasn't synced yet (on `dateId` for events with more than one date). */
+export function undoLocal(s: DoorStore, ticketId: string, dateId?: string | null): DoorStore {
   const localIn = { ...s.localIn };
-  delete localIn[ticketId];
-  return { ...s, localIn, queue: s.queue.filter((q) => q.ticketId !== ticketId) };
+  delete localIn[inKey(ticketId, dateId)];
+  return { ...s, localIn, queue: s.queue.filter((q) => !(q.ticketId === ticketId && (!dateId || q.eventDateId === dateId))) };
 }
 
-/** The pack after the API admitted a ticket online (so an offline fallback knows). */
-export function markPack(s: DoorStore, ticketId: string, at: string, deviceId: string | null): DoorStore {
+/** The pack after the API admitted a ticket online (so an offline fallback knows); `dateId` records the day's entry. */
+export function markPack(s: DoorStore, ticketId: string, at: string, deviceId: string | null, dateId?: string | null): DoorStore {
   if (!s.pack) return s;
-  return { ...s, pack: { ...s.pack, tickets: s.pack.tickets.map((t) => (t.id === ticketId ? { ...t, status: 'CHECKED_IN', checkedInAt: at, checkedInDevice: deviceId } : t)) } };
+  return {
+    ...s,
+    pack: {
+      ...s.pack,
+      tickets: s.pack.tickets.map((t) =>
+        t.id === ticketId
+          ? {
+              ...t,
+              status: 'CHECKED_IN',
+              checkedInAt: t.status === 'CHECKED_IN' && t.checkedInAt ? t.checkedInAt : at,
+              checkedInDevice: t.status === 'CHECKED_IN' ? t.checkedInDevice : deviceId,
+              ...(dateId ? { checkIns: [...(t.checkIns ?? []).filter((c) => c.eventDateId !== dateId), { eventDateId: dateId, at, deviceId }] } : {}),
+            }
+          : t,
+      ),
+    },
+  };
 }
 
-/** The pack after an online undo. */
-export function unmarkPack(s: DoorStore, ticketId: string): DoorStore {
+/** The pack after an online undo (a multi-day pass: that day's entry; it's ACTIVE again once it has none). */
+export function unmarkPack(s: DoorStore, ticketId: string, dateId?: string | null): DoorStore {
   if (!s.pack) return s;
-  return { ...s, pack: { ...s.pack, tickets: s.pack.tickets.map((t) => (t.id === ticketId && t.status === 'CHECKED_IN' ? { ...t, status: 'ACTIVE', checkedInAt: null, checkedInDevice: null } : t)) } };
+  return {
+    ...s,
+    pack: {
+      ...s.pack,
+      tickets: s.pack.tickets.map((t) => {
+        if (t.id !== ticketId || t.status !== 'CHECKED_IN') return t;
+        const left = dateId ? (t.checkIns ?? []).filter((c) => c.eventDateId !== dateId) : [];
+        return left.length ? { ...t, checkIns: left } : { ...t, status: 'ACTIVE', checkedInAt: null, checkedInDevice: null, ...(t.checkIns ? { checkIns: [] } : {}) };
+      }),
+    },
+  };
 }
 
 const REASON: Record<string, string> = {
@@ -192,6 +304,7 @@ const REASON: Record<string, string> = {
   'transfer-pending': 'This ticket is being transferred.',
   'bad-code': 'The code didn’t match the ticket (it may have changed hands).',
   'expired-code': 'The code was too old when it was scanned.',
+  'wrong-date': 'This ticket isn’t for the date it was scanned on.',
 };
 export const reasonText = (r?: string) => (r ? (REASON[r] ?? r) : 'Not valid.');
 
@@ -213,10 +326,10 @@ export async function syncDoor(s: DoorStore, deviceId: string): Promise<{ store:
       const name = res.ticket?.holderName ?? next.pack?.tickets.find((t) => t.id === res.ticketId)?.holderName ?? null;
       if (res.result === 'checked_in') {
         synced++;
-        next = markPack(next, res.ticketId, res.checkedInAt ?? scan.scannedAt, res.checkedInDevice ?? deviceId);
+        next = markPack(next, res.ticketId, res.checkedInAt ?? scan.scannedAt, res.checkedInDevice ?? deviceId, res.eventDateId ?? scan.eventDateId);
       } else if (res.result === 'already') {
         found.push({ ticketId: res.ticketId, holderName: name, scannedAt: scan.scannedAt, kind: 'already', at: res.checkedInAt, by: res.checkedInBy?.name ?? null, device: res.checkedInDevice ?? null });
-        next = markPack(next, res.ticketId, res.checkedInAt ?? scan.scannedAt, res.checkedInDevice ?? null);
+        next = markPack(next, res.ticketId, res.checkedInAt ?? scan.scannedAt, res.checkedInDevice ?? null, res.eventDateId ?? scan.eventDateId);
       } else {
         found.push({ ticketId: res.ticketId, holderName: name, scannedAt: scan.scannedAt, kind: 'invalid', reason: res.reason });
       }

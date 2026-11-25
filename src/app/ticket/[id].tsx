@@ -22,6 +22,7 @@ import { Button, EmptyState, IconButton, Notice, Skeleton, Txt } from '@/compone
 import { api, errorText, isOffline } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { codeAt, WINDOW_MS } from '@/lib/door-code';
+import { ownTimes, ticketWhen } from '@/lib/dates';
 import { localStamp, money, when, zoneAbbr } from '@/lib/format';
 import { claimBlocker, claimView, COMP_NOTE, COVERED_LABEL, FREE_NOTE, isComp, stamp, useClaimQueue } from '@/lib/guarantee';
 import { haptic } from '@/lib/haptics';
@@ -39,7 +40,8 @@ export default function TicketScreen() {
   const { user } = useAuth();
   const t = useMyTickets(user?.id);
   const ticket = t.data?.tickets.find((x) => x.id === id);
-  const siblings = ticket ? (t.data?.tickets ?? []).filter((x) => x.event.slug === ticket.event.slug) : [];
+  // The other tickets for the same event (DATES: the same date)
+  const siblings = ticket ? (t.data?.tickets ?? []).filter((x) => x.event.slug === ticket.event.slug && (x.date?.id ?? null) === (ticket.date?.id ?? null)) : [];
 
   const back = () => (router.canGoBack() ? router.back() : router.replace('/tickets'));
   const header = (
@@ -119,8 +121,10 @@ export default function TicketScreen() {
 
 function TicketCard({ t, offline, feePermille, userId }: { t: Ticket; offline: boolean; feePermille: number; userId: string }) {
   const { width } = useWindowDimensions();
-  const d = when(t.event.startsAt);
-  const abbr = zoneAbbr(t.event.timezone, t.event.startsAt);
+  // The ticket's own date (DATES), its days (DAYS), or the event's start
+  const own = ownTimes(t, t.event);
+  const tw = ticketWhen(t, t.event.startsAt);
+  const abbr = tw.days ? '' : zoneAbbr(t.event.timezone, own.startsAt);
   const state = ticketState(t);
   const look = lookOf(t.ticketType);
   const qrSize = Math.min(260, width - gutter * 2 - space.xxxl * 2);
@@ -129,7 +133,7 @@ function TicketCard({ t, offline, feePermille, userId }: { t: Ticket; offline: b
   const [now] = useState(() => Date.now());
   const rules = rulesOf(t.event);
   const blocked = blockers(t, rules, now);
-  const expiry = state.key === 'sent' ? transferExpiry(t.transferExpiresAt, t.event.startsAt, now, rules.cutoffMinutes) : null;
+  const expiry = state.key === 'sent' ? transferExpiry(t.transferExpiresAt, own.startsAt, now, rules.cutoffMinutes) : null;
   const resale = useMyResale(state.key === 'listed' ? userId : undefined);
   const listing = resale.data?.listings.find((l) => l.ticketId === t.id && (l.status === 'ACTIVE' || l.status === 'HELD'));
   const held = listing?.status === 'HELD';
@@ -191,9 +195,9 @@ function TicketCard({ t, offline, feePermille, userId }: { t: Ticket; offline: b
               {t.event.title}
             </Txt>
             <Txt variant="small" color={colors.inkMuted}>
-              {d.short} · {d.time}
+              {tw.line}
               {abbr ? ` ${abbr}` : ''}
-              {t.event.doorsAt ? ` · Doors ${when(t.event.doorsAt).time}` : ''}
+              {own.doorsAt ? ` · Doors ${when(own.doorsAt).time}` : ''}
             </Txt>
             <Txt variant="small" color={colors.inkMuted} numberOfLines={1}>
               {t.event.online ? 'Online event' : [t.event.venue?.name, t.event.venue?.city].filter(Boolean).join(', ')}
@@ -217,7 +221,7 @@ function TicketCard({ t, offline, feePermille, userId }: { t: Ticket; offline: b
             <View style={[styles.statusBox, { width: qrSize + 24 }, state.key === 'cancelled' && { backgroundColor: 'rgba(255,77,61,0.08)' }]}>
               <Icon name={state.key === 'cancelled' ? 'alert' : state.key === 'gift' ? 'gift' : state.key === 'used' ? 'check' : state.key === 'listed' ? 'tag' : state.key === 'sent' ? 'mail' : state.key === 'refunded' ? 'cash' : 'clock'} size={28} color={state.key === 'cancelled' ? '#d7321f' : colors.inkMuted} />
               <Txt variant="title" color={colors.ink} style={{ textAlign: 'center' }}>
-                {state.key === 'cancelled' ? 'Event cancelled' : state.label}
+                {state.key === 'cancelled' ? (t.event.status === 'CANCELLED' ? 'Event cancelled' : 'Date cancelled') : state.label}
               </Txt>
               {state.key === 'listed' ? (
                 <>
@@ -243,9 +247,9 @@ function TicketCard({ t, offline, feePermille, userId }: { t: Ticket; offline: b
                   </Txt>
                 </View>
               ) : null}
-              {state.key === 'cancelled' && t.event.cancelReason ? (
+              {state.key === 'cancelled' && (t.event.status === 'CANCELLED' ? t.event.cancelReason : t.date?.cancelReason) ? (
                 <Txt variant="small" color={colors.inkMuted} style={{ textAlign: 'center', fontStyle: 'italic' }}>
-                  “{t.event.cancelReason}”
+                  “{t.event.status === 'CANCELLED' ? t.event.cancelReason : t.date?.cancelReason}”
                 </Txt>
               ) : null}
             </View>
@@ -365,7 +369,10 @@ function GuaranteeBox({ t, userId }: { t: Ticket; userId: string }) {
   }
   const blocker = claimBlocker(t, now);
   const share = g.refundCents > 0 ? ` (${money(g.refundCents, t.order.currency, { decimals: true })}, fees included)` : ', fees included';
-  const body = blocker ? `If it doesn’t scan at the door, you get this ticket’s money back. ${blocker}` : `If it doesn’t scan at the door, you get this ticket’s money back${share}. Claim until ${stamp(g.closesAt)}.`;
+  // A multi-day pass refunds one day's share (one claim per pass).
+  const perDay = (g.days?.length ?? 0) > 1;
+  const lead = perDay ? 'If it doesn’t scan on one of its days, you get that day’s share back' : 'If it doesn’t scan at the door, you get this ticket’s money back';
+  const body = blocker ? `${lead}. ${blocker}` : `${lead}${share}. Claim until ${stamp(g.closesAt)}.`;
   return (
     <View style={styles.guarantee}>
       <View style={{ flexDirection: 'row', gap: space.md, alignItems: 'flex-start' }}>

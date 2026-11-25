@@ -15,12 +15,19 @@
  * Every result fills the screen (green admit, amber already scanned, red not valid) with a haptic, then the camera
  * resumes after about 1.5 seconds; a comp shows "Comp · {group}". On the web preview there's no camera: type or
  * paste a code instead.
+ *
+ * Multiple dates (lib/dates.ts): the door works on one date at a time, picked from date cards under the title (with
+ * each date's check-ins); it starts on the API's current date (the one running today at the venue, else the next),
+ * or offline the same rule on this phone's clock. Scans, manual check-ins, undo and offline sync carry that
+ * `eventDateId`; a ticket for another date, or a pass not valid that day, fills the screen in violet: "Wrong date",
+ * with the ticket's own date ("This ticket is for Sat, Dec 13") or its days ("Valid Sat 12, Sun 13").
  */
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { DateCards } from '@/components/date-cards';
 import { DoorCamera, HAS_CAMERA } from '@/components/door-camera';
 import { Segmented } from '@/components/form-ui';
 import { Icon, type IconName } from '@/components/icons';
@@ -36,12 +43,14 @@ import {
   clock,
   compLabel,
   conflictText,
+  defaultDoorDate,
   downloadPack,
   dropDoor,
   emptyStore,
   guestConflictText,
   guestTotals,
   hereText,
+  inKey,
   loadDoor,
   markGuest,
   markPack,
@@ -61,6 +70,7 @@ import {
   type DoorStore,
   type Verdict,
 } from '@/lib/door';
+import { dateLine, shortDay, type DateMode, type EventDate } from '@/lib/dates';
 import { localStamp, num, when } from '@/lib/format';
 import { haptic } from '@/lib/haptics';
 import { useGuestList } from '@/lib/organizer';
@@ -69,12 +79,14 @@ import { useConfirm } from '@/components/confirm';
 import type { Attendee, CheckInAnswer, GuestCheckIn, GuestEntry, GuestList } from '@/lib/types';
 import { colors, font, gutter, radius, space } from '@/theme';
 
-type EventInfo = { id: string; orgId: string; title: string; startsAt: string; status: string };
+type EventInfo = { id: string; orgId: string; title: string; startsAt: string; status: string; timezone?: string | null; dateMode?: DateMode; dates?: EventDate[] };
 
 const TONE: Record<Verdict['tone'], { bg: string; icon: IconName }> = {
   admit: { bg: '#178a4c', icon: 'check' },
   already: { bg: '#b87a0c', icon: 'alert' },
   invalid: { bg: '#b8291d', icon: 'close' },
+  // a ticket for another date: its own colour, so it isn't read as a fake
+  wrong: { bg: '#5a3fc0', icon: 'calendar' },
 };
 
 export default function Door() {
@@ -95,7 +107,9 @@ export default function Door() {
   const [mode, setMode] = useState<'online' | 'offline'>('online');
   const [autoOffline, setAutoOffline] = useState(false);
   const [verdict, setVerdict] = useState<Verdict | null>(null);
-  const [lastAdmit, setLastAdmit] = useState<{ ticketId: string; offline: boolean; name: string } | null>(null);
+  const [lastAdmit, setLastAdmit] = useState<{ ticketId: string; offline: boolean; name: string; dateId?: string | null } | null>(null);
+  /** multiple dates: the date picked at the door (null: the default) */
+  const [pickedDate, setPickedDate] = useState<string | null>(null);
   const [torch, setTorch] = useState(false);
   const [typing, setTyping] = useState(!HAS_CAMERA);
   const [code, setCode] = useState('');
@@ -151,6 +165,25 @@ export default function Door() {
   }, [orgId, refetchDoor]);
 
   const pack = store.pack;
+  // Multiple dates: the door's date. Picked, else the API's current date (online), else the same rule on this phone.
+  const dateMode = live?.dateMode ?? pack?.dateMode ?? info.data?.dateMode ?? 'SINGLE';
+  const multi = dateMode === 'DATES' || dateMode === 'DAYS';
+  const allDates = multi ? (live?.dates ?? pack?.dates ?? info.data?.dates ?? []) : [];
+  const doorDates = allDates.filter((d) => d.status !== 'CANCELLED');
+  const tz = info.data?.timezone ?? pack?.timezone ?? null;
+  const liveCurrent = live?.currentDateId ?? null;
+  const doorDateId = multi
+    ? ((pickedDate && doorDates.some((d) => d.id === pickedDate) ? pickedDate : null) ??
+      (online && liveCurrent && doorDates.some((d) => d.id === liveCurrent) ? liveCurrent : null) ??
+      defaultDoorDate(doorDates, tz)?.id ??
+      null)
+    : null;
+  // Scans read it from a ref (the scan callbacks stay the same between renders).
+  const doorDateRef = useRef<string | null>(doorDateId);
+  useEffect(() => {
+    doorDateRef.current = doorDateId;
+  }, [doorDateId]);
+  const doorDate = doorDates.find((d) => d.id === doorDateId) ?? null;
   // The guest list: from the API while online (with this phone's unsynced check-ins on top), else the door pack's.
   const remoteGuests = useGuestList(online && tab === 'guests' ? eventId : undefined, guestQ);
   const useRemote = online && !!remoteGuests.data && !remoteGuests.error;
@@ -158,9 +191,27 @@ export default function Door() {
   const guestSum = useRemote && !guestQ ? guestTotals(guests) : pack?.guestList ? guestTotals(packGuests(store)) : (remoteGuests.data?.summary ?? null);
   const pendingSync = store.queue.length + store.guestQueue.length;
   const title = info.data?.title ?? pack?.title ?? 'Door';
-  const startsAt = info.data?.startsAt ?? pack?.startsAt;
-  const packIn = pack ? pack.tickets.filter((t) => t.status === 'CHECKED_IN' || store.localIn[t.id]).length : 0;
-  const counter = online && live ? { n: live.checkedIn, of: live.ticketsIssued } : pack ? { n: packIn, of: pack.tickets.length } : live ? { n: live.checkedIn, of: live.ticketsIssued } : null;
+  const startsAt = doorDate?.startsAt ?? info.data?.startsAt ?? pack?.startsAt;
+  // Multiple dates: the tickets for the door's date (DATES: that date's; DAYS: passes valid that day) and who's in.
+  const forDate = (t: { eventDateId?: string | null; validDateIds?: string[]; status: string }) => t.status !== 'VOID' && (dateMode === 'DATES' ? t.eventDateId === doorDateId : (t.validDateIds ?? []).includes(doorDateId ?? ''));
+  const packTickets = pack ? (doorDateId ? pack.tickets.filter(forDate) : pack.tickets) : [];
+  const packIn = doorDateId
+    ? packTickets.filter((t) => store.localIn[inKey(t.id, doorDateId)] || (t.checkIns ?? []).some((c) => c.eventDateId === doorDateId) || (dateMode === 'DATES' && t.status === 'CHECKED_IN')).length
+    : packTickets.filter((t) => t.status === 'CHECKED_IN' || store.localIn[t.id]).length;
+  const liveDate = doorDateId ? live?.dates?.find((d) => d.id === doorDateId) : undefined;
+  const counter: { n: number; of: number | null } | null = doorDateId
+    ? online && liveDate
+      ? { n: liveDate.checkedIn ?? 0, of: pack ? packTickets.length : null }
+      : pack
+        ? { n: packIn, of: packTickets.length }
+        : null
+    : online && live
+      ? { n: live.checkedIn, of: live.ticketsIssued }
+      : pack
+        ? { n: packIn, of: pack.tickets.length }
+        : live
+          ? { n: live.checkedIn, of: live.ticketsIssued }
+          : null;
 
   /* ---------- results ---------- */
 
@@ -169,23 +220,24 @@ export default function Door() {
     else if (v.tone === 'already') haptic.warning();
     else haptic.error();
     setVerdict(v);
-    if (v.tone === 'admit' && v.undo && v.ticket) setLastAdmit({ ticketId: v.ticket.id, offline: v.undo.offline, name: v.ticket.holderName });
+    if (v.tone === 'admit' && v.undo && v.ticket) setLastAdmit({ ticketId: v.ticket.id, offline: v.undo.offline, name: v.ticket.holderName, dateId: v.undo.dateId ?? null });
   }, []);
 
   // The camera resumes ~1.5 s after a result (tap the result to resume sooner).
   useEffect(() => {
     if (!verdict) return;
-    const t = setTimeout(() => setVerdict(null), verdict.tone === 'admit' ? 1500 : 1900);
+    // A wrong date stays a little longer: there's a date to read out.
+    const t = setTimeout(() => setVerdict(null), verdict.tone === 'admit' ? 1500 : verdict.tone === 'wrong' ? 2600 : 1900);
     return () => clearTimeout(t);
   }, [verdict]);
 
   const checkOffline = useCallback(
     (raw: string, manual: boolean, why?: string) => {
-      const r = verifyOffline(storeRef.current, raw, Date.now(), manual);
+      const r = verifyOffline(storeRef.current, raw, Date.now(), manual, doorDateRef.current);
       if (r.scan) setStore(admitLocally(storeRef.current, r.scan));
       show(why ? { ...r.verdict, detail: [r.verdict.detail, why].filter(Boolean).join(' ') } : r.verdict);
     },
-    [setStore, show],
+    [doorDateRef, setStore, show],
   );
 
   const process = useCallback(
@@ -199,8 +251,9 @@ export default function Door() {
       busyRef.current = true;
       setBusy(true);
       try {
-        const a = await api<CheckInAnswer>(`/organizer/events/${encodeURIComponent(eventId)}/check-in`, { body: { code: value, deviceId }, timeoutMs: 8000 });
-        if (a.result === 'ok' && a.ticket) setStore(markPack(storeRef.current, a.ticket.id, new Date().toISOString(), deviceId));
+        const on = doorDateRef.current;
+        const a = await api<CheckInAnswer>(`/organizer/events/${encodeURIComponent(eventId)}/check-in`, { body: { code: value, deviceId, ...(on ? { eventDateId: on } : {}) }, timeoutMs: 8000 });
+        if (a.result === 'ok' && a.ticket) setStore(markPack(storeRef.current, a.ticket.id, new Date().toISOString(), deviceId, a.date?.id ?? on));
         show(verdictOf(a, deviceId, storeRef.current.pack));
         refreshCounts();
       } catch (e) {
@@ -218,23 +271,24 @@ export default function Door() {
         setBusy(false);
       }
     },
-    [autoOffline, checkOffline, deviceId, eventId, mode, refreshCounts, setStore, show],
+    [autoOffline, checkOffline, deviceId, doorDateRef, eventId, mode, refreshCounts, setStore, show],
   );
 
   const undo = async () => {
     if (!lastAdmit) return;
-    const { ticketId, offline } = lastAdmit;
+    const { ticketId, offline, dateId } = lastAdmit;
     setNote(null);
-    if (offline && storeRef.current.queue.some((q) => q.ticketId === ticketId)) {
-      setStore(undoLocal(storeRef.current, ticketId));
+    if (offline && storeRef.current.queue.some((q) => q.ticketId === ticketId && (!dateId || q.eventDateId === dateId))) {
+      setStore(undoLocal(storeRef.current, ticketId, dateId));
       setLastAdmit(null);
       haptic.select();
       setNote({ tone: 'plain', text: `Undone: ${lastAdmit.name} is no longer checked in on this phone.` });
       return;
     }
     try {
-      await api(`/organizer/events/${encodeURIComponent(eventId)}/check-in/${encodeURIComponent(ticketId)}`, { method: 'DELETE' });
-      setStore(unmarkPack(undoLocal(storeRef.current, ticketId), ticketId));
+      // Multi-day: that day's entry
+      await api(`/organizer/events/${encodeURIComponent(eventId)}/check-in/${encodeURIComponent(ticketId)}${dateId ? `?eventDateId=${encodeURIComponent(dateId)}` : ''}`, { method: 'DELETE' });
+      setStore(unmarkPack(undoLocal(storeRef.current, ticketId, dateId), ticketId, dateId));
       setLastAdmit(null);
       haptic.select();
       setNote({ tone: 'plain', text: `Undone: ${lastAdmit.name} is no longer checked in.` });
@@ -413,16 +467,31 @@ export default function Door() {
     staleTime: 5_000,
     retry: 0,
   });
-  type Hit = { id: string; name: string; type: string; seat: string; status: string; checkedInAt: string | null; comp: string | null };
+  type Hit = { id: string; name: string; type: string; seat: string; status: string; checkedInAt: string | null; comp: string | null; when: string | null };
+  /** Multiple dates: a run's ticket shows its date; a multi-day pass is "in" only for the door's date. */
+  const dateText = (dateId: string | null | undefined) => {
+    const d = allDates.find((x) => x.id === dateId);
+    return d ? `${shortDay(d.startsAt)} · ${when(d.startsAt).time}` : null;
+  };
   const hits: Hit[] =
     q.length < 2
       ? []
       : online && !remote.error
-        ? (remote.data ?? []).slice(0, 20).map((a) => ({ id: a.id, name: a.holderName, type: a.ticketType.name, seat: seatText(a), status: a.status, checkedInAt: a.checkedInAt, comp: a.type === 'COMP' ? compLabel({ comp: true, compGroup: a.compGroup }) : null }))
+        ? (remote.data ?? []).slice(0, 20).map((a) => {
+            const inToday = dateMode === 'DAYS' && doorDateId ? !!a.checkedInDates?.includes(doorDateId) : a.status === 'CHECKED_IN';
+            const status = dateMode === 'DAYS' && a.status === 'CHECKED_IN' && !inToday ? 'ACTIVE' : a.status;
+            return { id: a.id, name: a.holderName, type: a.ticketType.name, seat: seatText(a), status, checkedInAt: inToday ? a.checkedInAt : null, comp: a.type === 'COMP' ? compLabel({ comp: true, compGroup: a.compGroup }) : null, when: dateMode === 'DATES' ? dateText(a.eventDateId) : null };
+          })
         : (pack?.tickets ?? [])
             .filter((t) => t.holderName.toLowerCase().includes(q.toLowerCase()) || t.id.includes(q.toUpperCase()))
             .slice(0, 20)
-            .map((t) => ({ id: t.id, name: t.holderName, type: t.ticketType, seat: seatText(t), status: store.localIn[t.id] ? 'CHECKED_IN' : t.status, checkedInAt: store.localIn[t.id] ?? t.checkedInAt, comp: compLabel(t) }));
+            .map((t) => {
+              const mine = store.localIn[inKey(t.id, doorDateId)] ?? (doorDateId ? undefined : store.localIn[t.id]);
+              const entry = doorDateId ? (t.checkIns ?? []).find((c) => c.eventDateId === doorDateId) : undefined;
+              const inNow = !!mine || (dateMode === 'DAYS' ? !!entry : t.status === 'CHECKED_IN');
+              const status = inNow ? 'CHECKED_IN' : t.status === 'CHECKED_IN' ? 'ACTIVE' : t.status;
+              return { id: t.id, name: t.holderName, type: t.ticketType, seat: seatText(t), status, checkedInAt: mine ?? entry?.at ?? (inNow ? t.checkedInAt : null), comp: compLabel(t), when: dateMode === 'DATES' ? dateText(t.eventDateId) : null };
+            });
 
   const camH = Math.min(width - gutter * 2, 440);
 
@@ -446,13 +515,34 @@ export default function Door() {
             <Txt variant="title" numberOfLines={1} accessibilityRole="header">
               {title}
             </Txt>
-            {startsAt ? (
+            {doorDate ? (
+              <Txt variant="small" color={colors.muted} numberOfLines={1}>
+                {dateLine(doorDate)}
+              </Txt>
+            ) : startsAt ? (
               <Txt variant="small" color={colors.muted}>
                 {when(startsAt).short} · {when(startsAt).time}
               </Txt>
             ) : null}
           </View>
         </View>
+
+        {doorDates.length > 1 ? (
+          // Multiple dates: which date this door is checking (each with its entries so far, online).
+          <DateCards
+            dates={doorDates}
+            value={doorDateId}
+            onChange={(id) => {
+              setPickedDate(id);
+              setLastAdmit(null);
+            }}
+            note={(d) => {
+              const c = live?.dates?.find((x) => x.id === d.id)?.checkedIn;
+              return online && c !== undefined ? `${num(c)} in` : null;
+            }}
+            label="Door date"
+          />
+        ) : null}
 
         <Segmented
           label="Door"
@@ -467,10 +557,10 @@ export default function Door() {
         <View style={styles.counterRow}>
           <View style={{ flex: 1 }}>
             <Txt variant="priceLg" accessibilityLiveRegion="polite">
-              {tab === 'guests' ? (guestSum ? `${num(guestSum.arrived)} of ${num(guestSum.expected)}` : '—') : counter ? `${counter.n} of ${counter.of}` : '—'}
+              {tab === 'guests' ? (guestSum ? `${num(guestSum.arrived)} of ${num(guestSum.expected)}` : '—') : counter ? (counter.of !== null ? `${counter.n} of ${counter.of}` : num(counter.n)) : '—'}
             </Txt>
             <Txt variant="small" color={colors.muted}>
-              {tab === 'guests' ? `guests here${guestSum ? ` · ${num(guestSum.entries)} on the list` : ''}` : 'checked in'}
+              {tab === 'guests' ? `guests here${guestSum ? ` · ${num(guestSum.entries)} on the list` : ''}` : doorDate ? `checked in · ${shortDay(doorDate.startsAt)}` : 'checked in'}
             </Txt>
           </View>
           <View style={{ flexDirection: 'row', gap: space.sm }}>
@@ -697,6 +787,11 @@ export default function Door() {
                       {h.type} · {h.seat}
                       {h.comp ? ` · ${h.comp}` : ''}
                     </Txt>
+                    {h.when ? (
+                      <Txt variant="tiny" color={colors.dim} numberOfLines={1}>
+                        {h.when}
+                      </Txt>
+                    ) : null}
                     <Txt variant="mono" color={colors.dim}>
                       {h.id}
                     </Txt>
@@ -751,7 +846,7 @@ function Result({ v, onDone }: { v: Verdict; onDone: () => void }) {
         </View>
       ) : null}
       {v.detail ? (
-        <Txt variant="bodyStrong" color="#ffffff" style={{ textAlign: 'center', maxWidth: 340 }}>
+        <Txt variant={v.tone === 'wrong' ? 'h3' : 'bodyStrong'} color="#ffffff" style={{ textAlign: 'center', maxWidth: 340 }}>
           {v.detail}
         </Txt>
       ) : null}

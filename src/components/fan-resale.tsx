@@ -13,6 +13,7 @@ import { useCallback, useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 import { api, errorText, WEB_URL } from '@/lib/api';
 import { providerFor } from '@/lib/checkout';
+import { ticketWhen } from '@/lib/dates';
 import { money } from '@/lib/format';
 import { openGuaranteeTerms } from '@/lib/guarantee';
 import { haptic } from '@/lib/haptics';
@@ -124,7 +125,7 @@ export function FanResale({ slug, listings, refetch }: { slug: string; listings:
       }>
       {held ? (
         <Notice tone="accent" icon="clock" title="You’re holding a ticket" action="Continue checkout" onAction={() => router.push({ pathname: '/checkout/resale/[listingId]', params: { listingId: held.listingId } })}>
-          {`${held.ticketType.name} · ${seatText(held, 'No reserved seat')}. It’s yours until the timer runs out.`}
+          {`${held.ticketType.name} · ${seatText(held, 'No reserved seat')}${held.date || held.validDates?.length ? ` · ${ticketWhen(held, '').line}` : ''}. It’s yours until the timer runs out.`}
         </Notice>
       ) : null}
       {error ? (
@@ -141,6 +142,12 @@ export function FanResale({ slug, listings, refetch }: { slug: string; listings:
               <Txt variant="bodyStrong" numberOfLines={2}>
                 {seatText(l, 'No reserved seat')}
               </Txt>
+              {/* Multiple dates: the ticket's date (DATES) or the days it's good for (DAYS) */}
+              {l.date || l.validDates?.length ? (
+                <Txt variant="small" color={colors.muted} numberOfLines={1}>
+                  {ticketWhen(l, l.date?.startsAt ?? '').line}
+                </Txt>
+              ) : null}
               <FacePill priceCents={l.priceCents} faceCents={l.faceCents} />
             </View>
             <View style={{ alignItems: 'flex-end', gap: 6 }}>
@@ -156,7 +163,7 @@ export function FanResale({ slug, listings, refetch }: { slug: string; listings:
                 loading={busy === l.id}
                 disabled={!!busy}
                 onPress={() => void buy(l)}
-                accessibilityLabel={`Buy ${l.ticketType.name}, ${seatText(l, 'no reserved seat')}, for ${money(l.priceCents, l.currency)}`}
+                accessibilityLabel={`Buy ${l.ticketType.name}, ${seatText(l, 'no reserved seat')}${l.date || l.validDates?.length ? `, ${ticketWhen(l, '').line}` : ''}, for ${money(l.priceCents, l.currency)}`}
                 style={{ minWidth: 72 }}
               />
             </View>

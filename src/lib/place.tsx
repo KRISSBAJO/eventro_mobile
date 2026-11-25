@@ -120,7 +120,7 @@ export function rankNear(events: EventCard[], place: Place | null): Ranked[] {
       (a, b) =>
         order[a.tier] - order[b.tier] ||
         (a.distanceKm !== null && b.distanceKm !== null ? a.distanceKm - b.distanceKm : 0) ||
-        a.event.startsAt.localeCompare(b.event.startsAt),
+        (a.event.nextDate?.startsAt ?? a.event.startsAt).localeCompare(b.event.nextDate?.startsAt ?? b.event.startsAt),
     );
 }
 

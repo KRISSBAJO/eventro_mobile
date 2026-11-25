@@ -1,8 +1,12 @@
-/** Event cards: a large image card for the Discover rails and a compact row for search results. */
+/**
+ * Event cards: a large image card for the Discover rails and a compact row for search results. Events with more than
+ * one date show their next date and "+2 more dates" / "3 days" (lib/dates.ts cardWhen).
+ */
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { router } from 'expo-router';
 import { Pressable, StyleSheet, View } from 'react-native';
+import { cardWhen } from '@/lib/dates';
 import { haptic } from '@/lib/haptics';
 import { CATEGORY_NAME, cityOnly, distanceLabel, money, when } from '@/lib/format';
 import type { EventCard as Ev } from '@/lib/types';
@@ -19,7 +23,7 @@ const open = (slug: string) => {
 const where = (e: Ev) => [e.venue, cityOnly(e.city)].filter(Boolean).join(' · ') || 'Online';
 const hasResale = (e: Ev) => (e.resaleCount ?? 0) > 0;
 const a11y = (e: Ev) =>
-  `${e.title}, ${e.subtitle}. ${when(e.startsAt).date} at ${when(e.startsAt).time}. ${where(e)}. From ${money(e.fromCents, e.currency)}.${hasResale(e) ? ' Fan resale tickets available.' : ''}`;
+  `${e.title}, ${e.subtitle}. ${when(cardWhen(e).startsAt).date} at ${when(cardWhen(e).startsAt).time}${cardWhen(e).more ? `, ${cardWhen(e).more}` : ''}. ${where(e)}. From ${money(e.fromCents, e.currency)}.${hasResale(e) ? ' Fan resale tickets available.' : ''}`;
 
 /** Fans are selling tickets for this event (GET /events → resaleCount). `glass` sits on the image. */
 function ResaleBadge({ glass }: { glass?: boolean }) {
@@ -48,7 +52,8 @@ function DateTile({ iso }: { iso: string }) {
 }
 
 export function LargeEventCard({ e, width = 280, distanceKm }: { e: Ev; width?: number; distanceKm?: number | null }) {
-  const d = when(e.startsAt);
+  const cw = cardWhen(e);
+  const d = when(cw.startsAt);
   return (
     <Pressable
       accessibilityRole="link"
@@ -59,7 +64,7 @@ export function LargeEventCard({ e, width = 280, distanceKm }: { e: Ev; width?: 
         <Image source={e.imageUrl ? { uri: e.imageUrl } : null} style={StyleSheet.absoluteFill} contentFit="cover" transition={250} recyclingKey={e.slug} />
         <LinearGradient colors={[colors.fade0, colors.fade]} locations={[0.45, 1]} style={StyleSheet.absoluteFill} />
         <View style={styles.largeTop}>
-          <DateTile iso={e.startsAt} />
+          <DateTile iso={cw.startsAt} />
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.sm }}>
             <Badge label={CATEGORY_NAME[e.category] ?? e.category} tone="glass" />
             <HeartButton card={e} glass size={34} />
@@ -79,6 +84,11 @@ export function LargeEventCard({ e, width = 280, distanceKm }: { e: Ev; width?: 
         <View style={{ flex: 1, gap: 4 }}>
           <Txt variant="smallStrong" numberOfLines={1}>
             {d.short} · {d.time}
+            {cw.more ? (
+              <Txt variant="small" color={colors.muted}>
+                {` · ${cw.more}`}
+              </Txt>
+            ) : null}
           </Txt>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
             <Icon name={e.venue ? 'pin' : 'stream'} size={13} color={colors.dim} />
@@ -102,7 +112,8 @@ export function LargeEventCard({ e, width = 280, distanceKm }: { e: Ev; width?: 
 }
 
 export function CompactEventCard({ e }: { e: Ev }) {
-  const d = when(e.startsAt);
+  const cw = cardWhen(e);
+  const d = when(cw.startsAt);
   return (
     <Pressable accessibilityRole="link" accessibilityLabel={a11y(e)} onPress={() => open(e.slug)} style={({ pressed }) => [styles.compact, pressed && { backgroundColor: colors.surface2 }]}>
       <View style={styles.thumb}>
@@ -111,6 +122,7 @@ export function CompactEventCard({ e }: { e: Ev }) {
       <View style={{ flex: 1, gap: 3, justifyContent: 'center' }}>
         <Txt variant="eyebrow" color={colors.accent} numberOfLines={1}>
           {d.short} · {d.time}
+          {cw.more ? ` · ${cw.more}` : ''}
         </Txt>
         <Txt variant="title" numberOfLines={1}>
           {e.title}

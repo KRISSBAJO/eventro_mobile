@@ -14,13 +14,22 @@
  * organizer's base amounts, as the API takes them. Times are the venue's wall-clock time stored as UTC (the website does the
  * same). "Change venue" opens its own screen (…/venue, PUT /organizer/events/:id/venue); seat maps are designed on
  * the web.
+ *
+ * Multiple dates (components/date-list.tsx): `dates` is sent as the full list (kept ones with their id, new ones
+ * without; a date left out is removed, which the API refuses once it has orders: "Cancel this date" is the way then,
+ * for org admins, with the cancel preview in a sheet). DATES tiers are one row per tier (the copies share `tierKey`;
+ * a PATCH on any copy changes them all): the quantity is the same on every date (`capacity`) or set per date
+ * (`capacityByDate`). DAYS tiers pick their days (`validDates`; once sold, days can only be added). One date /
+ * Multiple dates / Multi-day can be switched while nothing has sold (the API's DATE_MODE_LOCKED otherwise).
  */
 import { useQueryClient } from '@tanstack/react-query';
 import { Image } from 'expo-image';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
+import { CancelDateSheet } from '@/components/cancel-date-sheet';
 import { useConfirm } from '@/components/confirm';
+import { DateList, dateListErrors, datesBody, DayChips, draftsOf, ModePicker, PerDateFields, type DateDraft } from '@/components/date-list';
 import { DateField, TimeField } from '@/components/date-time';
 import { Icon, type IconName } from '@/components/icons';
 import { CoverUpload } from '@/components/cover-upload';
@@ -31,6 +40,7 @@ import { PricingMode, PwywFields, TierExtras, TierPresets, type Pricing } from '
 import { Button, ErrorState, Field, Notice, Skeleton, TextArea, Txt } from '@/components/ui';
 import { api, errorText } from '@/lib/api';
 import { donationChanges, donationDraftOf, donationErrors, type DonationDraft } from '@/lib/donations';
+import { dateLine, type DateMode, type EventDate } from '@/lib/dates';
 import { CATEGORY_NAME, currencySymbol, money, num, todayYmd } from '@/lib/format';
 import { haptic } from '@/lib/haptics';
 import type { UploadedCover } from '@/lib/media-upload';
@@ -38,9 +48,12 @@ import {
   baseFromAllIn,
   buyerPrice,
   canEdit,
+  isAdmin,
+  lastStart,
   membershipOf,
   moneyInput,
   parseMoney,
+  tiersOf,
   useOrgEvent,
   wallIso,
   wallParts,
@@ -53,8 +66,30 @@ import { useMyOrgs } from '@/lib/queries';
 import { cleanPerks, isTierLook, presetIndex, samePerks, type TierLook, type TierPreset } from '@/lib/tiers';
 import { colors, radius, space, touch } from '@/theme';
 
-/** `style` null is Auto: the look comes from the name. `pwyw` is used when `pricing` is PWYW. */
-type Tier = { key: string; id: string | null; name: string; price: string; qty: string; sold: number; mapped: boolean; perks: string[]; badge: string; style: TierLook | null; pricing: Pricing; pwyw: PwywDraft };
+/**
+ * `style` null is Auto: the look comes from the name. `pwyw` is used when `pricing` is PWYW. Multiple dates: `copies`
+ * are the tier's ticket types per date (DATES), `perDate`/`byDate` (date key → quantity) set quantities per date, and
+ * `days` are the date keys a DAYS type is valid on (null: every day; `wasDays` what it had).
+ */
+type Tier = {
+  key: string;
+  id: string | null;
+  name: string;
+  price: string;
+  qty: string;
+  sold: number;
+  mapped: boolean;
+  perks: string[];
+  badge: string;
+  style: TierLook | null;
+  pricing: Pricing;
+  pwyw: PwywDraft;
+  copies: { id: string; eventDateId: string | null; capacity: number; sold: number }[];
+  perDate: boolean;
+  byDate: Record<string, string>;
+  days: string[] | null;
+  wasDays: string[];
+};
 
 export default function EditEvent() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -83,32 +118,44 @@ export default function EditEvent() {
     );
   }
   // The form keeps its values across refetches; comparisons use the latest saved event.
-  return <Editor key={ev.data.id} e={ev.data} />;
+  return <Editor key={ev.data.id} e={ev.data} admin={isAdmin(membershipOf(orgs.data, ev.data.orgId)?.role)} />;
 }
 
-function Editor({ e }: { e: OrgEventDetail }) {
+function Editor({ e, admin }: { e: OrgEventDetail; admin: boolean }) {
   const qc = useQueryClient();
   const confirm = useConfirm();
   const start = wallParts(e.startsAt)!;
   const doors0 = wallParts(e.doorsAt);
+  // Seat-map sections point at a ticket type, or (multiple dates) at a tier's key.
   const mappedIds = new Set((e.seatMap?.sections ?? []).map((s) => s.ticketTypeId).filter(Boolean) as string[]);
+  const mode0: DateMode = e.dateMode ?? 'SINGLE';
+  const dates0 = e.dates ?? [];
+  const activeIds0 = dates0.filter((d) => d.status !== 'CANCELLED').map((d) => d.id);
   const fromApi = (): Tier[] =>
-    [...e.ticketTypes]
-      .sort((a, b) => a.sortOrder - b.sortOrder)
-      .map((t) => ({
+    tiersOf(e.ticketTypes, dates0).map(({ tier: t, copies, sold }) => {
+      const caps = copies.filter((c) => !dates0.some((d) => d.id === c.eventDateId && d.status === 'CANCELLED')).map((c) => c.capacity);
+      const uniform = caps.every((c) => c === caps[0]);
+      const valid = t.validDateIds ?? [];
+      return {
         key: t.id,
         id: t.id,
         name: t.name,
         price: moneyInput(t.priceCents),
-        qty: String(t.capacity),
-        sold: t.sold,
-        mapped: mappedIds.has(t.id),
+        qty: String(mode0 === 'DATES' ? (caps[0] ?? t.capacity) : t.capacity),
+        sold,
+        mapped: mappedIds.has(t.id) || (!!t.tierKey && mappedIds.has(t.tierKey)),
         perks: t.perks ?? [],
         badge: t.badge ?? '',
         style: isTierLook(t.style) ? t.style : null,
         pricing: t.pricing === 'PWYW' ? 'PWYW' : 'FIXED',
         pwyw: t.pricing === 'PWYW' ? pwywDraftOf(t) : NO_PWYW,
-      }));
+        copies: copies.map((c) => ({ id: c.id, eventDateId: c.eventDateId ?? null, capacity: c.capacity, sold: c.sold })),
+        perDate: mode0 === 'DATES' && !uniform,
+        byDate: mode0 === 'DATES' && !uniform ? Object.fromEntries(copies.filter((c) => c.eventDateId).map((c) => [c.eventDateId!, String(c.capacity)])) : {},
+        days: mode0 === 'DAYS' && !activeIds0.every((id) => valid.includes(id)) ? valid.filter((id) => activeIds0.includes(id)) : null,
+        wasDays: valid,
+      };
+    });
 
   const [title, setTitle] = useState(e.title);
   const [subtitle, setSubtitle] = useState(e.subtitle ?? '');
@@ -116,6 +163,30 @@ function Editor({ e }: { e: OrgEventDetail }) {
   const [date, setDate] = useState(start.date);
   const [time, setTime] = useState(start.time);
   const [doors, setDoors] = useState(doors0?.time ?? '');
+  // Multiple dates: the mode and the list (a one-date event starts its list from its own date when switched).
+  const [mode, setMode] = useState<DateMode>(mode0);
+  const [dates, setDates] = useState<DateDraft[]>(() =>
+    mode0 === 'SINGLE' ? [{ key: 'd0', id: null, date: start.date, start: start.time, doors: doors0?.time ?? '', end: wallParts(e.endsAt)?.time ?? '', label: '' }] : draftsOf(dates0),
+  );
+  const [cancelling, setCancelling] = useState<string | null>(null);
+  const totalSold = e.ticketTypes.reduce((n, t) => n + t.sold, 0);
+  const canSwitch = totalSold === 0 && e.status !== 'CANCELLED';
+  const multi = mode !== 'SINGLE';
+  const switchMode = (m: DateMode) => {
+    if (m === mode) return;
+    // Back to one date: it takes the first date's times.
+    if (m === 'SINGLE') {
+      const first = dates.filter((d) => !d.cancelled && d.date).sort((a, b) => `${a.date}${a.start}`.localeCompare(`${b.date}${b.start}`))[0];
+      if (first) {
+        setDate(first.date);
+        setTime(first.start);
+        setDoors(first.doors);
+      }
+    } else if (mode === 'SINGLE' && mode0 === 'SINGLE') {
+      setDates((list) => (list.length === 1 && !list[0].id ? [{ ...list[0], date, start: time, doors }] : list));
+    }
+    setMode(m);
+  };
   const [cover, setCover] = useState(e.imageUrl ?? '');
   const [picking, setPicking] = useState(false);
   /** A photo uploaded from the phone; saved as the event's first media item, which makes it the cover. */
@@ -148,7 +219,7 @@ function Editor({ e }: { e: OrgEventDetail }) {
     haptic.select();
     setTiers((list) => {
       if (list.length >= 20) return list;
-      const t: Tier = { key: `new-${Date.now()}`, id: null, name: preset?.name ?? '', price: '', qty: '', sold: 0, mapped: false, perks: preset ? [...preset.perks] : [], badge: preset?.badge ?? '', style: null, pricing: 'FIXED', pwyw: NO_PWYW };
+      const t: Tier = { key: `new-${Date.now()}`, id: null, name: preset?.name ?? '', price: '', qty: '', sold: 0, mapped: false, perks: preset ? [...preset.perks] : [], badge: preset?.badge ?? '', style: null, pricing: 'FIXED', pwyw: NO_PWYW, copies: [], perDate: false, byDate: {}, days: null, wasDays: [] };
       const at = preset ? presetIndex(list.map((x) => x.name), preset.level) : list.length;
       return [...list.slice(0, at), t, ...list.slice(at)];
     });
@@ -174,17 +245,34 @@ function Editor({ e }: { e: OrgEventDetail }) {
     setSaved('');
     const ers: Record<string, string> = {};
     if (title.trim().length < 3) ers.title = 'The event name needs at least 3 characters.';
-    if (!date) ers.date = 'Choose a date.';
-    if (!time) ers.time = 'Choose a start time.';
-    if (doors && time && doors > time) ers.doors = 'Doors usually open before the start time.';
+    if (multi) {
+      const original = new Map(dates0.map((d) => [d.id, new Date(d.startsAt).toISOString()]));
+      Object.assign(ers, dateListErrors(mode, dates, today, original));
+    } else {
+      if (!date) ers.date = 'Choose a date.';
+      if (!time) ers.time = 'Choose a start time.';
+      if (doors && time && doors > time) ers.doors = 'Doors usually open before the start time.';
+    }
     const parsed = tiers.map((t) => ({ t, cents: parseMoney(t.price), qty: Number(t.qty) }));
     for (const { t, cents, qty } of parsed) {
       if (!t.name.trim()) ers[`${t.key}-name`] = 'Name this ticket.';
       if (t.pricing === 'PWYW') Object.assign(ers, pwywErrors(t.pwyw, t.key, e.currency));
       else if (cents === null) ers[`${t.key}-price`] = 'Enter a price (0 for free).';
       else if (cents > 0 && cents < 100) ers[`${t.key}-price`] = `Paid tickets start at ${money(100, e.currency)}.`;
+      // Multiple dates: each date's quantity can't go below what that date has sold.
+      const most = mode === 'DATES' && mode0 === 'DATES' ? Math.max(0, ...t.copies.map((c) => c.sold)) : t.sold;
       if (!t.mapped && (!Number.isInteger(qty) || qty < 1)) ers[`${t.key}-qty`] = 'Enter a quantity.';
-      else if (!t.mapped && qty < t.sold) ers[`${t.key}-qty`] = `Can’t be below the ${num(t.sold)} already sold.`;
+      else if (!t.mapped && !t.perDate && qty < most) ers[`${t.key}-qty`] = mode === 'DATES' ? `Can’t be below the ${num(most)} already sold on one date.` : `Can’t be below the ${num(t.sold)} already sold.`;
+      if (mode === 'DATES' && t.perDate && !t.mapped) {
+        for (const d of dates.filter((x) => !x.cancelled)) {
+          const v = t.byDate[d.key];
+          if (v === undefined || v === '') continue;
+          const sold = t.copies.find((c) => c.eventDateId === d.id)?.sold ?? 0;
+          if (!Number.isInteger(Number(v)) || Number(v) > 200_000) ers[`${t.key}-qty-${d.key}`] = 'A whole number up to 200,000.';
+          else if (Number(v) < sold) ers[`${t.key}-qty-${d.key}`] = `Can’t be below the ${num(sold)} sold.`;
+        }
+      }
+      if (mode === 'DAYS' && t.days && !t.days.some((k) => dates.some((d) => d.key === k && !d.cancelled))) ers[`${t.key}-days`] = 'Pick the days this ticket is valid on.';
     }
     if (!tiers.length) ers.tiers = 'Keep at least one ticket type.';
     for (const [k, v] of Object.entries(donationErrors(donations))) ers[`donation-${k}`] = v;
@@ -206,19 +294,49 @@ function Editor({ e }: { e: OrgEventDetail }) {
       if (title.trim() !== e.title) body.title = title.trim();
       if (subtitle.trim() !== (e.subtitle ?? '')) body.subtitle = subtitle.trim();
       if (about.trim() !== (e.description ?? '')) body.description = about.trim();
-      const startsAt = wallIso(date, time);
-      if (startsAt !== new Date(e.startsAt).toISOString()) body.startsAt = startsAt;
-      const shift = Date.parse(`${date}T00:00:00Z`) - Date.parse(`${start.date}T00:00:00Z`);
-      if (doors) {
-        const d = wallIso(date, doors);
-        if (!e.doorsAt || d !== new Date(e.doorsAt).toISOString()) body.doorsAt = d;
+      if (mode !== mode0) body.dateMode = mode;
+      if (multi) {
+        // The full list: kept dates with their id, new ones without; the ones left out are removed.
+        const next = datesBody(dates);
+        if (mode !== mode0 || JSON.stringify(next) !== JSON.stringify(datesBody(draftsOf(dates0)))) body.dates = next;
+      } else {
+        const startsAt = wallIso(date, time);
+        if (startsAt !== new Date(e.startsAt).toISOString() || mode !== mode0) body.startsAt = startsAt;
+        const shift = Date.parse(`${date}T00:00:00Z`) - Date.parse(`${start.date}T00:00:00Z`);
+        if (doors) {
+          const d = wallIso(date, doors);
+          if (!e.doorsAt || d !== new Date(e.doorsAt).toISOString() || mode !== mode0) body.doorsAt = d;
+        }
+        if (e.endsAt && shift) body.endsAt = new Date(new Date(e.endsAt).getTime() + shift).toISOString();
       }
-      if (e.endsAt && shift) body.endsAt = new Date(new Date(e.endsAt).getTime() + shift).toISOString();
       const uploaded = upload && cover === upload.url ? upload : null;
       if (cover && !uploaded && cover !== (e.imageUrl ?? '')) body.imageUrl = cover;
       Object.assign(body, donationChanges(donations, e));
       if (limit !== (e.compLimit ?? null)) body.compLimit = limit;
-      if (Object.keys(body).length) await api(path, { method: 'PATCH', body });
+      const res = Object.keys(body).length ? await api<{ dates?: EventDate[] }>(path, { method: 'PATCH', body }) : null;
+      // Multiple dates: a row's date id (new rows get theirs from the answer, matched by start).
+      const savedDates = res?.dates ?? dates0;
+      const idOf = (key: string) => {
+        const d = dates.find((x) => x.key === key);
+        if (!d) return null;
+        if (d.id) return d.id;
+        return savedDates.find((x) => x.status !== 'CANCELLED' && new Date(x.startsAt).toISOString() === wallIso(d.date, d.start))?.id ?? null;
+      };
+      const activeKeys = dates.filter((d) => !d.cancelled).map((d) => d.key);
+      /** DATES: the per-date quantities that differ from what each date has now. */
+      const capacityByDate = (t: Tier) => {
+        const by: Record<string, number> = {};
+        for (const key of activeKeys) {
+          const v = t.byDate[key];
+          const id = idOf(key);
+          if (v === undefined || v === '' || !id) continue;
+          const now = t.copies.find((c) => c.eventDateId === id)?.capacity;
+          if (Number(v) !== now) by[id] = Number(v);
+        }
+        return by;
+      };
+      /** DAYS: the date ids a type is valid on. */
+      const validIds = (t: Tier) => (t.days ?? activeKeys).filter((k) => activeKeys.includes(k)).map(idOf).filter((x): x is string => !!x);
       // An uploaded photo goes first in the event's media (the cover), ahead of what's already there.
       if (uploaded) {
         const rest = (e.media ?? []).filter((m) => m.id !== uploaded.id).map((m) => ({ id: m.id, kind: m.kind }));
@@ -248,7 +366,24 @@ function Editor({ e }: { e: OrgEventDetail }) {
           b.pricing = 'FIXED';
           b.basePriceCents = baseFromAllIn(cents!, e.feeMode);
         } else if (cents !== was.priceCents) b.basePriceCents = baseFromAllIn(cents!, e.feeMode);
-        if (!t.mapped && qty !== was.capacity) b.capacity = qty;
+        if (mode === 'DATES' && mode0 === 'DATES') {
+          // The same on every date, or per date.
+          if (!t.mapped && !t.perDate && t.copies.some((c) => c.capacity !== qty && !dates0.some((d) => d.id === c.eventDateId && d.status === 'CANCELLED'))) b.capacity = qty;
+          if (!t.mapped && t.perDate) {
+            const by = capacityByDate(t);
+            if (Object.keys(by).length) b.capacityByDate = by;
+          }
+        } else {
+          if (!t.mapped && qty !== was.capacity) b.capacity = qty;
+          if (mode === 'DATES' && t.perDate) {
+            const by = capacityByDate(t);
+            if (Object.keys(by).length) b.capacityByDate = by;
+          }
+        }
+        if (mode === 'DAYS') {
+          const ids = validIds(t);
+          if (mode !== mode0 || ids.length !== t.wasDays.length || ids.some((x) => !t.wasDays.includes(x))) b.validDates = ids;
+        }
         if (!Object.keys(b).length) continue;
         const r = await api<{ priceDrop: { alerting: boolean; reason: string | null; audience: number } | null }>(`${path}/ticket-types/${encodeURIComponent(t.id)}`, { method: 'PATCH', body: b });
         if (r.priceDrop?.alerting) notes.push(`Price drop alert going to ${num(r.priceDrop.audience)} ${r.priceDrop.audience === 1 ? 'fan' : 'fans'}.`);
@@ -267,6 +402,8 @@ function Editor({ e }: { e: OrgEventDetail }) {
             name: t.name.trim(),
             ...(t.pricing === 'PWYW' ? { basePriceCents: 0, ...pwywBody(t.pwyw) } : { basePriceCents: baseFromAllIn(cents!, e.feeMode) }),
             capacity: qty,
+            ...(mode === 'DATES' && t.perDate && Object.keys(capacityByDate(t)).length ? { capacityByDate: capacityByDate(t) } : {}),
+            ...(mode === 'DAYS' ? { validDates: validIds(t) } : {}),
             ...(t.perks.length ? { perks: cleanPerks(t.perks) } : {}),
             ...(t.badge.trim() ? { badge: t.badge.trim() } : {}),
             ...(t.style ? { style: t.style } : {}),
@@ -275,7 +412,8 @@ function Editor({ e }: { e: OrgEventDetail }) {
         ids.push(made.id);
         patchTier(t.key, { id: made.id, key: made.id });
       }
-      const before = [...e.ticketTypes].sort((a, b) => a.sortOrder - b.sortOrder).map((t) => t.id);
+      // one id per tier (DATES copies count once)
+      const before = tiersOf(e.ticketTypes, dates0).map((g) => g.tier.id);
       const after = ids;
       const sameOrder = after.length === before.length && after.every((x, i) => x === before[i]);
       const appendedOnly = before.every((x, i) => after[i] === x);
@@ -300,6 +438,24 @@ function Editor({ e }: { e: OrgEventDetail }) {
 
   return (
     <OrgScreen title="Edit event" eyebrow={e.title} footer={<Button label="Save changes" loading={busy} onPress={() => void save()} />}>
+      <CancelDateSheet
+        eventId={e.id}
+        dateId={cancelling}
+        onClose={() => setCancelling(null)}
+        onDone={(r) => {
+          const d = dates0.find((x) => x.id === r.dateId);
+          setCancelling(null);
+          // The date shows as cancelled; the event's page and lists update from the API.
+          setDates((list) => list.map((x) => (x.id === r.dateId ? { ...x, cancelled: true } : x)));
+          setSaved(
+            r.eventCancelled
+              ? 'That was the last date, so the event is cancelled. Every buyer is being refunded.'
+              : `${d ? dateLine(d) : 'The date'} is cancelled. ${num(r.refunded)} ${r.refunded === 1 ? 'order' : 'orders'} refunded, ${num(r.ticketsVoided)} tickets voided${r.failed.length ? `; ${num(r.failed.length)} ${r.failed.length === 1 ? 'refund' : 'refunds'} didn’t go through yet` : ''}.`,
+          );
+          void qc.invalidateQueries({ queryKey: ['organizer'] });
+          void qc.invalidateQueries({ queryKey: ['event', e.slug] });
+        }}
+      />
       {saved ? (
         <Notice tone="success" icon="check">
           {saved}
@@ -320,11 +476,36 @@ function Editor({ e }: { e: OrgEventDetail }) {
 
       <View style={styles.card}>
         <Label>When</Label>
-        <DateField label="Date" value={date} onChange={setDate} min={start.date < today ? undefined : today} error={errors.date} />
-        <View style={{ flexDirection: 'row', gap: space.md }}>
-          <TimeField label="Starts" value={time} onChange={setTime} error={errors.time} />
-          <TimeField label="Doors open" value={doors} onChange={setDoors} optional={!e.doorsAt} error={errors.doors} />
-        </View>
+        {canSwitch ? <ModePicker value={mode} onChange={switchMode} /> : null}
+        {multi ? (
+          <DateList
+            mode={mode}
+            list={dates}
+            onChange={setDates}
+            errors={errors}
+            today={today}
+            keep={(d) => (mode0 === 'DATES' && d.id && e.ticketTypes.some((t) => t.eventDateId === d.id && t.sold > 0) ? 'This date has orders, so it can’t be removed. Cancel it instead.' : null)}
+            extra={(d) =>
+              // Org admins can cancel one performance of a published run.
+              mode0 === 'DATES' && mode === 'DATES' && admin && d.id && !d.cancelled && e.status === 'PUBLISHED' ? (
+                <Button label="Cancel this date…" variant="danger" size="sm" icon="alert" onPress={() => setCancelling(d.id)} />
+              ) : null
+            }
+          />
+        ) : (
+          <>
+            <DateField label="Date" value={date} onChange={setDate} min={start.date < today ? undefined : today} error={errors.date} />
+            <View style={{ flexDirection: 'row', gap: space.md }}>
+              <TimeField label="Starts" value={time} onChange={setTime} error={errors.time} />
+              <TimeField label="Doors open" value={doors} onChange={setDoors} optional={!e.doorsAt} error={errors.doors} />
+            </View>
+          </>
+        )}
+        {!canSwitch && mode0 !== 'SINGLE' ? (
+          <Txt variant="small" color={colors.dim}>
+            {mode0 === 'DATES' ? 'Multiple dates' : 'Multi-day event'}: tickets have sold, so this can’t change to another kind of event.
+          </Txt>
+        ) : null}
         <Txt variant="small" color={colors.dim}>
           {e.online ? 'Times are in the event’s time zone' : 'Times are local to the venue'}
           {e.timezone && e.timezone !== 'UTC' ? ` (${e.timezone.replace(/_/g, ' ')})` : ''}.
@@ -347,7 +528,7 @@ function Editor({ e }: { e: OrgEventDetail }) {
           <Txt variant="small" color={colors.dim}>
             Online events have no venue. To hold it in person, create a new event.
           </Txt>
-        ) : e.status === 'CANCELLED' || new Date(e.startsAt).getTime() < now ? null : (
+        ) : e.status === 'CANCELLED' || new Date(lastStart(e)).getTime() < now ? null : (
           <Button
             label="Change venue"
             variant="subtle"
@@ -416,7 +597,7 @@ function Editor({ e }: { e: OrgEventDetail }) {
               ) : null}
               <Field
                 style={{ flex: 1 }}
-                label="Quantity"
+                label={mode === 'DATES' ? 'Per date' : 'Quantity'}
                 value={t.qty}
                 onChangeText={(v) => patchTier(t.key, { qty: v.replace(/\D/g, '') })}
                 keyboardType="number-pad"
@@ -426,6 +607,20 @@ function Editor({ e }: { e: OrgEventDetail }) {
               />
             </View>
             {t.pricing === 'PWYW' ? <PwywFields value={t.pwyw} onChange={(p) => patchTier(t.key, { pwyw: { ...t.pwyw, ...p } })} currency={e.currency} feeMode={e.feeMode} errors={errors} errorKey={t.key} /> : null}
+            {mode === 'DATES' && !t.mapped ? (
+              <PerDateFields
+                on={t.perDate}
+                onToggle={(on) => patchTier(t.key, on ? { perDate: true, byDate: Object.fromEntries(t.copies.filter((c) => c.eventDateId).map((c) => [c.eventDateId!, String(c.capacity)])) } : { perDate: false, byDate: {} })}
+                dates={dates}
+                base={t.qty}
+                values={t.byDate}
+                onChange={(byDate) => patchTier(t.key, { byDate })}
+                errors={errors}
+                errorKey={t.key}
+                sold={Object.fromEntries(t.copies.filter((c) => c.eventDateId).map((c) => [c.eventDateId!, c.sold]))}
+              />
+            ) : null}
+            {mode === 'DAYS' ? <DayChips name={t.name} dates={dates} value={t.days} error={errors[`${t.key}-days`]} onChange={(days) => patchTier(t.key, { days })} locked={t.sold > 0 && mode0 === 'DAYS' ? t.wasDays : []} /> : null}
             {t.sold > 0 ? (
               <Txt variant="tiny" color={colors.dim}>
                 Sold tickets can’t be deleted. Lowering the price tells fans watching this event.

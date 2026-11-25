@@ -29,7 +29,8 @@ import { api, errorText } from '@/lib/api';
 import { emailOk, useAuth } from '@/lib/auth';
 import { NATIVE, openPaystack, providerFor, sleep } from '@/lib/checkout';
 import { DONATION_NO_REFUND, DONATION_ON_BEHALF, donationLabel, donationProblem } from '@/lib/donations';
-import { money, when, zoneAbbr } from '@/lib/format';
+import { ticketWhen } from '@/lib/dates';
+import { money, zoneAbbr } from '@/lib/format';
 import { haptic } from '@/lib/haptics';
 import { useEvent, useHealth, useRefreshWallet } from '@/lib/queries';
 import { clearResaleHold, readResaleHold, seatText } from '@/lib/resale-hold';
@@ -283,9 +284,10 @@ export default function ResaleCheckout() {
     );
   }
 
-  const d = when(e.startsAt);
+  // The ticket's own date (DATES), its days (DAYS) or the event's start
+  const tw = ticketWhen(hold, e.startsAt);
   const tz = e.timezone || e.venue?.timezone || null;
-  const abbr = zoneAbbr(tz, e.startsAt);
+  const abbr = tw.days ? '' : zoneAbbr(tz, tw.startsAt);
   const look = lookOf(hold.ticketType);
   const mm = msLeft !== null ? Math.max(0, Math.floor(msLeft / 60000)) : 10;
   const ss = msLeft !== null ? String(Math.max(0, Math.floor((msLeft % 60000) / 1000))).padStart(2, '0') : '00';
@@ -322,7 +324,7 @@ export default function ResaleCheckout() {
               {e.title}
             </Txt>
             <Txt variant="small" color={colors.muted}>
-              {d.short} · {d.time}
+              {tw.line}
               {abbr ? ` ${abbr}` : ''}
             </Txt>
             <Txt variant="small" color={colors.muted} numberOfLines={1}>

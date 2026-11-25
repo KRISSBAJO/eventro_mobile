@@ -18,7 +18,9 @@ import { Icon } from '@/components/icons';
 import { Button, Chip, Notice, TextArea, Txt } from '@/components/ui';
 import { ApiError, errorText } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
-import { money } from '@/lib/format';
+import { DateCards } from '@/components/date-cards';
+import { activeOnly, ticketWhen } from '@/lib/dates';
+import { money, when } from '@/lib/format';
 import {
   claimBlocker,
   claimView,
@@ -38,6 +40,7 @@ import {
   stamp,
   submitClaim,
   useClaimQueue,
+  windowOf,
 } from '@/lib/guarantee';
 import { haptic } from '@/lib/haptics';
 import { useMyTickets, useRefreshWallet } from '@/lib/queries';
@@ -59,6 +62,8 @@ export default function GuaranteeClaimScreen() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [result, setResult] = useState<GuaranteeClaim | null>(null);
+  // A multi-day pass: the day the claim is about
+  const [dayId, setDayId] = useState<string | null>(null);
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
     const timer = setInterval(() => setNow(Date.now()), 30_000);
@@ -73,7 +78,17 @@ export default function GuaranteeClaimScreen() {
     );
   }
 
-  const subtitle = `${t.ticketType.name} · ${seatLine(t)} · ${t.event.title}`;
+  const multi = !!t.date || !!t.validDates?.length;
+  const subtitle = `${t.ticketType.name} · ${seatLine(t)} · ${t.event.title}${multi ? ` · ${ticketWhen(t, t.event.startsAt, { time: false }).line}` : ''}`;
+  // DAYS: each day's window (from the API), its date, and the one picked (the only open day to start with)
+  const dayWindows = t.guarantee?.days ?? [];
+  const passDays = activeOnly(t.validDates).filter((d) => dayWindows.some((w) => w.eventDateId === d.id));
+  const openDays = dayWindows.filter((w) => windowOf(w, now) === 'open');
+  const day = dayWindows.find((w) => w.eventDateId === (dayId ?? (openDays.length === 1 ? openDays[0].eventDateId : null))) ?? null;
+  const dayName = (id: string | null | undefined) => {
+    const d = (t.validDates ?? []).find((x) => x.id === id);
+    return d ? when(d.startsAt).short : '';
+  };
   const claim = result ?? t.guarantee?.claim ?? (outcome?.kind === 'sent' ? outcome.claim : null);
   const done = () => (router.canGoBack() ? router.back() : router.replace({ pathname: '/ticket/[id]', params: { id: t.id } }));
 
@@ -98,6 +113,11 @@ export default function GuaranteeClaimScreen() {
         <Section icon="file" title="What you told us">
           <View style={{ gap: space.sm }}>
             <Txt variant="smallStrong">{reasonLabel(claim.reason)}</Txt>
+            {claim.eventDateId && dayName(claim.eventDateId) ? (
+              <Txt variant="small" color={colors.muted}>
+                {`About ${dayName(claim.eventDateId)}`}
+              </Txt>
+            ) : null}
             {claim.details ? (
               <Txt variant="small" color={colors.muted}>
                 {claim.details}
@@ -107,7 +127,9 @@ export default function GuaranteeClaimScreen() {
         </Section>
         {claim.status === 'APPROVED' ? (
           <Txt variant="small" color={colors.dim}>
-            {`This ticket’s full share of what was paid, fees included, goes back to the payment method that paid for the order. This ticket no longer works${t.order.quantity > 1 ? '; your other tickets on this order aren’t affected' : ''}.`}
+            {passDays.length > 1
+              ? `That day’s share of this pass, fees included, goes back to the payment method that paid for the order. The pass keeps working on its other days.`
+              : `This ticket’s full share of what was paid, fees included, goes back to the payment method that paid for the order. This ticket no longer works${t.order.quantity > 1 ? '; your other tickets on this order aren’t affected' : ''}.`}
           </Txt>
         ) : null}
         <TermsLink />
@@ -191,8 +213,14 @@ export default function GuaranteeClaimScreen() {
   }
 
   /* ---------- the claim form ---------- */
-  const refund = t.guarantee && t.guarantee.refundCents > 0 ? money(t.guarantee.refundCents, t.order.currency, { decimals: true }) : '';
+  const refundCents = day ? day.refundCents : (t.guarantee?.refundCents ?? 0);
+  const refund = refundCents > 0 ? money(refundCents, t.order.currency, { decimals: true }) : '';
   const submit = async () => {
+    if (passDays.length && !day) {
+      haptic.warning();
+      setError('Pick the day your ticket didn’t work.');
+      return;
+    }
     if (!reason) {
       haptic.warning();
       setError('Choose what happened.');
@@ -203,7 +231,7 @@ export default function GuaranteeClaimScreen() {
     setError('');
     clearOutcome(user.id, t.id);
     try {
-      const r = await submitClaim(t.id, { reason, ...(text ? { details: text } : {}) });
+      const r = await submitClaim(t.id, { reason, ...(text ? { details: text } : {}), ...(day ? { eventDateId: day.eventDateId } : {}) });
       if (r.status === 'DECLINED') haptic.warning();
       else haptic.success();
       setResult(r);
@@ -211,7 +239,7 @@ export default function GuaranteeClaimScreen() {
     } catch (e) {
       if (e instanceof ApiError && e.status === 0) {
         // No signal at the door: keep it on this phone and send it when the API can be reached.
-        await queueClaim(user.id, { ticketId: t.id, reason, details: text || null });
+        await queueClaim(user.id, { ticketId: t.id, reason, details: text || null, eventDateId: day?.eventDateId ?? null });
         haptic.success();
       } else if (e instanceof ApiError && e.status === 409) {
         haptic.warning();
@@ -229,7 +257,9 @@ export default function GuaranteeClaimScreen() {
   return (
     <AuthShell title={TITLE} icon="shield" subtitle={subtitle}>
       <Txt color={colors.muted}>
-        {`This ticket is covered by the Eventro Guarantee. If it didn’t scan at the door, you can claim a refund for this ticket only${refund ? `: ${refund}, its full share of what was paid, fees included` : ', its full share of what was paid, fees included'}. It goes back to the payment method that paid for the order.${t.order.quantity > 1 ? ' Your other tickets on this order aren’t affected.' : ''}`}
+        {passDays.length > 1
+          ? `This pass is covered by the Eventro Guarantee. If it didn’t scan on one of its days, you can claim that day’s share${refund ? `: ${refund}` : ''}, fees included. It goes back to the payment method that paid for the order, and the pass keeps working on its other days. One claim per pass.`
+          : `This ticket is covered by the Eventro Guarantee. If it didn’t scan at the door, you can claim a refund for this ticket only${refund ? `: ${refund}, its full share of what was paid, fees included` : ', its full share of what was paid, fees included'}. It goes back to the payment method that paid for the order.${t.order.quantity > 1 ? ' Your other tickets on this order aren’t affected.' : ''}`}
       </Txt>
       <Txt variant="small" color={colors.dim}>
         {DONATION_NOT_COVERED}
@@ -243,6 +273,25 @@ export default function GuaranteeClaimScreen() {
         <Notice tone="warning" icon="offline" title="You’re offline">
           You can still send your claim: we’ll save it on this phone and send it as soon as you’re back online.
         </Notice>
+      ) : null}
+
+      {passDays.length ? (
+        <Section icon="calendar" title="Which day?" sub="The day your pass didn’t get you in. Claims for a day open 3 hours before it starts.">
+          <DateCards
+            dates={passDays.map((d) => ({ id: d.id, startsAt: d.startsAt, doorsAt: null, endsAt: null, label: d.label, status: 'ACTIVE' }))}
+            off={(d) => {
+              const w = dayWindows.find((x) => x.eventDateId === d.id);
+              const state = w ? windowOf(w, now) : 'closed';
+              return state === 'open' ? null : state === 'before' ? 'Not open yet' : 'Closed';
+            }}
+            value={day?.eventDateId ?? null}
+            onChange={(id) => {
+              setDayId(id);
+              if (error === 'Pick the day your ticket didn’t work.') setError('');
+            }}
+            label="Which day"
+          />
+        </Section>
       ) : null}
 
       <Section icon="alert" title="What happened?">
@@ -267,12 +316,14 @@ export default function GuaranteeClaimScreen() {
 
       <Section icon="cash" title="What happens next">
         <View style={{ gap: space.sm }}>
-          {t.status === 'CHECKED_IN' ? (
+          {t.status === 'CHECKED_IN' && passDays.length ? (
+            <Step text="If your pass was scanned in on the day you pick, the claim is declined automatically. Entries on other days don’t count." />
+          ) : t.status === 'CHECKED_IN' ? (
             <Step text={`This ticket was scanned in${t.checkedInAt ? ` at ${stamp(t.checkedInAt)}` : ''}, so the claim will be declined automatically. If you were turned away anyway, say so above; Eventro can overturn the decision.`} />
           ) : null}
           <Step text={HOW_DECIDED} />
           <Step text={`Refunds: ${REFUND_TIMING.charAt(0).toLowerCase()}${REFUND_TIMING.slice(1)}`} />
-          <Step text={`You can claim until ${stamp(t.guarantee?.closesAt)} (48 hours after the event ends).`} />
+          <Step text={day ? `You can claim for ${dayName(day.eventDateId)} until ${stamp(day.closesAt)} (48 hours after that day ends).` : `You can claim until ${stamp(t.guarantee?.closesAt)} (48 hours after ${t.date ? 'your date' : 'the event'} ends).`} />
         </View>
       </Section>
 
