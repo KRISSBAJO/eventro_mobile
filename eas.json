@@ -1,0 +1,18 @@
+{
+  "cli": { "appVersionSource": "remote" },
+  "build": {
+    "base": {
+      "env": {
+        "EXPO_PUBLIC_API_URL": "https://api.omoshow.com/api/v1",
+        "EXPO_PUBLIC_WEB_URL": "https://omoshow.com"
+      }
+    },
+    "preview": {
+      "extends": "base",
+      "distribution": "internal",
+      "android": { "buildType": "apk" }
+    },
+    "production": { "extends": "base", "autoIncrement": true }
+  },
+  "submit": { "production": { "ios": { "ascAppId": "6839389842" } } }
+}
