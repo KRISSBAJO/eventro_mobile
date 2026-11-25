@@ -80,7 +80,12 @@
       ],
       [
         "expo-build-properties",
-        { "ios": { "useFrameworks": "dynamic" } }
+        {
+          "ios": { "useFrameworks": "dynamic" },
+          "android": {
+            "extraProguardRules": "# Stripe Issuing is optional and detected by reflection. Omoshow uses PaymentSheet.\n-dontwarn com.stripe.android.pushProvisioning.PushProvisioningActivity$*\n-dontwarn com.stripe.android.pushProvisioning.PushProvisioningActivityStarter\n-dontwarn com.stripe.android.pushProvisioning.PushProvisioningActivityStarter$*\n-dontwarn com.stripe.android.pushProvisioning.PushProvisioningEphemeralKeyProvider"
+          }
+        }
       ]
     ],
     "experiments": {
