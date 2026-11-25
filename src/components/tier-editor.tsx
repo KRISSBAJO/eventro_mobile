@@ -2,10 +2,18 @@
  * Editing a ticket tier's extras, as on the website (components/tier-perks.tsx): preset tiles that add a tier with
  * suggested perks and badge, slotted by rank; the perks checklist (up to 8, the API's limits); an optional badge;
  * and the look picker with a live mini ticket. Used by Create event and Edit event.
+ *
+ * PricingMode and PwywFields set how a tier is priced: a fixed price, or pay what you want (a minimum, an optional
+ * suggested price that fans start on, up to four quick picks and an optional maximum, all in the organizer's base
+ * amounts like a fixed price).
  */
 import { useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
+import { currencySymbol } from '@/lib/format';
 import { haptic } from '@/lib/haptics';
+import { FEE_PERMILLE, parseMoney } from '@/lib/organizer';
+import { PROMO_PWYW_NOTE, pwywSummary, PWYW_CEILING, QUICK_PICKS_MAX, type PwywDraft } from '@/lib/pwyw';
+import type { FeeMode } from '@/lib/types';
 import {
   autoLook,
   BADGE_MAX,
@@ -23,9 +31,90 @@ import {
   type TierPreset,
 } from '@/lib/tiers';
 import { colors, radius, space } from '@/theme';
+import { AmountList, formStyles, Segmented } from './form-ui';
 import { Icon } from './icons';
 import { LookPicker, MiniTicket, TierGlyph, TierSurface } from './tier-look';
 import { Field, Txt } from './ui';
+
+export type Pricing = 'FIXED' | 'PWYW';
+
+/** Fixed price / Pay what you want, for one tier. */
+export function PricingMode({ value, onChange }: { value: Pricing; onChange: (v: Pricing) => void }) {
+  return (
+    <Segmented
+      label="How this ticket is priced"
+      value={value}
+      onChange={onChange}
+      options={[
+        { id: 'FIXED', label: 'Fixed price' },
+        { id: 'PWYW', label: 'Pay what you want' },
+      ]}
+    />
+  );
+}
+
+/**
+ * A pay-what-you-want tier's amounts. `errors` uses the keys of lib/pwyw.ts pwywErrors (`${errorKey}-min` and so on).
+ * Amounts are base amounts in the event's currency; with "Fans pay it" Eventro's fee is added on top of what fans pick.
+ */
+export function PwywFields({
+  value,
+  onChange,
+  currency,
+  feeMode,
+  errors,
+  errorKey,
+}: {
+  value: PwywDraft;
+  onChange: (patch: Partial<PwywDraft>) => void;
+  currency: string;
+  feeMode: FeeMode;
+  errors: Record<string, string>;
+  errorKey: string;
+}) {
+  const sym = currencySymbol(currency);
+  const min = parseMoney(value.min);
+  const max = value.max.trim() ? parseMoney(value.max) : null;
+  const summary = pwywSummary(value, feeMode, FEE_PERMILLE, currency);
+  const money = (v: string) => v.replace(/[^\d.]/g, '');
+  return (
+    <View style={{ gap: space.md }}>
+      <View style={formStyles.row2}>
+        <Field style={{ flex: 1 }} label={`Minimum (${sym})`} placeholder="0 = can be free" keyboardType="decimal-pad" value={value.min} onChangeText={(v) => onChange({ min: money(v) })} error={errors[`${errorKey}-min`]} />
+        <Field style={{ flex: 1 }} label={`Suggested (${sym})`} placeholder="Optional" keyboardType="decimal-pad" value={value.suggested} onChangeText={(v) => onChange({ suggested: money(v) })} error={errors[`${errorKey}-suggested`]} />
+      </View>
+      <Field
+        label={`Maximum (${sym})`}
+        placeholder="No maximum"
+        keyboardType="decimal-pad"
+        value={value.max}
+        onChangeText={(v) => onChange({ max: money(v) })}
+        error={errors[`${errorKey}-max`]}
+        hint={errors[`${errorKey}-max`] ? undefined : 'Optional. Fans start on the suggested price, or the minimum.'}
+      />
+      <AmountList
+        label="Quick picks"
+        values={value.picks}
+        onChange={(picks) => onChange({ picks })}
+        currency={currency}
+        limit={QUICK_PICKS_MAX}
+        min={min ?? 0}
+        max={max ?? PWYW_CEILING}
+        placeholder="e.g. 15"
+        error={errors[`${errorKey}-picks`]}
+        hint={value.picks.length ? undefined : 'One-tap amounts fans see next to “Other amount”.'}
+      />
+      {summary ? (
+        <Txt variant="small" color={colors.muted}>
+          {summary}
+        </Txt>
+      ) : null}
+      <Txt variant="tiny" color={colors.dim}>
+        {`${PROMO_PWYW_NOTE} A ticket bought for more than ${currencySymbol(currency)}0 is covered by the Eventro Guarantee; one taken for free isn’t.`}
+      </Txt>
+    </View>
+  );
+}
 
 /** The six presets as tappable tiles, each in the look it gets. One already in the list (by name) shows "Added". */
 export function TierPresets({ names, onPick, disabled }: { names: string[]; onPick: (p: TierPreset) => void; disabled?: boolean }) {

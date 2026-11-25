@@ -1,13 +1,16 @@
 /**
  * Payouts, read-only (org admins): what's coming next, today's sales so far, the payout account and the last
  * 30 days (GET /organizer/orgs/:orgId/payouts). Setting up or changing the bank account happens only on the website
- * (Stripe Connect or Paystack): the app never asks for bank details.
+ * (Stripe Connect or Paystack): the app never asks for bank details. Donations fans added at checkout are paid out
+ * with the tickets but shown as their own line (no Eventro fee on them); the organizer passes them to the cause.
+ * A donation refunded after the organizer had been paid for its order is owed to Eventro (`donationOwedCents`).
  */
 import { useLocalSearchParams } from 'expo-router';
 import { StyleSheet, View } from 'react-native';
 import { Group, Label, OrgScreen, StatTile, TileRow } from '@/components/org-ui';
 import { Badge, Button, Divider, EmptyState, ErrorState, Notice, Skeleton, Txt } from '@/components/ui';
 import { errorText } from '@/lib/api';
+import { DONATION_ON_BEHALF } from '@/lib/donations';
 import { countryName, money } from '@/lib/format';
 import { isAdmin, membershipOf, openWeb, usePayouts, webPaths } from '@/lib/organizer';
 import { useAuth } from '@/lib/auth';
@@ -46,9 +49,32 @@ export default function PayoutsScreen() {
           </Notice>
         ) : null}
         <TileRow>
-          <StatTile label="Next payout" value={money(d.nextPayoutCents, d.currency, { decimals: true })} sub={next} tone="success" />
-          <StatTile label="Today so far" value={money(d.pendingCents, d.currency, { decimals: true })} sub={`Today’s sales after the 3.5% fee${d.converted ? `, in ${d.currency}` : ''}`} />
+          <StatTile
+            label="Next payout"
+            value={money(d.nextPayoutCents, d.currency, { decimals: true })}
+            sub={d.nextPayoutDonationCents ? `${next}. Includes ${money(d.nextPayoutDonationCents, d.currency, { decimals: true })} in donations.` : next}
+            tone="success"
+          />
+          <StatTile
+            label="Today so far"
+            value={money(d.pendingCents, d.currency, { decimals: true })}
+            sub={`Today’s sales after the 3.5% fee${d.pendingDonationCents ? `, plus ${money(d.pendingDonationCents, d.currency, { decimals: true })} in donations (no fee)` : ''}${d.converted ? `, in ${d.currency}` : ''}`}
+          />
         </TileRow>
+        {d.donationsCents || d.pendingDonationCents || d.nextPayoutDonationCents || d.history.some((h) => h.donationCents) ? (
+          <View style={styles.card}>
+            <Label>Donations</Label>
+            <Txt variant="title">{`${money(d.donationsCents ?? 0, d.currency, { decimals: true })} in the last 31 days`}</Txt>
+            <Txt variant="small" color={colors.muted}>
+              {`${d.donationNote ?? DONATION_ON_BEHALF} They’re paid out with your ticket sales but kept separate here, and no Eventro fee is taken on them.`}
+            </Txt>
+          </View>
+        ) : null}
+        {d.donationOwedCents ? (
+          <Txt variant="small" color={colors.dim}>
+            {`${money(d.donationOwedCents, d.currency, { decimals: true })} owed to Eventro for donations refunded after you’d been paid for those orders.`}
+          </Txt>
+        ) : null}
         <View style={styles.card}>
           <Label>Payout account</Label>
           {acct ? (
@@ -76,7 +102,14 @@ export default function PayoutsScreen() {
                 <View key={h.salesDate}>
                   {i ? <Divider style={{ marginLeft: space.lg }} /> : null}
                   <View style={styles.row}>
-                    <Txt style={{ flex: 1 }}>Sales on {day(h.salesDate)}</Txt>
+                    <View style={{ flex: 1, gap: 2, paddingVertical: h.donationCents ? space.sm : 0 }}>
+                      <Txt>Sales on {day(h.salesDate)}</Txt>
+                      {h.donationCents ? (
+                        <Txt variant="tiny" color={colors.dim}>
+                          {`Tickets ${money(h.ticketCents ?? h.amountCents - h.donationCents, d.currency, { decimals: true })} · donations ${money(h.donationCents, d.currency, { decimals: true })}`}
+                        </Txt>
+                      ) : null}
+                    </View>
                     <Txt variant="bodyStrong">{money(h.amountCents, d.currency, { decimals: true })}</Txt>
                     <Badge label={acct ? 'Paid' : 'Owed'} tone={acct ? 'success' : 'warning'} />
                   </View>

@@ -4,7 +4,8 @@
  *
  * The code is made on the phone from the ticket's QR seed (door-code.ts: HMAC-SHA256, a new code every 15 seconds),
  * so it works with no signal at all. Without a seed (an older saved copy) it falls back to GET /tickets/:id/qr.
- * The screen stays awake while the code shows.
+ * The screen stays awake while the code shows. A comp (a complimentary ticket from the organizer) says so, and has
+ * no Eventro Guarantee claim: nothing was paid for it.
  */
 import { Image } from 'expo-image';
 import { router, useLocalSearchParams } from 'expo-router';
@@ -22,7 +23,7 @@ import { api, errorText, isOffline } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { codeAt, WINDOW_MS } from '@/lib/door-code';
 import { localStamp, money, when, zoneAbbr } from '@/lib/format';
-import { claimBlocker, claimView, COVERED_LABEL, FREE_NOTE, stamp, useClaimQueue } from '@/lib/guarantee';
+import { claimBlocker, claimView, COMP_NOTE, COVERED_LABEL, FREE_NOTE, isComp, stamp, useClaimQueue } from '@/lib/guarantee';
 import { haptic } from '@/lib/haptics';
 import { useMyResale, useMyTickets, useRefreshWallet } from '@/lib/queries';
 import { blockedLine, blockers, breakdown, fmt, RESALE_FEE_PERMILLE, rulesOf, transferExpiry } from '@/lib/resale';
@@ -124,6 +125,7 @@ function TicketCard({ t, offline, feePermille, userId }: { t: Ticket; offline: b
   const look = lookOf(t.ticketType);
   const qrSize = Math.min(260, width - gutter * 2 - space.xxxl * 2);
   const live = state.key === 'ready';
+  const comp = isComp(t);
   const [now] = useState(() => Date.now());
   const rules = rulesOf(t.event);
   const blocked = blockers(t, rules, now);
@@ -173,7 +175,7 @@ function TicketCard({ t, offline, feePermille, userId }: { t: Ticket; offline: b
             </View>
             <View style={{ flex: 1, gap: 1 }}>
               <Txt variant="eyebrow" color={look.inkSoft} style={{ fontSize: 10, lineHeight: 12 }}>
-                Admit one
+                {comp ? 'Complimentary ticket' : 'Admit one'}
               </Txt>
               <Txt variant="h3" color={look.ink} numberOfLines={1}>
                 {t.ticketType.name}
@@ -252,6 +254,7 @@ function TicketCard({ t, offline, feePermille, userId }: { t: Ticket; offline: b
 
         <View style={styles.details}>
           <Detail label="Ticket" value={t.ticketType.name} />
+          {comp ? <Detail label="Type" value={t.order.compGroup ? `Complimentary · ${t.order.compGroup}` : 'Complimentary'} /> : null}
           <Detail label="Seat" value={seatLine(t)} />
           <Detail label="Name" value={t.holderName} />
           <Detail label="Order" value={t.orderId} mono />
@@ -350,12 +353,12 @@ function GuaranteeBox({ t, userId }: { t: Ticket; userId: string }) {
   // A cancelled event is refunded with the event: the guarantee has nothing to add.
   if (t.event.status === 'CANCELLED' || t.status === 'VOID') return null;
   if (!g.covered) {
-    if (g.notCovered !== 'FREE') return null;
+    if (g.notCovered !== 'FREE' && g.notCovered !== 'COMP') return null;
     return (
       <View style={styles.freeNote}>
         <Icon name="shield" size={14} color={colors.dim} />
         <Txt variant="tiny" color={colors.dim} style={{ flex: 1 }}>
-          {FREE_NOTE}
+          {g.notCovered === 'COMP' ? COMP_NOTE : FREE_NOTE}
         </Txt>
       </View>
     );

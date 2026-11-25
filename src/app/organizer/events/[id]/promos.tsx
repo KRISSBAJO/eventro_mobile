@@ -1,6 +1,7 @@
 /**
  * Promo codes for an event (admins and managers): list, create (code, % off, optional use limit), pause / resume,
- * change the limit, delete. GET/POST /organizer/events/:id/promos, PATCH/DELETE …/promos/:code.
+ * change the limit, delete. GET/POST /organizer/events/:id/promos, PATCH/DELETE …/promos/:code. Codes don't apply to
+ * pay-what-you-want tickets (fans choose their own price), which the screen says when the event has any.
  */
 import { useQueryClient } from '@tanstack/react-query';
 import { useLocalSearchParams } from 'expo-router';
@@ -13,6 +14,7 @@ import { api, errorText } from '@/lib/api';
 import { num } from '@/lib/format';
 import { haptic } from '@/lib/haptics';
 import { useOrgEvent, usePromos, type Promo } from '@/lib/organizer';
+import { PROMO_PWYW_NOTE } from '@/lib/pwyw';
 import { colors, radius, space } from '@/theme';
 
 export default function Promos() {
@@ -102,6 +104,11 @@ export default function Promos() {
 
   return (
     <OrgScreen title="Promo codes" eyebrow={ev.data?.title} onRefresh={() => promos.refetch()}>
+      {ev.data?.ticketTypes.some((t) => t.pricing === 'PWYW') ? (
+        <Notice tone="plain" icon="tag">
+          {`${PROMO_PWYW_NOTE} Codes here only take money off ${ev.data.ticketTypes.filter((t) => t.pricing !== 'PWYW').map((t) => t.name).join(', ') || 'fixed-price tickets'}.`}
+        </Notice>
+      ) : null}
       {message ? (
         <Notice tone={message.ok ? 'success' : 'warning'} icon={message.ok ? 'check' : 'alert'}>
           {message.text}

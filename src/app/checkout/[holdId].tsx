@@ -6,7 +6,18 @@
  *             the payment and hands back to eventro://tickets, which closes the browser; then POST /orders/:id/verify
  *             until it's paid (also the fallback when the fan closes the browser themselves)
  *   stripe    Stripe's PaymentSheet in the app (needs a publishable key), then verify; otherwise the website's checkout
+ *             (it makes the order itself): first PATCH /holds/:id { donationCents, amountCents } so the website picks
+ *             up the donation and the pay-what-you-want amount chosen here (a failed PATCH shows its error and the
+ *             browser stays shut), then ${WEB_URL}/checkout?hold=<id>. From then on those picks are locked here.
+ *   free    a $0 order (free tickets or $0 pay what you want, and no donation): POST /orders fulfils it at once
+ *             (provider 'free', status PAID), then POST /orders/:id/pay returns the order view. No card, no browser.
  * A failed or cancelled payment keeps the seats held, so the fan can try again.
+ *
+ * Pay what you want (lib/pwyw.ts): the amount chosen on the event page shows here and can be changed (`amountCents`
+ * on /quote and /orders); promo codes don't apply to those tickets. Donations (lib/donations.ts): when the event takes
+ * them, "Add a donation to {cause}" with suggested amounts or another one (`donationCents`), its own summary line.
+ * `donationCents` always goes explicitly (0 included) on /quote and /orders then: left out, the API falls back to the
+ * donation stored on the hold. A donation already stored on the hold (an earlier hand-off) is the starting pick.
  */
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { router, useLocalSearchParams } from 'expo-router';
@@ -15,6 +26,7 @@ import { useEffect, useRef, useState } from 'react';
 import { AppState, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Switch, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Image } from 'expo-image';
+import { AmountPicker } from '@/components/amount-picker';
 import { CheckoutSuccess } from '@/components/checkout-success';
 import { GiftOption, giftBody, giftErrors, NO_GIFT, type GiftDraft } from '@/components/gift-option';
 import { Icon } from '@/components/icons';
@@ -23,8 +35,10 @@ import { Button, Card, EmptyState, ErrorState, Field, IconButton, Notice, Skelet
 import { api, ApiError, errorText, WEB_URL } from '@/lib/api';
 import { emailOk, useAuth } from '@/lib/auth';
 import { NATIVE, openPaystack, providerFor, sleep } from '@/lib/checkout';
+import { DONATION_NO_REFUND, DONATION_ON_BEHALF, donationLabel, donationProblem } from '@/lib/donations';
 import { instantOf, money, when, zoneAbbr } from '@/lib/format';
 import { haptic } from '@/lib/haptics';
+import { allInLine, allInOf, amountProblem, isPwyw, pickChips, PROMO_PWYW_NOTE, startAmount } from '@/lib/pwyw';
 import { useHealth } from '@/lib/queries';
 import { payWithStripeSheet, stripeSheetAvailable } from '@/lib/stripe-sheet';
 import type { Hold, Order, OrderCreated, Quote } from '@/lib/types';
@@ -62,6 +76,12 @@ export default function Checkout() {
   const [paid, setPaid] = useState<Order | null>(null);
   const [now, setNow] = useState(() => Date.now());
   const verifying = useRef(false);
+  // Pay what you want: the amount per ticket (undefined: the one the hold was made with); and the donation (0: none).
+  const [amountPick, setAmountPick] = useState<number | null | undefined>(undefined);
+  const [changingAmount, setChangingAmount] = useState(false);
+  const [donation, setDonation] = useState<number | null>(0);
+  /** The picks went to the website with the hold (card payments there): they can't change here any more. */
+  const [handedOff, setHandedOff] = useState(false);
 
   // Prefill when the session arrives (e.g. signed in from the prompt below), without overwriting what was typed.
   const [prefilledFor, setPrefilledFor] = useState(user?.id ?? null);
@@ -77,18 +97,49 @@ export default function Checkout() {
     return () => clearInterval(t);
   }, [phase]);
 
+  const h = hold.data;
+  // A donation already stored on the hold (handed to the website earlier) is where the picker starts.
+  const [donationSeeded, setDonationSeeded] = useState(false);
+  if (h && !donationSeeded) {
+    setDonationSeeded(true);
+    if (h.event.donations && h.donationCents) setDonation(h.donationCents);
+  }
+  const currency = h?.event.currency ?? 'USD';
+  const pw = h && isPwyw(h.ticketType) ? h.ticketType.pwyw : null;
+  const amount = pw ? (amountPick === undefined ? (h?.amountCents ?? startAmount(pw)) : amountPick) : null;
+  const amountErr = pw ? amountProblem(amount, pw, currency) : null;
+  const dn = h?.event.donations ?? null;
+  const donationErr = dn ? donationProblem(donation, dn, currency) : null;
+  const donationCents = dn && donation && !donationErr ? donation : 0;
+  /** all-in per ticket at the amount picked now */
+  const unit = pw ? (amount !== null && !amountErr ? allInOf(amount, pw.feePermille) : 0) : (h?.unitCents ?? h?.ticketType.priceCents ?? 0);
+  // Ticket protection covers what the tickets cost: nothing to protect on a $0 ticket.
+  const protect = protection && unit > 0;
+  // Typed amounts settle for a moment before they're quoted. The donation always goes (0 too) when the event takes
+  // them: left out, the API uses the one stored on the hold.
+  const extras = { amountCents: pw && amount !== null && !amountErr ? amount : undefined, donationCents: dn ? donationCents : undefined };
+  const extrasKey = JSON.stringify(extras);
+  const [quoted, setQuoted] = useState(extrasKey);
+  useEffect(() => {
+    const t = setTimeout(() => setQuoted(extrasKey), 350);
+    return () => clearTimeout(t);
+  }, [extrasKey]);
+  const quoteExtras = JSON.parse(quoted) as typeof extras;
+
   const quote = useQuery({
-    queryKey: ['quote', holdId, protection, promo],
-    queryFn: () => api<Quote>('/quote', { body: { holdId, protection, ...(promo ? { promoCode: promo } : {}) } }),
-    enabled: !!hold.data && !order,
+    queryKey: ['quote', holdId, protect, promo, quoted],
+    queryFn: () => api<Quote>('/quote', { body: { holdId, protection: protect, ...(promo ? { promoCode: promo } : {}), ...quoteExtras } }),
+    enabled: !!hold.data && !order && !amountErr && !donationErr,
     placeholderData: (prev) => prev,
     staleTime: Infinity,
+    retry: (n, e) => n < 1 && !(e instanceof ApiError && e.status === 400),
   });
+  /** Nothing to pay (free tickets, $0 pay what you want or a full discount, and no donation): no card, no browser. */
+  // Only a quote for what's picked right now counts (not one for an amount still settling).
+  const free = !!h && (order ? order.totalCents === 0 : quote.data && !quote.isPlaceholderData && quoted === extrasKey ? quote.data.totalCents === 0 : unit === 0 && donationCents === 0);
 
-  const h = hold.data;
   const msLeft = h ? new Date(h.expiresAt).getTime() - now : null;
   const expired = !!h && (h.status === 'EXPIRED' || h.status === 'RELEASED' || (msLeft !== null && msLeft <= 0)) && phase !== 'done' && !order;
-  const currency = h?.event.currency ?? 'USD';
   const provider: OrderCreated['provider'] = providerFor(currency, health.data);
   const testMode = health.data?.payments === 'mock' || provider === 'mock';
   const errors = {
@@ -109,7 +160,7 @@ export default function Checkout() {
     }
     setPromoBusy(true);
     try {
-      const q = await api<Quote>('/quote', { body: { holdId, promoCode: code, protection } });
+      const q = await api<Quote>('/quote', { body: { holdId, promoCode: code, protection: protect, ...extras } });
       if (q.promo) {
         setPromo(q.promo.code);
         setPromoError('');
@@ -145,6 +196,16 @@ export default function Checkout() {
       return null;
     } finally {
       verifying.current = false;
+    }
+  };
+
+  /** A $0 order is already PAID: its order view, from POST /orders/:id/pay (which takes 'free'), else GET /orders/:id. */
+  const freeOrder = async (orderId: string) => {
+    try {
+      return await api<Order>(`/orders/${encodeURIComponent(orderId)}/pay`, { method: 'POST' });
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 0) throw e;
+      return api<Order>(`/orders/${encodeURIComponent(orderId)}?email=${encodeURIComponent(email.trim().toLowerCase())}`);
     }
   };
 
@@ -184,11 +245,25 @@ export default function Checkout() {
       haptic.warning();
       return;
     }
+    if (!order && (amountErr || donationErr)) {
+      haptic.warning();
+      setPayError(amountErr ?? donationErr ?? '');
+      return;
+    }
     setPhase('paying');
     setPayError('');
     try {
-      // Stripe without the in-app sheet: the website takes the card (it creates the order itself).
-      if (provider === 'stripe' && !stripeSheetAvailable && !order) {
+      // Stripe without the in-app sheet: the website takes the card (it creates the order itself). A $0 order needs no card.
+      if (provider === 'stripe' && !stripeSheetAvailable && !order && !free) {
+        // The website reads the donation and the pay-what-you-want amount from the hold: store them first. If that's
+        // refused, the error shows (below) and the browser stays shut.
+        const handOff = { ...(dn ? { donationCents } : {}), ...(pw && amount !== null ? { amountCents: amount } : {}) };
+        if (!handedOff && Object.keys(handOff).length) {
+          const fresh = await api<Hold>(`/holds/${encodeURIComponent(h.id)}`, { method: 'PATCH', body: handOff });
+          qc.setQueryData(['hold', holdId], fresh);
+        }
+        setHandedOff(true);
+        setChangingAmount(false);
         setPhase('waiting');
         await WebBrowser.openBrowserAsync(`${WEB_URL}/checkout?hold=${encodeURIComponent(h.id)}`, { toolbarColor: colors.bg, controlsColor: colors.accent, dismissButtonStyle: 'close' });
         await check();
@@ -202,8 +277,11 @@ export default function Checkout() {
             holdId: h.id,
             email: email.trim().toLowerCase(),
             name: name.trim(),
-            protection,
+            protection: protect,
             ...(promo ? { promoCode: promo } : {}),
+            ...(pw && amount !== null ? { amountCents: amount } : {}),
+            // Always sent (0 too) when the event takes donations: left out, the API uses the hold's stored one.
+            ...(dn ? { donationCents } : {}),
             ...giftBody(gift),
             // Paystack sends the fan back to the website; with this, the website hands them back to the app.
             ...(NATIVE && provider === 'paystack' ? { returnTo: 'app' } : {}),
@@ -211,6 +289,11 @@ export default function Checkout() {
         }));
       setOrder(created);
 
+      // Nothing to pay: fulfilled straight away.
+      if (created.provider === 'free') {
+        finish(await freeOrder(created.orderId));
+        return;
+      }
       if (created.provider === 'mock') {
         finish(await api<Order>(`/orders/${encodeURIComponent(created.orderId)}/pay`, { method: 'POST' }));
         return;
@@ -297,8 +380,11 @@ export default function Checkout() {
   const low = msLeft !== null && msLeft < 120000;
   const holdTotal = 10 * 60_000;
   const busy = phase === 'paying';
-  const total = order?.totalCents ?? totals?.totalCents ?? h.ticketType.priceCents * h.quantity;
+  const total = order?.totalCents ?? totals?.totalCents ?? unit * h.quantity + donationCents;
   const seatLine = seatText(h);
+  /** The order exists, or the picks went to the website with the hold: the amount and the donation are fixed. */
+  const locked = !!order || handedOff;
+  const donated = order?.donationCents ?? totals?.donationCents ?? donationCents;
 
   if (expired) {
     return (
@@ -356,6 +442,31 @@ export default function Checkout() {
           </Txt>
         </Card>
 
+        {/* Pay what you want: the amount per ticket */}
+        {pw ? (
+          <Card style={{ gap: space.sm }}>
+            <Txt variant="eyebrow" color={colors.accent}>
+              Your price
+            </Txt>
+            <Txt variant="bodyStrong">{amount !== null && !amountErr ? allInLine(amount, pw, currency) : 'Choose an amount per ticket.'}</Txt>
+            {!locked && changingAmount ? (
+              <>
+                <AmountPicker label="Your price per ticket" chips={pickChips(pw)} value={amount} onChange={setAmountPick} currency={currency} error={amountErr ?? undefined} />
+                <Txt variant="small" color={colors.dim}>
+                  {`Pay what you want${pw.minCents > 0 ? `, from ${money(pw.minCents, currency, { decimals: pw.minCents % 100 !== 0 })}` : ''}${pw.maxSet ? ` up to ${money(pw.maxCents, currency)}` : ''}. Every ticket in this order is at the same price.`}
+                </Txt>
+              </>
+            ) : !locked ? (
+              <Button label="Change amount" variant="ghost" size="sm" onPress={() => setChangingAmount(true)} style={{ alignSelf: 'flex-start' }} />
+            ) : null}
+            {amount === 0 ? (
+              <Txt variant="tiny" color={colors.dim}>
+                A ticket taken for free isn’t covered by the Eventro Guarantee: there’s nothing to refund.
+              </Txt>
+            ) : null}
+          </Card>
+        ) : null}
+
         {/* Contact */}
         <View style={{ gap: space.md }}>
           <Txt variant="h3" accessibilityRole="header">
@@ -390,57 +501,90 @@ export default function Checkout() {
           </Notice>
         ) : null}
 
+        {/* Donation */}
+        {dn && !locked ? (
+          <Card style={{ gap: space.md }}>
+            <View style={{ flexDirection: 'row', gap: space.md, alignItems: 'flex-start' }}>
+              <View style={styles.donationIcon}>
+                <Icon name="heart" size={18} color={colors.accent} />
+              </View>
+              <View style={{ flex: 1, gap: 2 }}>
+                <Txt variant="bodyStrong">Add a donation to {dn.cause}</Txt>
+                <Txt variant="small" color={colors.muted}>
+                  {dn.description ? `${dn.description} ` : ''}Optional. No Eventro fee is taken on it.
+                </Txt>
+              </View>
+            </View>
+            <AmountPicker label="Donation" chips={dn.suggestedCents} none="No donation" value={donation} onChange={setDonation} currency={currency} error={donationErr ?? undefined} />
+            <Txt variant="tiny" color={colors.dim}>
+              {`${DONATION_NO_REFUND} ${DONATION_ON_BEHALF}`}
+            </Txt>
+          </Card>
+        ) : null}
+
         {/* Protection + promo */}
         {!order ? (
           <>
-            <Pressable
-              accessibilityRole="switch"
-              accessibilityState={{ checked: protection }}
-              onPress={() => {
-                haptic.select();
-                setProtection((p) => !p);
-              }}
-              style={[styles.protect, protection && { borderColor: colors.accent, backgroundColor: 'rgba(255,77,61,0.06)' }]}>
-              <View style={{ flex: 1, gap: 3 }}>
-                <Txt variant="bodyStrong">Ticket protection</Txt>
-                <Txt variant="small" color={colors.muted}>
-                  Get a full refund if you can’t go because of illness, travel delays or a family emergency.
-                </Txt>
-                <Txt variant="smallStrong" color={colors.text}>
-                  +{money(Math.round(h.ticketType.priceCents * h.quantity * 0.07), currency)}
+            {unit > 0 ? (
+              <Pressable
+                accessibilityRole="switch"
+                accessibilityState={{ checked: protection }}
+                onPress={() => {
+                  haptic.select();
+                  setProtection((p) => !p);
+                }}
+                style={[styles.protect, protection && { borderColor: colors.accent, backgroundColor: 'rgba(255,77,61,0.06)' }]}>
+                <View style={{ flex: 1, gap: 3 }}>
+                  <Txt variant="bodyStrong">Ticket protection</Txt>
+                  <Txt variant="small" color={colors.muted}>
+                    Get a full refund if you can’t go because of illness, travel delays or a family emergency.
+                    {donationCents ? ' It covers the tickets, not the donation.' : ''}
+                  </Txt>
+                  <Txt variant="smallStrong" color={colors.text}>
+                    +{money(Math.round(unit * h.quantity * 0.07), currency)}
+                  </Txt>
+                </View>
+                <Switch
+                  value={protection}
+                  onValueChange={(v) => {
+                    haptic.select();
+                    setProtection(v);
+                  }}
+                  trackColor={{ true: colors.accent, false: colors.line2 }}
+                  thumbColor="#ffffff"
+                  accessibilityLabel="Ticket protection"
+                />
+              </Pressable>
+            ) : null}
+            {pw ? (
+              <View style={styles.promoOff}>
+                <Icon name="tag" size={15} color={colors.dim} />
+                <Txt variant="small" color={colors.dim} style={{ flex: 1 }}>
+                  {PROMO_PWYW_NOTE}
                 </Txt>
               </View>
-              <Switch
-                value={protection}
-                onValueChange={(v) => {
-                  haptic.select();
-                  setProtection(v);
-                }}
-                trackColor={{ true: colors.accent, false: colors.line2 }}
-                thumbColor="#ffffff"
-                accessibilityLabel="Ticket protection"
-              />
-            </Pressable>
-            <View style={{ flexDirection: 'row', gap: space.sm, alignItems: 'flex-start' }}>
-              <Field
-                label="Promo code"
-                value={promo ?? promoInput}
-                onChangeText={(t) => {
-                  setPromo(null);
-                  setPromoInput(t.toUpperCase());
-                  setPromoError('');
-                }}
-                autoCapitalize="characters"
-                autoCorrect={false}
-                placeholder="Optional"
-                error={promoError}
-                hint={promo ? `${promo} applied` : undefined}
-                style={{ flex: 1 }}
-                returnKeyType="done"
-                onSubmitEditing={applyPromo}
-              />
-              <Button label={promo ? 'Applied' : 'Apply'} variant="ghost" size="md" loading={promoBusy} disabled={!!promo || !promoInput.trim()} onPress={applyPromo} style={{ marginTop: 26 }} />
-            </View>
+            ) : (
+              <View style={{ flexDirection: 'row', gap: space.sm, alignItems: 'flex-start' }}>
+                <Field
+                  label="Promo code"
+                  value={promo ?? promoInput}
+                  onChangeText={(t) => {
+                    setPromo(null);
+                    setPromoInput(t.toUpperCase());
+                    setPromoError('');
+                  }}
+                  autoCapitalize="characters"
+                  autoCorrect={false}
+                  placeholder="Optional"
+                  error={promoError}
+                  hint={promo ? `${promo} applied` : undefined}
+                  style={{ flex: 1 }}
+                  returnKeyType="done"
+                  onSubmitEditing={applyPromo}
+                />
+                <Button label={promo ? 'Applied' : 'Apply'} variant="ghost" size="md" loading={promoBusy} disabled={!!promo || !promoInput.trim()} onPress={applyPromo} style={{ marginTop: 26 }} />
+              </View>
+            )}
           </>
         ) : null}
 
@@ -450,21 +594,28 @@ export default function Checkout() {
             Order summary
           </Txt>
           <TierChip tier={h.ticketType} label={`${h.quantity} × ${h.ticketType.name}`} size="md" />
-          <Line label={`${h.quantity} × ${h.ticketType.name}`} value={money(totals?.subtotalCents ?? h.ticketType.priceCents * h.quantity, currency)} />
+          <Line label={pw ? `${h.quantity} × ${h.ticketType.name} at ${money(totals?.unitCents ?? unit, currency)}` : `${h.quantity} × ${h.ticketType.name}`} value={money(totals?.subtotalCents ?? unit * h.quantity, currency)} />
+          {pw && totals?.feeCents ? <Line label="Eventro fee, included above" value={money(totals.feeCents, currency, { decimals: true })} /> : null}
           {totals?.protectionCents ? <Line label="Ticket protection" value={money(totals.protectionCents, currency)} /> : null}
           {totals?.discountCents ? <Line label={`Promo ${totals.promo?.code ?? ''}`} value={`−${money(totals.discountCents, currency)}`} accent /> : null}
+          {donated ? <Line label={donationLabel(dn?.cause)} value={money(donated, currency, { decimals: donated % 100 !== 0 })} /> : null}
           <View style={styles.totalRow}>
             <View>
               <Txt variant="bodyStrong">Total</Txt>
               <Txt variant="small" color={colors.dim}>
-                Fees included. No surprises.
+                {total === 0 ? 'Nothing to pay.' : 'Fees included. No surprises.'}
               </Txt>
             </View>
-            <Txt variant="priceLg">{money(total, currency)}</Txt>
+            <Txt variant="priceLg">{total === 0 ? 'Free' : money(total, currency)}</Txt>
           </View>
+          {quote.error && !order ? (
+            <Txt variant="small" color={colors.accentHi}>
+              {errorText(quote.error)}
+            </Txt>
+          ) : null}
         </Card>
 
-        {testMode ? (
+        {free ? null : testMode ? (
           <Notice tone="success" icon="shield" title="Test mode">
             No card needed and nothing is charged. Your tickets are issued straight away.
           </Notice>
@@ -505,8 +656,8 @@ export default function Checkout() {
           </View>
         ) : (
           <Button
-            label={busy ? 'Processing…' : testMode ? `Complete test order · ${money(total, currency)}` : `Pay ${money(total, currency)}`}
-            icon={busy ? undefined : 'lock'}
+            label={busy ? 'Processing…' : free ? 'Get tickets · Free' : testMode ? `Complete test order · ${money(total, currency)}` : `Pay ${money(total, currency)}`}
+            icon={busy ? undefined : free ? 'ticket' : 'lock'}
             loading={busy}
             onPress={pay}
             feedback="firm"
@@ -563,6 +714,8 @@ const styles = StyleSheet.create({
   trackFill: { height: 4, backgroundColor: colors.accent },
   eventThumb: { width: 64, height: 64, borderRadius: radius.md, backgroundColor: colors.surface2 },
   protect: { flexDirection: 'row', gap: space.md, alignItems: 'center', padding: space.lg, borderRadius: radius.card, borderWidth: 1, borderColor: colors.line2, backgroundColor: colors.surface },
+  promoOff: { flexDirection: 'row', alignItems: 'center', gap: space.sm, paddingHorizontal: space.md, paddingVertical: space.sm + 2, borderRadius: radius.md, borderWidth: 1, borderColor: colors.line2, borderStyle: 'dashed' },
+  donationIcon: { width: 36, height: 36, borderRadius: 11, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.accentSoft, borderWidth: 1, borderColor: colors.accentLine },
   totalRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end', paddingTop: space.md, marginTop: space.xs, borderTopWidth: 1, borderTopColor: colors.line, borderStyle: 'dashed' },
   bar: { position: 'absolute', left: 0, right: 0, bottom: 0, gap: space.sm, paddingTop: space.md, paddingHorizontal: gutter, backgroundColor: colors.bg2, borderTopWidth: 1, borderTopColor: colors.line2 },
 });

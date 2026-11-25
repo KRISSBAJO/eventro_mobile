@@ -7,6 +7,9 @@
  *
  * A phone screen is too small for the whole venue drawing, so sections are a list and seats a grid of
  * finger-sized buttons that scrolls sideways in wide sections.
+ *
+ * A pay-what-you-want tier is held at the amount picked on the event page (`?amount=`, base cents), or its suggested
+ * price when it comes from somewhere else; the fan can still change it at checkout.
  */
 import { useQuery } from '@tanstack/react-query';
 import { router, useLocalSearchParams } from 'expo-router';
@@ -18,6 +21,7 @@ import { ScreenHeader } from '@/components/screen-header';
 import { Badge, Button, EmptyState, ErrorState, Notice, Skeleton, Stepper, Txt } from '@/components/ui';
 import { api, ApiError, errorText } from '@/lib/api';
 import { money } from '@/lib/format';
+import { allInOf, amountProblem, isPwyw, startAmount } from '@/lib/pwyw';
 import { haptic } from '@/lib/haptics';
 import { useEvent } from '@/lib/queries';
 import type { Availability, EventDetail, HoldCreated, MapSection, SectionSeats, TicketType } from '@/lib/types';
@@ -48,7 +52,7 @@ type SeatChoice = { row: string; seat: number };
 const key = (p: SeatChoice) => `${p.row}:${p.seat}`;
 
 export default function Seats() {
-  const { slug, tier: tierParam, qty: qtyParam } = useLocalSearchParams<{ slug: string; tier?: string; qty?: string }>();
+  const { slug, tier: tierParam, qty: qtyParam, amount: amountParam } = useLocalSearchParams<{ slug: string; tier?: string; qty?: string; amount?: string }>();
   const insets = useSafeAreaInsets();
   const ev = useEvent(slug);
   const e = ev.data;
@@ -71,10 +75,10 @@ export default function Seats() {
       </View>
     );
   }
-  return <Picker e={e} tierParam={tierParam} qtyParam={Number(qtyParam) || 2} />;
+  return <Picker e={e} tierParam={tierParam} qtyParam={Number(qtyParam) || 2} amountParam={amountParam} />;
 }
 
-function Picker({ e, tierParam, qtyParam }: { e: EventDetail; tierParam?: string; qtyParam: number }) {
+function Picker({ e, tierParam, qtyParam, amountParam }: { e: EventDetail; tierParam?: string; qtyParam: number; amountParam?: string }) {
   const insets = useSafeAreaInsets();
   const types = new Map(e.ticketTypes.map((t) => [t.id, t]));
   const sections = (e.seatMap?.sections ?? []).filter((s) => types.has(s.ticketTypeId));
@@ -105,7 +109,13 @@ function Picker({ e, tierParam, qtyParam }: { e: EventDetail; tierParam?: string
     );
   }
 
-  if (open) return <SectionSeatsView e={e} section={open.s} tier={open.t} qty={qty} best={open.a?.row ? open.a.seats.map((n) => ({ row: open.a!.row!, seat: n })) : []} onBack={() => setOpenId(null)} onQty={setQty} />;
+  if (open) {
+    // Pay what you want: the amount from the event page for that tier, else where its suggested price starts.
+    const pw = isPwyw(open.t) ? open.t.pwyw : null;
+    const asked = open.t.id === tierParam && amountParam && /^\d+$/.test(amountParam) ? Number(amountParam) : null;
+    const amount = pw ? (asked !== null && !amountProblem(asked, pw, e.currency) ? asked : startAmount(pw)) : null;
+    return <SectionSeatsView e={e} section={open.s} tier={open.t} qty={qty} amount={amount} best={open.a?.row ? open.a.seats.map((n) => ({ row: open.a!.row!, seat: n })) : []} onBack={() => setOpenId(null)} onQty={setQty} />;
+  }
 
   const maxQty = Math.max(1, Math.min(8, ...tiersInMap.map((t) => t.maxPerOrder)));
   return (
@@ -200,9 +210,11 @@ function TierChip({ label, on, onPress }: { label: string; on: boolean; onPress:
   );
 }
 
-function SectionSeatsView({ e, section, tier, qty, best, onBack, onQty }: { e: EventDetail; section: MapSection; tier: TicketType; qty: number; best: SeatChoice[]; onBack: () => void; onQty: (n: number) => void }) {
+function SectionSeatsView({ e, section, tier, qty, amount, best, onBack, onQty }: { e: EventDetail; section: MapSection; tier: TicketType; qty: number; amount: number | null; best: SeatChoice[]; onBack: () => void; onQty: (n: number) => void }) {
   const insets = useSafeAreaInsets();
   const reserved = section.seating === 'reserved';
+  const pw = isPwyw(tier) ? tier.pwyw : null;
+  const unit = pw && amount !== null ? allInOf(amount, pw.feePermille) : tier.priceCents;
   const seats = useQuery({
     queryKey: ['event', e.slug, 'section', section.id],
     queryFn: () => api<SectionSeats>(`/events/${encodeURIComponent(e.slug)}/sections/${encodeURIComponent(section.id)}/seats`),
@@ -239,7 +251,7 @@ function SectionSeatsView({ e, section, tier, qty, best, onBack, onQty }: { e: E
     setBusy(true);
     setError('');
     try {
-      const h = await api<HoldCreated>('/holds', { body: { ticketTypeId: tier.id, quantity: qty, sectionId: section.id, ...(reserved ? { seats: chosen } : {}) } });
+      const h = await api<HoldCreated>('/holds', { body: { ticketTypeId: tier.id, quantity: qty, sectionId: section.id, ...(reserved ? { seats: chosen } : {}), ...(pw && amount !== null ? { amountCents: amount } : {}) } });
       haptic.success();
       router.push({ pathname: '/checkout/[holdId]', params: { holdId: h.id } });
     } catch (err) {
@@ -264,7 +276,7 @@ function SectionSeatsView({ e, section, tier, qty, best, onBack, onQty }: { e: E
             </Pressable>
             <View style={{ flex: 1 }}>
               <Txt variant="eyebrow" color={colors.accent} numberOfLines={1}>
-                {tier.name} · {money(tier.priceCents, e.currency)} each
+                {tier.name} · {money(unit, e.currency)} each{pw ? ', your price' : ''}
               </Txt>
               <Txt variant="h2" accessibilityRole="header" numberOfLines={1}>
                 {sectionTitle(section)}
@@ -361,7 +373,7 @@ function SectionSeatsView({ e, section, tier, qty, best, onBack, onQty }: { e: E
               {reserved ? (sorted.length ? sorted.map((p) => `${p.row}${p.seat}`).join(', ') : `Tap ${qty} seat${qty === 1 ? '' : 's'}`) : `${qty} × ${tier.name}`}
               {reserved && sorted.length && sorted.length < qty ? ` · ${qty - sorted.length} more` : ''}
             </Txt>
-            <Txt variant="price">{money(tier.priceCents * qty, e.currency)}</Txt>
+            <Txt variant="price">{money(unit * qty, e.currency)}</Txt>
           </View>
           <Button label={busy ? 'Holding…' : 'Hold seats'} loading={busy} disabled={!ready} onPress={hold} feedback="firm" style={{ minWidth: 140 }} />
         </View>

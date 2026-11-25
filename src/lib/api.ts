@@ -200,19 +200,22 @@ async function send<T>(path: string, opts: Opts, bearer: string | null): Promise
   return data as T;
 }
 
-/** Nest wraps object errors as { message: { message, errors } }; validation errors come as an array. */
+/**
+ * Nest wraps object errors as { message: { message, errors } }; validation errors come as an array. `errors` can
+ * also be objects (pasted lists answer `{ line, error }` per bad line: see lineErrors); only strings join the message.
+ */
 function toError(status: number, data: unknown) {
-  const body = data as { message?: string | string[] | { message?: string; errors?: string[] }; errors?: string[]; code?: string } | null;
+  const body = data as { message?: string | string[] | { message?: string; errors?: unknown[] }; errors?: unknown[]; code?: string } | null;
   const raw = body?.message;
   const nested = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : null;
   const m = nested ? nested.message : (raw as string | string[] | undefined);
-  const details = nested?.errors ?? body?.errors;
+  const details = (nested?.errors ?? body?.errors ?? []).filter((d): d is string => typeof d === 'string');
   const fallback =
     status === 429 ? 'Too many tries. Wait a minute and try again.' : status >= 500 ? 'Eventro had a problem. Please try again in a moment.' : `Something went wrong (${status}).`;
   // Validation errors list every problem: the first one reads best (fix it, and the next shows up).
   const base = Array.isArray(m) ? (m[0] ? sentence(m[0]) : fallback) : m ? sentence(m) : fallback;
   // Some answers repeat the message as the first of their `errors`.
-  const extra = (details ?? []).filter((d) => sentence(d) !== base).slice(0, 3);
+  const extra = details.filter((d) => sentence(d) !== base).slice(0, 3);
   const message = extra.length ? `${base} ${extra.join(' ')}` : base;
   return new ApiError(message, status, typeof body?.code === 'string' ? body.code : undefined, data);
 }
@@ -224,6 +227,16 @@ const sentence = (s: string) => {
   const c = t[0].toUpperCase() + t.slice(1);
   return /[.!?]$/.test(c) ? c : `${c}.`;
 };
+
+/** The bad lines of a pasted list the API refused (400 `{ message, errors: [{ line, error }] }`), in line order. */
+export function lineErrors(e: unknown): { line: number; error: string }[] {
+  if (!(e instanceof ApiError)) return [];
+  const body = e.data as { errors?: unknown; message?: { errors?: unknown } } | null;
+  const list = Array.isArray(body?.errors) ? body.errors : Array.isArray(body?.message?.errors) ? body.message.errors : [];
+  return list
+    .filter((x): x is { line: number; error: string } => !!x && typeof x === 'object' && typeof (x as { line?: unknown }).line === 'number' && typeof (x as { error?: unknown }).error === 'string')
+    .sort((a, b) => a.line - b.line);
+}
 
 /** Text for an error shown to people. */
 export const errorText = (e: unknown) => (e instanceof Error && e.message ? e.message : 'Something went wrong. Please try again.');

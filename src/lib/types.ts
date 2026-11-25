@@ -59,11 +59,27 @@ export type EventCard = {
 
 export type EventPage = { total: number; page: number; pageSize: number; items: EventCard[] };
 
+/**
+ * Pay what you want on a ticket type (GET /events/:slug, GET /holds/:id). Amounts are BASE amounts, what the fan
+ * chooses; `feePermille` is the fee the fan pays on top (0 when the organizer absorbs it). `maxCents` is the effective
+ * maximum (the API's ceiling when the organizer set none: `maxSet` false).
+ */
+export type Pwyw = { minCents: number; suggestedCents: number | null; maxCents: number; maxSet: boolean; quickPicks: number[]; feePermille: number };
+
+/** An event's charity donations (GET /events/:slug, GET /holds/:id `event.donations`); null when it doesn't take them. */
+export type Donations = { cause: string; description: string | null; suggestedCents: number[]; minCents: number | null; maxCents: number };
+
+export type FeeMode = 'BUYER' | 'ORGANIZER';
+
 export type TicketType = {
   id: string;
   name: string;
   description: string | null;
+  /** all-in; for pay what you want, the all-in price of the minimum ("from") */
   priceCents: number;
+  /** older APIs leave it out: FIXED */
+  pricing?: 'FIXED' | 'PWYW';
+  pwyw?: Pwyw | null;
   maxPerOrder: number;
   sortOrder: number;
   perks: string[];
@@ -126,6 +142,10 @@ export type EventDetail = {
   ticketTypes: TicketType[];
   media: MediaItem[];
   seatMap: { sections: MapSection[] } | null;
+  /** who pays Eventro's fee, and how much it is (older APIs leave them out) */
+  feeMode?: FeeMode;
+  feePermille?: number;
+  donations?: Donations | null;
 };
 
 /** A seat map section (GET /events/:slug). Reserved sections are `rows` × `seatsPerRow`; rows are A, B, … Z, AA … */
@@ -151,7 +171,7 @@ export type SectionSeats = { section: string; seating: 'reserved' | 'ga'; capaci
 export type SeatPick = { section: string; row: string | null; seat: number | null };
 
 /** POST /holds */
-export type HoldCreated = { id: string; quantity: number; expiresAt: string; sectionId: string | null; ticketTypeId: string; seats: SeatPick[] | null };
+export type HoldCreated = { id: string; quantity: number; expiresAt: string; sectionId: string | null; ticketTypeId: string; seats: SeatPick[] | null; amountCents?: number | null };
 
 /** GET /holds/:id */
 export type Hold = {
@@ -161,7 +181,13 @@ export type Hold = {
   expiresAt: string;
   section: { id: string; label: string; level: string | null; seating: 'reserved' | 'ga' } | null;
   seats: SeatPick[];
-  ticketType: { id: string; name: string; description: string | null; priceCents: number } & TierFields;
+  /** pay what you want: the base amount chosen per ticket (null for fixed prices) */
+  amountCents?: number | null;
+  /** all-in per ticket for this hold */
+  unitCents?: number;
+  /** the donation stored on the hold (PATCH /holds/:id, for the website's checkout); 0 = none chosen */
+  donationCents?: number;
+  ticketType: { id: string; name: string; description: string | null; priceCents: number; pricing?: 'FIXED' | 'PWYW'; pwyw?: Pwyw | null } & TierFields;
   event: {
     slug: string;
     title: string;
@@ -173,6 +199,9 @@ export type Hold = {
     startsAt: string;
     doorsAt: string | null;
     venue: { name: string; city: string | null; address: string | null } | null;
+    feeMode?: FeeMode;
+    feePermille?: number;
+    donations?: Donations | null;
   };
   order: { id: string; status: string } | null;
 };
@@ -184,14 +213,23 @@ export type Quote = {
   subtotalCents: number;
   discountCents: number;
   protectionCents: number;
+  /** donation included */
   totalCents: number;
+  /** the donation added to the total (no Eventro fee, no protection on it) */
+  donationCents?: number;
+  /** totalCents − donationCents */
+  ticketTotalCents?: number;
+  /** Eventro's fee included in the tickets (0 when the organizer absorbs it) */
+  feeCents?: number;
+  /** pay what you want: the base amount per ticket, or null */
+  amountCents?: number | null;
 };
 
-/** POST /orders */
-export type OrderCreated = {
+/** POST /orders (the quote's lines too). `free`: a $0 order (free tickets, $0 pay what you want, no donation), already PAID. */
+export type OrderCreated = Partial<Omit<Quote, 'totalCents'>> & {
   orderId: string;
   status: string;
-  provider: 'mock' | 'stripe' | 'paystack';
+  provider: 'mock' | 'stripe' | 'paystack' | 'free';
   currency: string;
   clientSecret: string | null;
   redirectUrl: string | null;
@@ -199,8 +237,18 @@ export type OrderCreated = {
   totalCents: number;
 };
 
+/** What order views add for donations and comps (GET /orders/:id, POST /orders/:id/pay and /verify, GET /me/orders). */
+export type OrderExtras = {
+  /** COMP: a complimentary ticket the organizer issued ($0); older APIs leave it out */
+  kind?: 'SALE' | 'COMP';
+  donationCents?: number;
+  donationCause?: string | null;
+  donationRefundedCents?: number;
+  compGroup?: string | null;
+};
+
 /** POST /orders/:id/pay and /verify */
-export type Order = {
+export type Order = OrderExtras & {
   id: string;
   status: 'PENDING' | 'PAID' | 'CANCELLED' | 'REFUNDED' | 'PARTIALLY_REFUNDED';
   provider: string;
@@ -208,10 +256,12 @@ export type Order = {
   buyerName: string;
   quantity: number;
   currency: string;
+  /** all-in per ticket (pay what you want: the amount each ticket was bought for) */
   unitCents: number;
   subtotalCents: number;
   discountCents: number;
   protectionCents: number;
+  /** donation included */
   totalCents: number;
   promoCode: string | null;
   event: { slug: string; title: string; startsAt: string; venue: { name: string; city: string | null } | null };
@@ -230,7 +280,7 @@ export type RefundRequestStatus = 'OPEN' | 'APPROVED' | 'PARTIAL' | 'DENIED';
 export type RefundRequest = { id: string; status: RefundRequestStatus; reason?: string; amountCents: number | null; createdAt: string; decidedAt: string | null };
 
 /** GET /me/orders rows, newest first */
-export type MyOrder = {
+export type MyOrder = OrderExtras & {
   id: string;
   status: Order['status'];
   quantity: number;
@@ -315,6 +365,9 @@ export type Ticket = {
     status: string;
     currency: string;
     gift: { id: string; recipientName: string; recipientEmail: string; sendAt: string; sentAt: string | null; claimedAt: string | null } | null;
+    /** COMP: a complimentary ticket from the organizer (older APIs leave it out) */
+    kind?: 'SALE' | 'COMP';
+    compGroup?: string | null;
   };
   event: {
     slug: string;
@@ -379,14 +432,15 @@ export type GuaranteeClaim = {
 
 /**
  * A ticket's Eventro Guarantee (GET /me/tickets, and GET /tickets/:id/guarantee-claims): covered when it's from a
- * paid order; free tickets, comps and refunded orders aren't. The claim window is real instants.
+ * paid order (pay what you want above $0 included); free tickets ($0 pay what you want too: FREE), comps (COMP) and
+ * refunded orders aren't. The claim window is real instants.
  */
 export type TicketGuarantee = {
   covered: boolean;
   /** who pays an approved claim (fans don't see this) */
   payer: GuaranteePayer | null;
   /** why it isn't covered */
-  notCovered: 'FREE' | 'REFUNDED' | null;
+  notCovered: 'FREE' | 'COMP' | 'REFUNDED' | null;
   /** what a claim on this ticket refunds now: its all-in share of the order (0 if not covered), or the claim's amount */
   refundCents: number;
   opensAt: string;
@@ -405,8 +459,8 @@ export type IncomingTransfer = {
   transferExpiresAt: string | null;
   event: { title: string; startsAt: string };
   ticketType: { name: string } & TierFields;
-  /** Set when these tickets are a gift: accepting one claims the whole gift. */
-  gift?: { id: string; from: string; message: string | null } | null;
+  /** Set when these tickets are a gift: accepting one claims the whole gift. A comp is one too (`from`: the organizer). */
+  gift?: { id: string; from: string; message: string | null; comp?: boolean; group?: string | null } | null;
 };
 
 export type MyTickets = { tickets: Ticket[]; incomingTransfers: IncomingTransfer[]; resaleFeePermille: number };
@@ -482,11 +536,15 @@ export type EventResale = { enabled: boolean; listings: ResaleListing[] };
 /** POST /resale/:id/hold: the listing is held for this buyer for 10 minutes; the key creates the order. */
 export type ResaleHoldCreated = { listingId: string; holdKey: string; heldUntil: string; priceCents: number; currency: string };
 
-/** GET /gifts/:token (details only once delivered) */
+/** GET /gifts/:token (details only once delivered). A comp is a gift from the organizer (`from` is their name). */
 export type Gift = {
   from: string;
   to: string;
-  status: 'scheduled' | 'ready' | 'claimed';
+  /** cancelled: a comp the organizer revoked */
+  status: 'scheduled' | 'ready' | 'claimed' | 'cancelled';
+  comp?: boolean;
+  /** a comp's group ("Press", "Artist"…) */
+  group?: string | null;
   sendAt: string;
   message?: string;
   event?: { slug: string; title: string; subtitle: string; startsAt: string; imageUrl: string | null; online: boolean; timezone: string | null; venue: { name: string; city: string | null } | null };
@@ -521,7 +579,7 @@ export type DoorEvent = {
 };
 
 /** POST /organizer/events/:id/check-in */
-export type DoorTicket = { id: string; holderName: string; ticketType: string; section: string | null; row: string | null; seat: number | null };
+export type DoorTicket = { id: string; holderName: string; ticketType: string; section: string | null; row: string | null; seat: number | null; comp?: boolean; compGroup?: string | null };
 export type CheckInAnswer = {
   result: 'ok' | 'duplicate' | 'invalid' | 'wrong-event' | 'expired-code';
   message: string;
@@ -546,6 +604,8 @@ export type DoorPackTicket = {
   sectionName: string | null;
   row: string | null;
   seat: number | null;
+  comp?: boolean;
+  compGroup?: string | null;
 };
 export type DoorPack = {
   eventId: string;
@@ -557,6 +617,36 @@ export type DoorPack = {
   windowMs: number;
   algorithm: string;
   tickets: DoorPackTicket[];
+  /** the guest list (no tickets), for checking guests in offline; older APIs leave it out */
+  guestList?: GuestEntry[];
+};
+
+/* ---------- guest list ---------- */
+
+/** One guest-list entry (no ticket): `arrived` of `partySize` (1 + plus-ones) are in. */
+export type GuestEntry = {
+  id: string;
+  name: string;
+  email: string | null;
+  plusOnes: number;
+  group: string | null;
+  note: string | null;
+  arrived: number;
+  partySize: number;
+  firstArrivedAt: string | null;
+  updatedAt: string;
+};
+
+/** GET /organizer/events/:id/guest-list */
+export type GuestList = { summary: { entries: number; expected: number; arrived: number }; items: GuestEntry[] };
+
+/** POST …/guest-list/:entryId/check-in */
+export type GuestCheckIn = { result: 'ok' | 'full'; message: string; entry: GuestEntry };
+
+/** POST …/guest-list/sync */
+export type GuestSyncAnswer = {
+  results: { index: number; opId: string; entryId: string; result: 'checked_in' | 'full' | 'invalid'; replay?: true; reason?: 'unknown' | 'wrong-event'; entry?: GuestEntry }[];
+  summary: { checked_in: number; full: number; invalid: number };
 };
 
 /** POST /organizer/events/:id/check-ins/sync */
@@ -575,4 +665,17 @@ export type SyncResult = {
 export type SyncAnswer = { eventId: string; deviceId: string; summary: { checked_in: number; already: number; invalid: number }; results: SyncResult[] };
 
 /** GET /organizer/events/:id/attendees */
-export type Attendee = { id: string; holderName: string; holderEmail: string; section: string | null; row: string | null; seat: number | null; status: TicketStatus; checkedInAt: string | null; ticketType: { name: string } };
+export type Attendee = {
+  id: string;
+  holderName: string;
+  holderEmail: string;
+  section: string | null;
+  row: string | null;
+  seat: number | null;
+  status: TicketStatus;
+  checkedInAt: string | null;
+  ticketType: { name: string };
+  /** older APIs leave them out (PAID) */
+  type?: 'PAID' | 'COMP';
+  compGroup?: string | null;
+};

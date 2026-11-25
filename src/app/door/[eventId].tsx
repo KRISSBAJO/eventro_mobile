@@ -5,17 +5,24 @@
  *   Offline  "Download for offline" saves the door pack; codes are checked on the phone against each ticket's seed,
  *            admissions are queued and synced (POST …/check-ins/sync) when the API can be reached, or on "Sync now".
  *            Scans another scanner got to first come back as conflicts.
- *   Manual   find a guest by name or ticket number and check them in by hand.
+ *   Manual   find a ticket holder by name or ticket number and check them in by hand.
+ *   Guests   the "Guest list" tab: people with no ticket, searchable by name. Check a guest in and record their
+ *            plus-ones as they arrive ("2 of 3 here", + and −). Online it's POST …/guest-list/:entryId/check-in (and
+ *            …/undo for −); with no signal it's checked against the guest list in the door pack, queued with an opId
+ *            and synced (POST …/guest-list/sync) with the scans. Offline − only takes back this phone's unsynced
+ *            check-ins (lib/door.ts).
  *
  * Every result fills the screen (green admit, amber already scanned, red not valid) with a haptic, then the camera
- * resumes after about 1.5 seconds. On the web preview there's no camera: type or paste a code instead.
+ * resumes after about 1.5 seconds; a comp shows "Comp · {group}". On the web preview there's no camera: type or
+ * paste a code instead.
  */
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { DoorCamera, HAS_CAMERA } from '@/components/door-camera';
+import { Segmented } from '@/components/form-ui';
 import { Icon, type IconName } from '@/components/icons';
 import { KeepAwake } from '@/components/keep-awake';
 import { Badge, Button, Chip, Field, IconButton, Notice, Txt } from '@/components/ui';
@@ -24,28 +31,42 @@ import { useAuth } from '@/lib/auth';
 import { deviceId as getDeviceId } from '@/lib/device';
 import {
   admitLocally,
+  applyGuestSync,
+  checkInGuestOffline,
   clock,
+  compLabel,
   conflictText,
   downloadPack,
   dropDoor,
   emptyStore,
+  guestConflictText,
+  guestTotals,
+  hereText,
   loadDoor,
+  markGuest,
   markPack,
+  matchesGuest,
+  mergeScanSync,
+  packGuests,
   saveDoor,
   seatText,
+  sendGuestQueue,
   syncDoor,
+  undoGuestLocal,
   undoLocal,
   unmarkPack,
   verdictOf,
   verifyOffline,
+  withQueued,
   type DoorStore,
   type Verdict,
 } from '@/lib/door';
-import { localStamp, when } from '@/lib/format';
+import { localStamp, num, when } from '@/lib/format';
 import { haptic } from '@/lib/haptics';
+import { useGuestList } from '@/lib/organizer';
 import { useDoorEvents } from '@/lib/queries';
 import { useConfirm } from '@/components/confirm';
-import type { Attendee, CheckInAnswer } from '@/lib/types';
+import type { Attendee, CheckInAnswer, GuestCheckIn, GuestEntry, GuestList } from '@/lib/types';
 import { colors, font, gutter, radius, space } from '@/theme';
 
 type EventInfo = { id: string; orgId: string; title: string; startsAt: string; status: string };
@@ -84,6 +105,18 @@ export default function Door() {
   const [note, setNote] = useState<{ tone: 'success' | 'warning' | 'accent' | 'plain'; text: string } | null>(null);
   const [lookup, setLookup] = useState('');
   const busyRef = useRef(false);
+  const qc = useQueryClient();
+  const [tab, setTab] = useState<'scan' | 'guests'>('scan');
+  const [guestText, setGuestText] = useState('');
+  const [guestQ, setGuestQ] = useState('');
+  const [guestBusy, setGuestBusy] = useState<string | null>(null);
+  const [guestNote, setGuestNote] = useState<{ tone: 'success' | 'warning' | 'accent' | 'plain'; text: string } | null>(null);
+  /** guest check-ins in a sync request right now: offline undo leaves them alone */
+  const guestSending = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    const t = setTimeout(() => setGuestQ(guestText.trim()), 250);
+    return () => clearTimeout(t);
+  }, [guestText]);
 
   const setStore = useCallback((next: DoorStore) => {
     storeRef.current = next;
@@ -118,6 +151,12 @@ export default function Door() {
   }, [orgId, refetchDoor]);
 
   const pack = store.pack;
+  // The guest list: from the API while online (with this phone's unsynced check-ins on top), else the door pack's.
+  const remoteGuests = useGuestList(online && tab === 'guests' ? eventId : undefined, guestQ);
+  const useRemote = online && !!remoteGuests.data && !remoteGuests.error;
+  const guests = useRemote ? withQueued(remoteGuests.data!.items, store.guestQueue) : packGuests(store).filter((g) => matchesGuest(g, guestQ));
+  const guestSum = useRemote && !guestQ ? guestTotals(guests) : pack?.guestList ? guestTotals(packGuests(store)) : (remoteGuests.data?.summary ?? null);
+  const pendingSync = store.queue.length + store.guestQueue.length;
   const title = info.data?.title ?? pack?.title ?? 'Door';
   const startsAt = info.data?.startsAt ?? pack?.startsAt;
   const packIn = pack ? pack.tickets.filter((t) => t.status === 'CHECKED_IN' || store.localIn[t.id]).length : 0;
@@ -205,6 +244,81 @@ export default function Door() {
     }
   };
 
+  /* ---------- the guest list ---------- */
+
+  const patchGuestCache = useCallback(
+    (entry: GuestEntry) =>
+      qc.setQueriesData<GuestList>({ queryKey: ['organizer', 'guest-list', eventId] }, (old) => (old ? { ...old, items: old.items.map((g) => (g.id === entry.id ? entry : g)) } : old)),
+    [qc, eventId],
+  );
+
+  /** Checks `n` people of an entry in: online first, else (or with no signal) against the downloaded list. */
+  const checkInGuest = async (g: GuestEntry, n: number) => {
+    if (!deviceId || guestBusy) return;
+    setGuestNote(null);
+    setGuestBusy(g.id);
+    try {
+      if (mode === 'online' && !autoOffline) {
+        try {
+          const a = await api<GuestCheckIn>(`/organizer/events/${encodeURIComponent(eventId)}/guest-list/${encodeURIComponent(g.id)}/check-in`, { body: { guests: n, deviceId }, timeoutMs: 8000 });
+          setStore(markGuest(storeRef.current, a.entry));
+          patchGuestCache(a.entry);
+          if (a.result === 'ok') haptic.success();
+          else haptic.warning();
+          setGuestNote({ tone: a.result === 'ok' ? 'success' : 'warning', text: `${a.entry.name}: ${a.message || hereText(a.entry)}` });
+          return;
+        } catch (e) {
+          if (!isOffline(e) || !storeRef.current.pack?.guestList) {
+            haptic.error();
+            setGuestNote({ tone: 'accent', text: isOffline(e) ? 'No connection. Download the door list while you have signal to check guests in offline.' : errorText(e) });
+            return;
+          }
+          // No signal: carry on against the downloaded list; it syncs later.
+          setAutoOffline(true);
+        }
+      }
+      const r = checkInGuestOffline(storeRef.current, g.id, n);
+      if (r.store) setStore(r.store);
+      if (r.result === 'ok') haptic.success();
+      else haptic.warning();
+      setGuestNote({ tone: r.result === 'ok' ? 'success' : 'warning', text: `${r.entry?.name ?? g.name}: ${r.message} Saved on this phone; it syncs when you’re back online.` });
+    } finally {
+      setGuestBusy(null);
+    }
+  };
+
+  /** One fewer here: this phone's unsynced check-in first (it never reached Eventro), else POST …/undo online. */
+  const undoGuest = async (g: GuestEntry) => {
+    if (guestBusy) return;
+    setGuestNote(null);
+    const local = undoGuestLocal(storeRef.current, g.id, guestSending.current);
+    if (local) {
+      setStore(local);
+      haptic.select();
+      const now = packGuests(local).find((x) => x.id === g.id);
+      setGuestNote({ tone: 'plain', text: `Undone on this phone: ${g.name}${now ? `, ${hereText(now).toLowerCase()}` : ''}.` });
+      return;
+    }
+    if (mode === 'offline' || autoOffline) {
+      haptic.warning();
+      setGuestNote({ tone: 'warning', text: 'Offline, “−” only takes back check-ins made on this phone that haven’t synced yet. This one needs a connection to undo.' });
+      return;
+    }
+    setGuestBusy(g.id);
+    try {
+      const r = await api<{ entry: GuestEntry }>(`/organizer/events/${encodeURIComponent(eventId)}/guest-list/${encodeURIComponent(g.id)}/undo`, { body: { guests: 1 }, timeoutMs: 8000 });
+      setStore(markGuest(storeRef.current, r.entry));
+      patchGuestCache(r.entry);
+      haptic.select();
+      setGuestNote({ tone: 'plain', text: `Undone: ${r.entry.name}, ${hereText(r.entry).toLowerCase()}.` });
+    } catch (e) {
+      haptic.error();
+      setGuestNote({ tone: 'accent', text: isOffline(e) ? 'No connection: undo needs one for check-ins Eventro already has.' : `Couldn’t undo. ${errorText(e)}` });
+    } finally {
+      setGuestBusy(null);
+    }
+  };
+
   /* ---------- offline pack and sync ---------- */
 
   const download = async () => {
@@ -214,7 +328,8 @@ export default function Door() {
       const p = await downloadPack(eventId);
       setStore({ ...storeRef.current, pack: p, packAt: Date.now() });
       haptic.success();
-      setNote({ tone: 'success', text: `Saved ${p.tickets.length} tickets on this phone. You can scan with no signal now.` });
+      const listed = p.guestList?.length ?? 0;
+      setNote({ tone: 'success', text: `Saved ${num(p.tickets.length)} tickets${listed ? ` and ${num(listed)} guest-list ${listed === 1 ? 'entry' : 'entries'}` : ''} on this phone. You can check people in with no signal now.` });
     } catch (e) {
       haptic.error();
       setNote({ tone: 'accent', text: `Couldn’t download the list. ${errorText(e)}` });
@@ -225,43 +340,66 @@ export default function Door() {
 
   const sync = useCallback(
     async (quiet: boolean) => {
-      if (!deviceId || !storeRef.current.queue.length) return;
+      if (!deviceId || (!storeRef.current.queue.length && !storeRef.current.guestQueue.length)) return;
       setSyncing(true);
+      let synced = 0;
+      let issues = 0;
+      let failed: unknown = null;
       try {
-        const r = await syncDoor(storeRef.current, deviceId);
-        setStore(r.store);
-        setAutoOffline(false);
-        refreshCounts();
-        if (!quiet || r.conflicts.length) {
-          if (r.conflicts.length) haptic.warning();
-          setNote({
-            tone: r.conflicts.length ? 'warning' : 'success',
-            text: `Synced ${r.synced} scan${r.synced === 1 ? '' : 's'}.${r.conflicts.length ? ` ${r.conflicts.length} need${r.conflicts.length === 1 ? 's' : ''} a look: see below.` : ''}`,
-          });
+        // Scans first. syncDoor works on a snapshot; scans made meanwhile stay queued (mergeScanSync).
+        if (storeRef.current.queue.length) {
+          const sent = storeRef.current;
+          const r = await syncDoor(sent, deviceId);
+          setStore(mergeScanSync(storeRef.current, sent, r));
+          synced += r.synced;
+          issues += r.conflicts.length;
+        }
+        // Then guest-list check-ins, each with its opId (the API applies it once, so a resend is harmless).
+        const ops = [...storeRef.current.guestQueue];
+        if (ops.length) {
+          ops.forEach((o) => guestSending.current.add(o.opId));
+          try {
+            const g = await sendGuestQueue(eventId, ops, deviceId);
+            const a = applyGuestSync(storeRef.current, g.answered);
+            setStore(a.store);
+            synced += a.synced;
+            issues += a.conflicts.length;
+            if (g.answered.length) void qc.invalidateQueries({ queryKey: ['organizer', 'guest-list', eventId] });
+            if (g.error) failed = g.error;
+          } finally {
+            ops.forEach((o) => guestSending.current.delete(o.opId));
+          }
         }
       } catch (e) {
-        if (!quiet) setNote({ tone: 'warning', text: isOffline(e) ? 'Still offline. Your scans are safe on this phone and will sync when you’re back online.' : `Couldn’t sync. ${errorText(e)}` });
-      } finally {
-        setSyncing(false);
+        failed = e;
+      }
+      setSyncing(false);
+      if (!failed) setAutoOffline(false);
+      refreshCounts();
+      if (failed) {
+        if (!quiet) setNote({ tone: 'warning', text: isOffline(failed) ? 'Still offline. Your check-ins are safe on this phone and will sync when you’re back online.' : `Couldn’t sync. ${errorText(failed)}` });
+      } else if (!quiet || issues) {
+        if (issues) haptic.warning();
+        setNote({ tone: issues ? 'warning' : 'success', text: `Synced ${synced} check-in${synced === 1 ? '' : 's'}.${issues ? ` ${issues} need${issues === 1 ? 's' : ''} a look: see below.` : ''}` });
       }
     },
-    [deviceId, refreshCounts, setStore],
+    [deviceId, eventId, qc, refreshCounts, setStore],
   );
 
-  // Queued scans go up on their own every 20 seconds when the API can be reached.
+  // Queued scans and guest check-ins go up on their own every 20 seconds when the API can be reached.
   useEffect(() => {
-    if (!store.queue.length) return;
+    if (!pendingSync) return;
     const t = setInterval(() => void sync(true), 20_000);
     return () => clearInterval(t);
-  }, [store.queue.length, sync]);
+  }, [pendingSync, sync]);
 
   const leave = () => {
-    const pending = storeRef.current.queue.length;
+    const pending = storeRef.current.queue.length + storeRef.current.guestQueue.length;
     const go = async () => {
       await dropDoor(eventId);
       router.back();
     };
-    if (pending) confirmAsk('Scans haven’t synced', `${pending} scan${pending === 1 ? '' : 's'} on this phone haven’t reached Eventro yet. Leave anyway and lose them?`, 'Leave and delete', () => void go());
+    if (pending) confirmAsk('Check-ins haven’t synced', `${pending} check-in${pending === 1 ? '' : 's'} on this phone ${pending === 1 ? 'hasn’t' : 'haven’t'} reached Eventro yet. Leave anyway and lose ${pending === 1 ? 'it' : 'them'}?`, 'Leave and delete', () => void go());
     else confirmAsk('Leave this event?', 'The offline guest list is deleted from this phone.', 'Leave', () => void go());
   };
 
@@ -275,16 +413,16 @@ export default function Door() {
     staleTime: 5_000,
     retry: 0,
   });
-  type Hit = { id: string; name: string; type: string; seat: string; status: string; checkedInAt: string | null };
+  type Hit = { id: string; name: string; type: string; seat: string; status: string; checkedInAt: string | null; comp: string | null };
   const hits: Hit[] =
     q.length < 2
       ? []
       : online && !remote.error
-        ? (remote.data ?? []).slice(0, 20).map((a) => ({ id: a.id, name: a.holderName, type: a.ticketType.name, seat: seatText(a), status: a.status, checkedInAt: a.checkedInAt }))
+        ? (remote.data ?? []).slice(0, 20).map((a) => ({ id: a.id, name: a.holderName, type: a.ticketType.name, seat: seatText(a), status: a.status, checkedInAt: a.checkedInAt, comp: a.type === 'COMP' ? compLabel({ comp: true, compGroup: a.compGroup }) : null }))
         : (pack?.tickets ?? [])
             .filter((t) => t.holderName.toLowerCase().includes(q.toLowerCase()) || t.id.includes(q.toUpperCase()))
             .slice(0, 20)
-            .map((t) => ({ id: t.id, name: t.holderName, type: t.ticketType, seat: seatText(t), status: store.localIn[t.id] ? 'CHECKED_IN' : t.status, checkedInAt: store.localIn[t.id] ?? t.checkedInAt }));
+            .map((t) => ({ id: t.id, name: t.holderName, type: t.ticketType, seat: seatText(t), status: store.localIn[t.id] ? 'CHECKED_IN' : t.status, checkedInAt: store.localIn[t.id] ?? t.checkedInAt, comp: compLabel(t) }));
 
   const camH = Math.min(width - gutter * 2, 440);
 
@@ -316,13 +454,23 @@ export default function Door() {
           </View>
         </View>
 
+        <Segmented
+          label="Door"
+          value={tab}
+          onChange={setTab}
+          options={[
+            { id: 'scan', label: 'Scan tickets' },
+            { id: 'guests', label: 'Guest list' },
+          ]}
+        />
+
         <View style={styles.counterRow}>
           <View style={{ flex: 1 }}>
             <Txt variant="priceLg" accessibilityLiveRegion="polite">
-              {counter ? `${counter.n} of ${counter.of}` : '—'}
+              {tab === 'guests' ? (guestSum ? `${num(guestSum.arrived)} of ${num(guestSum.expected)}` : '—') : counter ? `${counter.n} of ${counter.of}` : '—'}
             </Txt>
             <Txt variant="small" color={colors.muted}>
-              checked in
+              {tab === 'guests' ? `guests here${guestSum ? ` · ${num(guestSum.entries)} on the list` : ''}` : 'checked in'}
             </Txt>
           </View>
           <View style={{ flexDirection: 'row', gap: space.sm }}>
@@ -337,52 +485,91 @@ export default function Door() {
           </Notice>
         ) : null}
 
-        <View>
-          <DoorCamera paused={!!verdict || busy} torch={torch} onCode={(d) => void process(d)} height={camH} />
-          {HAS_CAMERA ? (
-            <View style={styles.camTools}>
-              <IconButton icon="flash" label={torch ? 'Turn the torch off' : 'Turn the torch on'} glass color={torch ? colors.warning : colors.text} onPress={() => setTorch((v) => !v)} />
-              <IconButton icon="keyboard" label="Enter a code" glass onPress={() => setTyping((v) => !v)} />
-            </View>
-          ) : null}
-        </View>
-
-        {typing ? (
-          <View style={{ gap: space.sm }}>
-            <Field
-              label="Enter code"
-              value={code}
-              onChangeText={setCode}
-              placeholder="EVT-…  or the full QR code"
-              autoCapitalize="characters"
-              autoCorrect={false}
-              returnKeyType="go"
-              onSubmitEditing={() => {
-                void process(code, !code.includes('.'));
-                setCode('');
-              }}
-              hint="A ticket number checks the ticket in by hand; a full code (ticket.window.signature) is verified like a scan."
-            />
-            <Button
-              label="Check"
-              icon="scan"
-              loading={busy}
-              disabled={!code.trim()}
-              onPress={() => {
-                void process(code, !code.includes('.'));
-                setCode('');
-              }}
-            />
+        {tab === 'guests' ? (
+          <View style={{ gap: space.md }}>
+            <Field label="Search the guest list" value={guestText} onChangeText={setGuestText} autoCorrect={false} autoCapitalize="none" placeholder="Name, email or group" clearButtonMode="while-editing" />
+            {!online ? (
+              <Txt variant="small" color={colors.dim}>
+                {pack?.guestList
+                  ? 'Offline: check-ins are saved on this phone and sync when you’re back online. “−” only takes back ones that haven’t synced yet.'
+                  : 'Download the door list (below) while you have signal to check guests in offline.'}
+              </Txt>
+            ) : null}
+            {guestNote ? <Notice tone={guestNote.tone}>{guestNote.text}</Notice> : null}
+            {online && remoteGuests.isPending && !pack?.guestList ? (
+              <Txt variant="small" color={colors.dim}>
+                Loading the guest list…
+              </Txt>
+            ) : online && remoteGuests.error && !pack?.guestList ? (
+              <Notice tone="warning" icon="alert" action="Try again" onAction={() => void remoteGuests.refetch()}>
+                {errorText(remoteGuests.error)}
+              </Notice>
+            ) : !guests.length ? (
+              <Txt variant="small" color={colors.dim}>
+                {guestQ ? `Nobody on the guest list matches “${guestQ}”.` : 'Nobody is on the guest list yet.'}
+              </Txt>
+            ) : null}
+            {guests.slice(0, 60).map((g) => (
+              <GuestRow key={g.id} g={g} busy={guestBusy === g.id} disabled={!!guestBusy || !deviceId} onIn={(n) => void checkInGuest(g, n)} onOut={() => void undoGuest(g)} />
+            ))}
+            {guests.length > 60 ? (
+              <Txt variant="small" color={colors.dim}>
+                Showing 60 of {num(guests.length)}. Search to find someone.
+              </Txt>
+            ) : null}
           </View>
         ) : null}
 
-        {lastAdmit ? (
-          <Pressable accessibilityRole="button" onPress={undo} style={({ pressed }) => [styles.undo, pressed && { opacity: 0.7 }]}>
-            <Icon name="undo" size={16} color={colors.muted} />
-            <Txt variant="smallStrong" color={colors.muted} style={{ flex: 1 }} numberOfLines={1}>
-              Undo last scan · {lastAdmit.name}
-            </Txt>
-          </Pressable>
+        {tab === 'scan' ? (
+          <>
+            <View>
+              <DoorCamera paused={!!verdict || busy} torch={torch} onCode={(d) => void process(d)} height={camH} />
+              {HAS_CAMERA ? (
+                <View style={styles.camTools}>
+                  <IconButton icon="flash" label={torch ? 'Turn the torch off' : 'Turn the torch on'} glass color={torch ? colors.warning : colors.text} onPress={() => setTorch((v) => !v)} />
+                  <IconButton icon="keyboard" label="Enter a code" glass onPress={() => setTyping((v) => !v)} />
+                </View>
+              ) : null}
+            </View>
+
+            {typing ? (
+              <View style={{ gap: space.sm }}>
+                <Field
+                  label="Enter code"
+                  value={code}
+                  onChangeText={setCode}
+                  placeholder="EVT-…  or the full QR code"
+                  autoCapitalize="characters"
+                  autoCorrect={false}
+                  returnKeyType="go"
+                  onSubmitEditing={() => {
+                    void process(code, !code.includes('.'));
+                    setCode('');
+                  }}
+                  hint="A ticket number checks the ticket in by hand; a full code (ticket.window.signature) is verified like a scan."
+                />
+                <Button
+                  label="Check"
+                  icon="scan"
+                  loading={busy}
+                  disabled={!code.trim()}
+                  onPress={() => {
+                    void process(code, !code.includes('.'));
+                    setCode('');
+                  }}
+                />
+              </View>
+            ) : null}
+
+            {lastAdmit ? (
+              <Pressable accessibilityRole="button" onPress={undo} style={({ pressed }) => [styles.undo, pressed && { opacity: 0.7 }]}>
+                <Icon name="undo" size={16} color={colors.muted} />
+                <Txt variant="smallStrong" color={colors.muted} style={{ flex: 1 }} numberOfLines={1}>
+                  Undo last scan · {lastAdmit.name}
+                </Txt>
+              </Pressable>
+            ) : null}
+          </>
         ) : null}
 
         {note ? <Notice tone={note.tone}>{note.text}</Notice> : null}
@@ -396,7 +583,9 @@ export default function Door() {
             <View style={{ flex: 1, gap: 2 }}>
               <Txt variant="bodyStrong">{pack ? 'Offline list saved' : 'Scan without signal'}</Txt>
               <Txt variant="small" color={colors.muted}>
-                {pack ? `${pack.tickets.length} tickets · downloaded ${store.packAt ? localStamp(store.packAt) : ''}` : 'Download the guest list (encrypted on this phone) to check codes with no connection.'}
+                {pack
+                  ? `${num(pack.tickets.length)} tickets${pack.guestList ? ` · ${num(pack.guestList.length)} on the guest list` : ''} · downloaded ${store.packAt ? localStamp(store.packAt) : ''}`
+                  : 'Download the door list (encrypted on this phone) to check tickets and guests in with no connection.'}
               </Txt>
             </View>
           </View>
@@ -406,11 +595,17 @@ export default function Door() {
               {pack ? <Button label="Leave event" icon="trash" size="sm" variant="ghost" onPress={leave} /> : null}
             </View>
           )}
-          {store.queue.length ? (
+          {pendingSync ? (
             <View style={styles.queue}>
               <Icon name="sync" size={16} color={colors.warning} />
               <Txt variant="smallStrong" color={colors.warning} style={{ flex: 1 }}>
-                {store.queue.length} scan{store.queue.length === 1 ? '' : 's'} waiting to sync
+                {[
+                  store.queue.length ? `${store.queue.length} scan${store.queue.length === 1 ? '' : 's'}` : '',
+                  store.guestQueue.length ? `${store.guestQueue.length} guest check-in${store.guestQueue.length === 1 ? '' : 's'}` : '',
+                ]
+                  .filter(Boolean)
+                  .join(' and ')}{' '}
+                waiting to sync
               </Txt>
               <Button label={syncing ? 'Syncing…' : 'Sync now'} size="sm" variant="subtle" loading={syncing} onPress={() => void sync(false)} />
             </View>
@@ -443,54 +638,81 @@ export default function Door() {
               ))}
             </View>
           ) : null}
+          {store.guestConflicts.length ? (
+            <View style={{ gap: space.sm }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                <Txt variant="eyebrow" color={colors.warning} style={{ flex: 1 }}>
+                  Guest list needs a look ({store.guestConflicts.length})
+                </Txt>
+                <Pressable accessibilityRole="button" hitSlop={8} onPress={() => setStore({ ...storeRef.current, guestConflicts: [] })}>
+                  <Txt variant="smallStrong" color={colors.muted}>
+                    Clear
+                  </Txt>
+                </Pressable>
+              </View>
+              {store.guestConflicts.slice(0, 20).map((c) => (
+                <View key={c.opId} style={styles.conflict}>
+                  <Txt variant="smallStrong">
+                    {c.name ?? 'Guest'} · {c.guests} {c.guests === 1 ? 'person' : 'people'}
+                  </Txt>
+                  <Txt variant="small" color={colors.muted}>
+                    {guestConflictText(c)} You checked them in at {clock(c.at)}.
+                  </Txt>
+                </View>
+              ))}
+            </View>
+          ) : null}
         </View>
 
         {/* Manual lookup */}
-        <View style={{ gap: space.sm }}>
-          <Txt variant="h3">Find a guest</Txt>
-          <Field label="Name or ticket number" value={lookup} onChangeText={setLookup} autoCorrect={false} autoCapitalize="none" placeholder="e.g. Ada, or EVT-AB12" />
-          {q.length >= 2 && !online && !pack ? (
-            <Txt variant="small" color={colors.dim}>
-              Download the guest list to search offline.
-            </Txt>
-          ) : null}
-          {q.length >= 2 && online && remote.isPending ? (
-            <Txt variant="small" color={colors.dim}>
-              Searching…
-            </Txt>
-          ) : null}
-          {q.length >= 2 && !hits.length && !(online && remote.isPending) && (online || pack) ? (
-            <Txt variant="small" color={colors.dim}>
-              No guests match “{q}”.
-            </Txt>
-          ) : null}
-          {hits.map((h) => {
-            const done = h.status === 'CHECKED_IN';
-            const can = h.status === 'ACTIVE' || h.status === 'LISTED';
-            return (
-              <View key={h.id} style={styles.hit}>
-                <View style={{ flex: 1, gap: 2 }}>
-                  <Txt variant="bodyStrong" numberOfLines={1}>
-                    {h.name}
-                  </Txt>
-                  <Txt variant="small" color={colors.muted} numberOfLines={1}>
-                    {h.type} · {h.seat}
-                  </Txt>
-                  <Txt variant="mono" color={colors.dim}>
-                    {h.id}
-                  </Txt>
+        {tab === 'scan' ? (
+          <View style={{ gap: space.sm }}>
+            <Txt variant="h3">Find a ticket holder</Txt>
+            <Field label="Name or ticket number" value={lookup} onChangeText={setLookup} autoCorrect={false} autoCapitalize="none" placeholder="e.g. Ada, or EVT-AB12" />
+            {q.length >= 2 && !online && !pack ? (
+              <Txt variant="small" color={colors.dim}>
+                Download the door list to search offline.
+              </Txt>
+            ) : null}
+            {q.length >= 2 && online && remote.isPending ? (
+              <Txt variant="small" color={colors.dim}>
+                Searching…
+              </Txt>
+            ) : null}
+            {q.length >= 2 && !hits.length && !(online && remote.isPending) && (online || pack) ? (
+              <Txt variant="small" color={colors.dim}>
+                No ticket holders match “{q}”.
+              </Txt>
+            ) : null}
+            {hits.map((h) => {
+              const done = h.status === 'CHECKED_IN';
+              const can = h.status === 'ACTIVE' || h.status === 'LISTED';
+              return (
+                <View key={h.id} style={styles.hit}>
+                  <View style={{ flex: 1, gap: 2 }}>
+                    <Txt variant="bodyStrong" numberOfLines={1}>
+                      {h.name}
+                    </Txt>
+                    <Txt variant="small" color={colors.muted} numberOfLines={1}>
+                      {h.type} · {h.seat}
+                      {h.comp ? ` · ${h.comp}` : ''}
+                    </Txt>
+                    <Txt variant="mono" color={colors.dim}>
+                      {h.id}
+                    </Txt>
+                  </View>
+                  {done ? (
+                    <Badge label={h.checkedInAt ? `In · ${clock(h.checkedInAt)}` : 'Checked in'} tone="success" />
+                  ) : can ? (
+                    <Button label="Check in" size="sm" onPress={() => void process(h.id, true)} />
+                  ) : (
+                    <Badge label={h.status === 'TRANSFER_PENDING' ? 'Being transferred' : h.status.toLowerCase()} tone="warning" />
+                  )}
                 </View>
-                {done ? (
-                  <Badge label={h.checkedInAt ? `In · ${clock(h.checkedInAt)}` : 'Checked in'} tone="success" />
-                ) : can ? (
-                  <Button label="Check in" size="sm" onPress={() => void process(h.id, true)} />
-                ) : (
-                  <Badge label={h.status === 'TRANSFER_PENDING' ? 'Being transferred' : h.status.toLowerCase()} tone="warning" />
-                )}
-              </View>
-            );
-          })}
-        </View>
+              );
+            })}
+          </View>
+        ) : null}
       </ScrollView>
 
       {verdict ? <Result v={verdict} onDone={() => setVerdict(null)} /> : null}
@@ -516,6 +738,13 @@ function Result({ v, onDone }: { v: Verdict; onDone: () => void }) {
           <Txt variant="title" color="rgba(255,255,255,0.9)" style={{ textAlign: 'center' }}>
             {v.ticket.ticketType} · {seatText(v.ticket)}
           </Txt>
+          {compLabel(v.ticket) ? (
+            <View style={styles.compTag}>
+              <Txt variant="smallStrong" color="#ffffff">
+                {compLabel(v.ticket)}
+              </Txt>
+            </View>
+          ) : null}
           <Txt variant="mono" color="rgba(255,255,255,0.75)">
             {v.ticket.id}
           </Txt>
@@ -541,7 +770,83 @@ function Result({ v, onDone }: { v: Verdict; onDone: () => void }) {
   );
 }
 
+/** One guest-list entry at the door: who, "2 of 3 here", and check in (one or the whole party) or take one back. */
+function GuestRow({ g, busy, disabled, onIn, onOut }: { g: GuestEntry; busy: boolean; disabled: boolean; onIn: (n: number) => void; onOut: () => void }) {
+  const left = Math.max(0, g.partySize - g.arrived);
+  const full = left === 0;
+  return (
+    <View style={[styles.hit, full && { borderColor: colors.successLine }]}>
+      <View style={{ flex: 1, gap: 3 }}>
+        <Txt variant="bodyStrong" numberOfLines={1}>
+          {g.name}
+        </Txt>
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 6 }}>
+          <Txt variant="smallStrong" color={full ? colors.success : g.arrived ? colors.text : colors.muted}>
+            {hereText(g)}
+          </Txt>
+          {g.group ? <Badge label={g.group} /> : null}
+        </View>
+        {g.note ? (
+          <Txt variant="tiny" color={colors.dim} numberOfLines={2}>
+            {g.note}
+          </Txt>
+        ) : null}
+      </View>
+      {g.partySize === 1 ? (
+        g.arrived ? (
+          <View style={{ alignItems: 'flex-end', gap: 4 }}>
+            <Badge label={g.firstArrivedAt ? `Here · ${clock(g.firstArrivedAt)}` : 'Here'} tone="success" />
+            <Pressable accessibilityRole="button" accessibilityLabel={`Undo ${g.name}’s check-in`} disabled={disabled} hitSlop={8} onPress={onOut}>
+              <Txt variant="smallStrong" color={colors.muted}>
+                Undo
+              </Txt>
+            </Pressable>
+          </View>
+        ) : (
+          <Button label="Check in" size="sm" loading={busy} disabled={disabled} onPress={() => onIn(1)} />
+        )
+      ) : (
+        <View style={{ alignItems: 'flex-end', gap: 6 }}>
+          <View style={styles.guestStepper}>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={`One fewer of ${g.name}’s party here`}
+              accessibilityState={{ disabled: disabled || !g.arrived }}
+              disabled={disabled || !g.arrived}
+              onPress={onOut}
+              style={({ pressed }) => [styles.stepBtn, (disabled || !g.arrived) && { opacity: 0.35 }, pressed && { backgroundColor: colors.surface2 }]}>
+              <Icon name="minus" size={18} />
+            </Pressable>
+            <Txt variant="title" accessibilityLiveRegion="polite" style={{ minWidth: 44, textAlign: 'center' }}>
+              {g.arrived}/{g.partySize}
+            </Txt>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={`One more of ${g.name}’s party here`}
+              accessibilityState={{ disabled: disabled || full }}
+              disabled={disabled || full}
+              onPress={() => onIn(1)}
+              style={({ pressed }) => [styles.stepBtn, (disabled || full) && { opacity: 0.35 }, pressed && { backgroundColor: colors.surface2 }]}>
+              <Icon name="plus" size={18} />
+            </Pressable>
+          </View>
+          {left > 1 ? (
+            <Pressable accessibilityRole="button" accessibilityLabel={`Check in all ${left} still to come in ${g.name}’s party`} disabled={disabled} hitSlop={8} onPress={() => onIn(left)}>
+              <Txt variant="smallStrong" color={colors.accent}>
+                {g.arrived ? `All ${left} more` : `All ${left} in`}
+              </Txt>
+            </Pressable>
+          ) : null}
+        </View>
+      )}
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
+  guestStepper: { flexDirection: 'row', alignItems: 'center', gap: 2, borderWidth: 1, borderColor: colors.line2, borderRadius: radius.pill, padding: 3 },
+  stepBtn: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
+  compTag: { paddingHorizontal: 12, paddingVertical: 5, borderRadius: radius.pill, backgroundColor: 'rgba(0,0,0,0.22)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.3)' },
   counterRow: { flexDirection: 'row', alignItems: 'center', gap: space.md, padding: space.lg, borderRadius: radius.card, borderWidth: 1, borderColor: colors.line, backgroundColor: colors.surface },
   camTools: { position: 'absolute', right: space.md, top: space.md, gap: space.sm },
   undo: { flexDirection: 'row', alignItems: 'center', gap: space.sm, minHeight: 44, paddingHorizontal: space.lg, borderRadius: radius.pill, borderWidth: 1, borderColor: colors.line2 },

@@ -1,6 +1,6 @@
 import { QueryClientProvider } from '@tanstack/react-query';
 import { useFonts } from 'expo-font';
-import { DarkTheme, Stack, ThemeProvider } from 'expo-router';
+import { DarkTheme, DefaultTheme, Stack, ThemeProvider } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect } from 'react';
@@ -12,13 +12,15 @@ import { PlaceProvider } from '@/lib/place';
 import { PushLinks } from '@/lib/push';
 import { queryClient } from '@/lib/query';
 import { SavedSync } from '@/lib/saved';
-import { colors, fontAssets } from '@/theme';
+import { AppearanceSync } from '@/lib/appearance';
+import { colors, fontAssets, scheme } from '@/theme';
 
 SplashScreen.preventAutoHideAsync().catch(() => undefined);
 
+const base = scheme === 'light' ? DefaultTheme : DarkTheme;
 const theme = {
-  ...DarkTheme,
-  colors: { ...DarkTheme.colors, primary: colors.accent, background: colors.bg, card: colors.bg, text: colors.text, border: colors.line, notification: colors.accent },
+  ...base,
+  colors: { ...base.colors, primary: colors.accent, background: colors.bg, card: colors.bg, text: colors.text, border: colors.line, notification: colors.accent },
 };
 
 export default function RootLayout() {
@@ -37,7 +39,9 @@ export default function RootLayout() {
         <AuthProvider>
           <PlaceProvider>
             <ThemeProvider value={theme}>
-              <StatusBar style="light" />
+              <StatusBar style={scheme === 'light' ? 'dark' : 'light'} />
+              {/* With "Match my phone", reloads in the new palette when the phone switches light/dark. */}
+              <AppearanceSync />
               {/* Tapping a notification opens its screen (data.path); mounted with the navigator so it can navigate. */}
               <PushLinks />
               {/* Hearts saved while signed out move into the account at sign-in. */}

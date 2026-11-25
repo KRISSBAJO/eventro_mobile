@@ -1,11 +1,13 @@
 /**
  * The screen after a paid order, for both checkouts: what was bought, the order number, the push offer, and the
- * way to the tickets. A resale order (one fan's ticket, re-issued to the buyer) links straight to its ticket.
+ * way to the tickets. A resale order (one fan's ticket, re-issued to the buyer) links straight to its ticket. A
+ * donation added at checkout has its own line; a $0 order says it was free.
  */
 import { router } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { ScrollView, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { DONATION_NO_REFUND, donationLabel } from '@/lib/donations';
 import { localStamp, money, when } from '@/lib/format';
 import { enablePush, markPushOffered, shouldOfferPush } from '@/lib/push';
 import type { Order } from '@/lib/types';
@@ -79,6 +81,7 @@ export function CheckoutSuccess({ order, eventSlug, testMode, signedIn, resale }
   // Delivery runs right after payment, so a gift that's due now is on its way; read once so rendering stays pure.
   const [scheduled] = useState(() => !!order.gift && new Date(order.gift.sendAt).getTime() > Date.now() + 60_000);
   const ticketId = resale ? order.tickets[0]?.id : undefined;
+  const donation = order.donationCents ?? 0;
   return (
     <ScrollView style={{ flex: 1, backgroundColor: colors.bg }} contentContainerStyle={{ padding: gutter, paddingTop: insets.top + space.xxxl, paddingBottom: insets.bottom + space.xxxl, gap: space.lg }}>
       <View style={{ alignItems: 'center', gap: space.md }}>
@@ -131,9 +134,22 @@ export function CheckoutSuccess({ order, eventSlug, testMode, signedIn, resale }
             </View>
           ))}
         </View>
+        {donation ? (
+          <View style={{ gap: 4, paddingTop: space.sm, borderTopWidth: 1, borderTopColor: colors.line }}>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', gap: space.md }}>
+              <Txt variant="small" color={colors.muted} style={{ flex: 1 }}>
+                {donationLabel(order.donationCause)}
+              </Txt>
+              <Txt variant="smallStrong">{money(donation, order.currency, { decimals: donation % 100 !== 0 })}</Txt>
+            </View>
+            <Txt variant="tiny" color={colors.dim}>
+              {`Thank you. ${DONATION_NO_REFUND}`}
+            </Txt>
+          </View>
+        ) : null}
         <View style={{ flexDirection: 'row', justifyContent: 'space-between', paddingTop: space.sm, borderTopWidth: 1, borderTopColor: colors.line }}>
-          <Txt variant="bodyStrong">Total paid</Txt>
-          <Txt variant="price">{money(order.totalCents, order.currency)}</Txt>
+          <Txt variant="bodyStrong">{order.totalCents ? 'Total paid' : 'Total'}</Txt>
+          <Txt variant="price">{order.totalCents ? money(order.totalCents, order.currency) : 'Free'}</Txt>
         </View>
       </Card>
 

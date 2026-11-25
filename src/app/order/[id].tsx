@@ -1,6 +1,7 @@
 /**
- * One order: the receipt (tickets and seats, price lines, total, currency, payment status) and refund requests
- * (POST /orders/:id/refund-requests { reason }, 10–1000 characters, paid orders only, one open at a time).
+ * One order: the receipt (tickets and seats, price lines, a donation's own line, total, currency, payment status) and
+ * refund requests (POST /orders/:id/refund-requests { reason }, 10–1000 characters, paid orders only, one open at a
+ * time). A comp (kind COMP) is a complimentary ticket from the organizer: nothing was paid, so there's no refund.
  */
 import { useQueryClient } from '@tanstack/react-query';
 import { router, useLocalSearchParams } from 'expo-router';
@@ -12,6 +13,7 @@ import { TierChip } from '@/components/tier-look';
 import { Badge, Button, Card, EmptyState, ErrorState, Field, Notice, Skeleton, Txt } from '@/components/ui';
 import { api, ApiError, errorText } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
+import { DONATION_NO_REFUND, donationLabel } from '@/lib/donations';
 import { localStamp, money, when } from '@/lib/format';
 import { haptic } from '@/lib/haptics';
 import { orderStatus, providerLabel, REFUND_REASON_MAX, REFUND_REASON_MIN, refundStatus, useOrder } from '@/lib/orders';
@@ -61,16 +63,19 @@ function Receipt({ o }: { o: Order }) {
   const requests = o.refundRequests ?? [];
   const latest = requests[0] ?? null;
   const open = latest?.status === 'OPEN';
-  const canAsk = o.status === 'PAID' && !open;
+  const comp = o.kind === 'COMP';
+  const canAsk = o.status === 'PAID' && !open && !comp;
+  const donation = o.donationCents ?? 0;
+  const donationBack = o.donationRefundedCents ?? 0;
 
   return (
     <>
       <Card style={{ gap: space.md }}>
         <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: space.md }}>
           <Txt variant="eyebrow" color={colors.dim}>
-            Receipt
+            {comp ? 'Complimentary ticket' : 'Receipt'}
           </Txt>
-          <Badge label={s.label} tone={s.tone} />
+          <Badge label={comp ? (o.compGroup ? `Comp · ${o.compGroup}` : 'Comp') : s.label} tone={comp ? 'plain' : s.tone} />
         </View>
         <Pressable accessibilityRole="link" onPress={() => router.push({ pathname: '/event/[slug]', params: { slug: o.event.slug } })} hitSlop={6}>
           <Txt variant="title">{o.event.title}</Txt>
@@ -94,21 +99,34 @@ function Receipt({ o }: { o: Order }) {
         </View>
 
         <View style={styles.block}>
-          <Line label={`${o.quantity} × ${o.ticketType.name} at ${money(o.unitCents, o.currency)}`} value={money(o.subtotalCents, o.currency)} />
-          <Line label="Service and facility fees" value="Included" />
+          {comp ? (
+            <Line label={`${o.quantity} × ${o.ticketType.name}, complimentary`} value="Free" />
+          ) : (
+            <>
+              <Line label={`${o.quantity} × ${o.ticketType.name} at ${money(o.unitCents, o.currency)}`} value={money(o.subtotalCents, o.currency)} />
+              <Line label="Service and facility fees" value="Included" />
+            </>
+          )}
           {o.protectionCents ? <Line label="Ticket protection" value={money(o.protectionCents, o.currency)} /> : null}
           {o.discountCents ? <Line label={`Promo ${o.promoCode ?? ''}`.trim()} value={`−${money(o.discountCents, o.currency)}`} tone={colors.success} /> : null}
+          {donation ? <Line label={donationLabel(o.donationCause)} value={money(donation, o.currency, { decimals: donation % 100 !== 0 })} /> : null}
         </View>
         <View style={[styles.line, { alignItems: 'flex-end' }]}>
           <View>
             <Txt variant="bodyStrong">Total</Txt>
             <Txt variant="small" color={colors.dim}>
-              {o.currency} · fees included
+              {o.currency} · fees included{donation ? ', donation included' : ''}
             </Txt>
           </View>
-          <Txt variant="priceLg">{money(o.totalCents, o.currency)}</Txt>
+          <Txt variant="priceLg">{o.totalCents ? money(o.totalCents, o.currency) : 'Free'}</Txt>
         </View>
         {refunded ? <Line label="Refunded" value={`−${money(refunded, o.currency)}`} tone={colors.success} /> : null}
+        {donationBack ? <Line label="Donation refunded" value={`−${money(donationBack, o.currency, { decimals: donationBack % 100 !== 0 })}`} tone={colors.success} /> : null}
+        {donation ? (
+          <Txt variant="tiny" color={colors.dim}>
+            {`${DONATION_NO_REFUND} If the event is cancelled, the donation is refunded with the order.`}
+          </Txt>
+        ) : null}
 
         <View style={styles.block}>
           <Line label="Payment" value={providerLabel(o.provider)} />
@@ -118,7 +136,13 @@ function Receipt({ o }: { o: Order }) {
         </View>
       </Card>
 
-      {o.gift ? (
+      {comp ? (
+        <Notice tone="plain" icon="gift" title={o.compGroup ? `Complimentary ticket · ${o.compGroup}` : 'Complimentary ticket'}>
+          The organizer gave you this ticket, so nothing was paid and there’s nothing to refund. It isn’t covered by the Eventro Guarantee.
+        </Notice>
+      ) : null}
+
+      {o.gift && !comp ? (
         <Notice tone="plain" icon="gift" title={`A gift for ${o.gift.recipientName}`}>
           {o.gift.claimedAt ? 'They’ve opened it: the tickets are in their account.' : o.gift.sentAt ? `Sent to ${o.gift.recipientEmail}. Waiting for them to open it.` : `Goes to ${o.gift.recipientEmail} on ${localStamp(new Date(o.gift.sendAt).getTime())}.`}
         </Notice>
@@ -126,7 +150,7 @@ function Receipt({ o }: { o: Order }) {
 
       {latest ? <RefundState r={latest} currency={o.currency} /> : null}
       {canAsk ? <RefundForm orderId={o.id} again={!!latest} /> : null}
-      {o.status !== 'PAID' && !latest ? (
+      {o.status !== 'PAID' && !latest && !comp ? (
         <Txt variant="small" color={colors.dim}>
           {o.status === 'PENDING' ? 'Refunds can be asked for once the order is paid.' : 'This order has already been refunded or cancelled.'}
         </Txt>

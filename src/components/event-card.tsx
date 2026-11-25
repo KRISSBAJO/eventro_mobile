@@ -26,7 +26,7 @@ function ResaleBadge({ glass }: { glass?: boolean }) {
   return (
     <View style={[styles.resale, glass && styles.resaleGlass]} accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
       <Icon name="tag" size={11} color={colors.accentHi} strokeWidth={2.4} />
-      <Txt variant="tiny" color={glass ? colors.text : colors.accentHi} numberOfLines={1}>
+      <Txt variant="tiny" color={glass ? colors.onImage : colors.accentHi} numberOfLines={1}>
         Resale
       </Txt>
     </View>
@@ -40,7 +40,7 @@ function DateTile({ iso }: { iso: string }) {
       <Txt variant="eyebrow" color={colors.accent} style={{ fontSize: 10, lineHeight: 12 }}>
         {d.month}
       </Txt>
-      <Txt variant="h3" style={{ lineHeight: 21 }}>
+      <Txt variant="h3" color={colors.onImage} style={{ lineHeight: 21 }}>
         {d.day}
       </Txt>
     </View>
@@ -67,10 +67,10 @@ export function LargeEventCard({ e, width = 280, distanceKm }: { e: Ev; width?: 
         </View>
         <View style={styles.largeBottom}>
           {hasResale(e) ? <ResaleBadge glass /> : null}
-          <Txt variant="h3" numberOfLines={1}>
+          <Txt variant="h3" color={colors.onImage} numberOfLines={1}>
             {e.title}
           </Txt>
-          <Txt variant="small" color="rgba(247,242,242,0.8)" numberOfLines={1}>
+          <Txt variant="small" color={colors.onImageSoft} numberOfLines={1}>
             {e.subtitle}
           </Txt>
         </View>

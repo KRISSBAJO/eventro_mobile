@@ -2,8 +2,9 @@
  * Organizer tools: the API's shapes (GET/POST … /organizer/*), data hooks, roles and the small calculations the
  * screens share. The website (eventro/components/org-*.tsx) is the reference for how each one behaves.
  *
- * Roles (the API's organizer.service.ts): ADMIN does everything; MANAGER runs events (create, edit, promos, pause,
- * recent orders) but not payouts, the team or cancelling; DOOR only scans tickets.
+ * Roles (the API's organizer.service.ts): ADMIN does everything; MANAGER runs events (create, edit, promos, comps and
+ * the guest list, pause, recent orders) but not payouts, the team or cancelling; DOOR scans tickets, checks guests in
+ * and can see (not change) comps and the guest list.
  */
 import { useQuery } from '@tanstack/react-query';
 import * as WebBrowser from 'expo-web-browser';
@@ -11,7 +12,7 @@ import { api, qs, WEB_URL } from './api';
 import { useAuth } from './auth';
 import { haptic } from './haptics';
 import type { EventBooking } from './bookings';
-import type { Attendee, Category, MyOrg } from './types';
+import type { Attendee, Category, GuestList, MyOrg } from './types';
 import { colors } from '@/theme';
 import type { TierLook } from './tiers';
 
@@ -22,7 +23,7 @@ export const ROLE_NAME: Record<string, string> = { ADMIN: 'Admin', MANAGER: 'Man
 export const ROLE_INFO: Record<OrgRole, string> = {
   ADMIN: 'Everything, including payouts, the team and cancelling events.',
   MANAGER: 'Create and edit events, promo codes and sales. No payouts or team.',
-  DOOR: 'Scan tickets at the door. Nothing else.',
+  DOOR: 'Scan tickets and check in the guest list at the door. Can see comps, not issue them.',
 };
 /** Create and edit events, promos, pause sales, recent orders. */
 export const canEdit = (role: string | undefined) => role === 'ADMIN' || role === 'MANAGER';
@@ -49,6 +50,21 @@ export type OrgTicketType = {
   style?: TierLook | null;
   /** the look fans see (style, else from the name) */
   look?: TierLook;
+  /** pay what you want: base amounts (`priceCents` is then the all-in price of the minimum). Older APIs leave them out. */
+  pricing?: 'FIXED' | 'PWYW';
+  pwywMinCents?: number | null;
+  pwywSuggestedCents?: number | null;
+  pwywMaxCents?: number | null;
+  pwywQuickPicks?: number[];
+};
+
+/** An event's donation settings (GET /organizer/events/:id; also what create and edit send). */
+export type DonationSettings = {
+  donationsEnabled?: boolean;
+  donationCause?: string | null;
+  donationDescription?: string | null;
+  donationSuggestedCents?: number[];
+  donationMinCents?: number | null;
 };
 
 /** GET /organizer/orgs/:orgId/events */
@@ -79,10 +95,13 @@ export type OrgEvent = {
   grossCents: number;
   /** 60 days, oldest first, the last entry is today */
   daily: { tickets: number[]; cents: number[] };
+  /** donations, net of refunds (separate from ticket sales), and live comps issued */
+  donationsCents?: number;
+  comps?: number;
 };
 
 /** GET /organizer/events/:id (the event row with its venue, promos and media) */
-export type OrgEventDetail = {
+export type OrgEventDetail = DonationSettings & {
   id: string;
   orgId: string;
   slug: string;
@@ -109,18 +128,105 @@ export type OrgEventDetail = {
   previewToken?: string | null;
   /** The venue booked on Eventro for this event: it can't be submitted for review until this is CONFIRMED */
   venueBooking?: EventBooking | null;
+  /** most live comps the event allows (null: no limit) */
+  compLimit?: number | null;
 };
 
-/** GET /organizer/events/:id/stats */
+/**
+ * GET /organizer/events/:id/stats. `sold`, revenue and daily numbers are sales only: comps, the guest list and
+ * donations are counted separately (older APIs leave those blocks out).
+ */
 export type EventStats = {
   sold: number;
   capacity: number;
   grossCents: number;
   netCents: number;
   checkedIn: number;
-  byTicketType: { id: string; name: string; sold: number; capacity: number; priceCents: number }[];
+  byTicketType: { id: string; name: string; sold: number; capacity: number; priceCents: number; comps?: number }[];
   daily: { date: string; tickets: number; cents: number }[];
+  /** cents: net of donation refunds */
+  donations?: { orders: number; cents: number; refundedCents: number; cause: string | null };
+  comps?: { issued: number; claimed: number; checkedIn: number; revoked: number; limit: number | null };
+  guestList?: { entries: number; expected: number; arrived: number };
 };
+
+/* ---------- donations ---------- */
+
+/** One order with a donation on it (sales and resale orders): GET /organizer/events/:id/donations `items`. */
+export type DonationOrder = {
+  orderId: string;
+  buyerName: string;
+  email: string;
+  currency: string;
+  donationCents: number;
+  donationRefundedCents: number;
+  /** what can still be refunded */
+  leftCents: number;
+  /** the cause when they bought (the event's may have changed since) */
+  cause: string | null;
+  status: 'PAID' | 'PARTIALLY_REFUNDED' | 'REFUNDED';
+  paidAt: string | null;
+  resale: boolean;
+};
+
+/**
+ * GET /organizer/events/:id/donations (admins, managers and door staff), newest first, up to 500. `cause` is the
+ * event's current cause; `canRefund` is true for org admins (POST …/orders/:orderId/refund-donation).
+ */
+export type EventDonations = { cause: string | null; canRefund: boolean; summary: { orders: number; cents: number; refundedCents: number }; items: DonationOrder[] };
+
+/** POST /organizer/events/:id/orders/:orderId/refund-donation. `donationOwedCents` > 0: already paid out, owed to Eventro. */
+export type DonationRefund = {
+  id: string;
+  status: string;
+  refundedCents: number;
+  totalCents: number;
+  donationCents: number;
+  donationRefundedCents: number;
+  donationCause: string | null;
+  currency: string;
+  refundedNowCents: number;
+  donationOwedCents: number;
+};
+
+/* ---------- comps ---------- */
+
+export type CompStatus = 'SENT' | 'CLAIMED' | 'CHECKED_IN' | 'REVOKED';
+
+/** One comp: a real ticket on a $0 order, emailed to its holder to claim (GET/POST /organizer/events/:id/comps). */
+export type Comp = {
+  orderId: string;
+  ticketId: string;
+  name: string;
+  email: string;
+  group: string | null;
+  note: string | null;
+  status: CompStatus;
+  ticketType: { id: string; name: string };
+  section: string | null;
+  row: string | null;
+  seat: number | null;
+  issuedAt: string;
+  issuedBy: { id: string; name: string } | null;
+  claimedAt: string | null;
+  checkedInAt: string | null;
+  revokedAt: string | null;
+};
+
+/** GET /organizer/events/:id/comps (`issued` counts live comps; `remaining` = limit − issued, or null) */
+export type CompList = { limit: number | null; summary: { issued: number; claimed: number; checkedIn: number; revoked: number; remaining: number | null }; items: Comp[] };
+
+export const COMP_STATUS: Record<CompStatus, { label: string; tone: 'plain' | 'success' | 'warning' | 'accent' }> = {
+  SENT: { label: 'Sent', tone: 'warning' },
+  CLAIMED: { label: 'Claimed', tone: 'plain' },
+  CHECKED_IN: { label: 'Checked in', tone: 'success' },
+  REVOKED: { label: 'Revoked', tone: 'accent' },
+};
+
+/** Groups offered for comps and guest-list entries (anything else can be typed; the API allows 40 characters). */
+export const GROUPS = ['Press', 'Artist', 'Sponsor', 'Crew'];
+export const GROUP_MAX = 40;
+export const COMP_MAX = 200;
 
 /** GET /organizer/orgs/:orgId/orders/recent */
 export type RecentOrder = { id: string; buyerName: string; quantity: number; totalCents: number; currency: string; paidAt: string; ticketType: { name: string }; event: { title: string } };
@@ -134,7 +240,15 @@ export type Payouts = {
   nextPayoutCents: number;
   payoutMethod: { provider: 'stripe' | 'paystack'; bankLast4: string | null; bankName: string | null; accountName: string | null; country: string | null; updatedAt: string | null } | null;
   holdUntil: string | null;
-  history: { salesDate: string; amountCents: number; status: 'PAID' }[];
+  /** amountCents = ticketCents + donationCents (older APIs send amountCents only) */
+  history: { salesDate: string; amountCents: number; ticketCents?: number; donationCents?: number; status: 'PAID' }[];
+  /** donations inside pendingCents / nextPayoutCents, and the last 31 days' (net) */
+  pendingDonationCents?: number;
+  nextPayoutDonationCents?: number;
+  donationsCents?: number;
+  donationNote?: string;
+  /** all-time donation refunds made after the organizer had been paid for the order: owed to Eventro (0 normally) */
+  donationOwedCents?: number;
 };
 
 /** GET /organizer/events/:id/price-drops */
@@ -249,11 +363,35 @@ export function useGuaranteeRefunds(id: string | undefined, enabled = true) {
   return useQuery({ queryKey: ['organizer', 'guarantee-refunds', id], queryFn: () => api<GuaranteeRefunds>(`/organizer/events/${enc(id!)}/guarantee-refunds`), enabled: on && !!id && enabled, staleTime: 60_000, retry: 0 });
 }
 
-export function useAttendees(id: string | undefined, q: string, status: '' | 'checked-in' | 'not-checked-in') {
+export function useAttendees(id: string | undefined, q: string, status: '' | 'checked-in' | 'not-checked-in', type: '' | 'paid' | 'comp' = '') {
   const on = useSignedIn();
   return useQuery({
-    queryKey: ['organizer', 'attendees', id, q, status],
-    queryFn: ({ signal }) => api<Attendee[]>(`/organizer/events/${enc(id!)}/attendees${qs({ q: q.trim() || undefined, status: status || undefined })}`, { signal }),
+    queryKey: ['organizer', 'attendees', id, q, status, type],
+    queryFn: ({ signal }) => api<Attendee[]>(`/organizer/events/${enc(id!)}/attendees${qs({ q: q.trim() || undefined, status: status || undefined, type: type || undefined })}`, { signal }),
+    enabled: on && !!id,
+    staleTime: 10_000,
+    placeholderData: (prev) => prev,
+  });
+}
+
+/** The orders with a donation on the event (admins, managers and door staff; others get 403/404, so no retry). */
+export function useEventDonations(id: string | undefined) {
+  const on = useSignedIn();
+  return useQuery({ queryKey: ['organizer', 'donations', id], queryFn: () => api<EventDonations>(`/organizer/events/${enc(id!)}/donations`), enabled: on && !!id, staleTime: 15_000, retry: 0 });
+}
+
+/** The event's comps (admins, managers and door staff). */
+export function useComps(id: string | undefined) {
+  const on = useSignedIn();
+  return useQuery({ queryKey: ['organizer', 'comps', id], queryFn: () => api<CompList>(`/organizer/events/${enc(id!)}/comps`), enabled: on && !!id, staleTime: 10_000 });
+}
+
+/** The event's guest list (admins, managers and door staff); `q` searches name, email and group. */
+export function useGuestList(id: string | undefined, q = '') {
+  const on = useSignedIn();
+  return useQuery({
+    queryKey: ['organizer', 'guest-list', id, q.trim()],
+    queryFn: ({ signal }) => api<GuestList>(`/organizer/events/${enc(id!)}/guest-list${qs({ q: q.trim() || undefined })}`, { signal }),
     enabled: on && !!id,
     staleTime: 10_000,
     placeholderData: (prev) => prev,

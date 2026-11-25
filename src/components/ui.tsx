@@ -97,7 +97,7 @@ export function IconButton({ icon, label, onPress, glass, size = touch, color = 
         pressed && { opacity: 0.75, transform: [{ scale: 0.95 }] },
         style,
       ]}>
-      <Icon name={icon} size={Math.round(size * 0.45)} color={color} />
+      <Icon name={icon} size={Math.round(size * 0.45)} color={glass && color === colors.text ? colors.onImage : color} />
     </Pressable>
   );
 }
@@ -129,7 +129,7 @@ export function Badge({ label, tone = 'plain', style }: { label: string; tone?: 
     accent: { bg: colors.accentSoft, border: colors.accentLine, fg: colors.accentHi },
     success: { bg: colors.successSoft, border: colors.successLine, fg: colors.success },
     warning: { bg: colors.warningSoft, border: 'rgba(245,165,36,0.35)', fg: colors.warning },
-    glass: { bg: colors.glass, border: 'rgba(255,255,255,0.16)', fg: colors.text },
+    glass: { bg: colors.glass, border: 'rgba(255,255,255,0.16)', fg: colors.onImage },
   }[tone];
   return (
     <View style={[styles.badge, { backgroundColor: t.bg, borderColor: t.border }, style]}>

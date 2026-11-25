@@ -20,6 +20,9 @@ const TABS: { name: string; title: string; icon: IconName }[] = [
 const BAR = 72;
 /** The raised Create button: a circle that sits above the bar's top edge. */
 const FAB = 56;
+/** Each tab's capsule (icon over label); the active one is tinted. */
+const TAB_W = 64;
+const TAB_H = 50;
 
 /**
  * The raised "Create" button in the middle of the tab bar. It isn't a tab: it opens the organizer flow on top.
@@ -69,9 +72,13 @@ export default function TabsLayout() {
       options={{
         title: t.title,
         tabBarAccessibilityLabel: `${t.title} tab`,
+        // Each tab draws its own capsule (icon and label together), so the active state has one clean, even shape.
         tabBarIcon: ({ focused }) => (
-          <View style={[styles.icon, focused && styles.iconOn]}>
-            <Icon name={t.icon} size={21} color={focused ? colors.accentInk : colors.muted} />
+          <View style={[styles.tab, focused && styles.tabOn]}>
+            <Icon name={t.icon} size={21} color={focused ? colors.accent : colors.muted} strokeWidth={focused ? 2.3 : 2} />
+            <Txt numberOfLines={1} style={styles.tabLabel} color={focused ? colors.text : colors.muted}>
+              {t.title}
+            </Txt>
           </View>
         ),
       }}
@@ -86,8 +93,9 @@ export default function TabsLayout() {
         sceneStyle: { backgroundColor: colors.bg, paddingBottom: BAR + gap + 6 },
         tabBarActiveTintColor: colors.text,
         tabBarInactiveTintColor: colors.muted,
-        tabBarLabelPosition: 'below-icon',
-        tabBarLabelStyle: { fontFamily: font.body.semibold, fontSize: 11, marginTop: 2, lineHeight: 14 },
+        // Labels are drawn inside each tab's capsule (tabBarIcon), not by the bar.
+        tabBarShowLabel: false,
+        tabBarIconStyle: { width: TAB_W, height: TAB_H },
         tabBarStyle: {
           position: 'absolute',
           bottom: gap,
@@ -127,8 +135,9 @@ export default function TabsLayout() {
 }
 
 const styles = StyleSheet.create({
-  icon: { width: 52, height: 28, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
-  iconOn: { backgroundColor: colors.accent, shadowColor: colors.accent, shadowOpacity: 0.5, shadowRadius: 10, shadowOffset: { width: 0, height: 4 } },
+  tab: { width: TAB_W, height: TAB_H, borderRadius: 16, alignItems: 'center', justifyContent: 'center', gap: 3, borderWidth: 1, borderColor: 'transparent' },
+  tabOn: { backgroundColor: colors.accentSoft, borderColor: colors.accentLine },
+  tabLabel: { fontFamily: font.body.semibold, fontSize: 11, lineHeight: 14 },
   fabSlot: { flex: 1, alignItems: 'center', justifyContent: 'flex-end', paddingBottom: 2 },
   fab: {
     position: 'absolute',

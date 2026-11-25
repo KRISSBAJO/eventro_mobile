@@ -10,6 +10,9 @@
  *
  * Tickets: preset tiles (as on the website) add a tier with suggested perks and badge, slotted in by rank; each tier
  * has a perks checklist, an optional badge and a look (Auto from the name, or one of six), with a live mini ticket.
+ * Each tier is a fixed price or pay what you want (a minimum, an optional suggested price, up to four quick picks and
+ * an optional maximum: lib/pwyw.ts). Donations (optional, lib/donations.ts) let fans add a donation to a named cause
+ * at checkout. An optional comp limit (`compLimit`, sent only when set) caps the complimentary tickets live at once.
  *
  * "Book a venue on Eventro" sits next to the organizer's own venue: search the venues taking bookings, request a
  * time there (POST …/venue-bookings, held for 48 hours), and the event is saved with `venueBookingId`, in the
@@ -28,14 +31,16 @@ import { DateField, dateLabel, TimeField, timeLabel } from '@/components/date-ti
 import { Icon } from '@/components/icons';
 import { BookingBadge, BookingRequestForm, BookingRow, TermsCard, VenueSearch } from '@/components/booking-ui';
 import { CoverUpload } from '@/components/cover-upload';
+import { DonationFields } from '@/components/donation-fields';
 import { ChoiceRow, ChoiceTile, GradientButton, Section } from '@/components/form-ui';
 import { Label, OrgScreen, WebButton } from '@/components/org-ui';
 import { StockPicker } from '@/components/stock-picker';
-import { TierExtras, TierPresets } from '@/components/tier-editor';
+import { PricingMode, PwywFields, TierExtras, TierPresets, type Pricing } from '@/components/tier-editor';
 import { placeErrors, VenueFields, type VenuePlace } from '@/components/venue-fields';
 import { Button, Chip, EmptyState, Field, Notice, TextArea, Txt } from '@/components/ui';
 import { api, errorText } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
+import { donationBody, donationErrors, NO_DONATIONS, type DonationDraft } from '@/lib/donations';
 import { CATEGORY_NAME, countryName, currencyForCountry, currencySymbol, money, PAYSTACK, todayYmd } from '@/lib/format';
 import { haptic } from '@/lib/haptics';
 import {
@@ -49,6 +54,7 @@ import {
   webPaths,
 } from '@/lib/organizer';
 import { isLiveBooking, rangeLabel, useBooking, useOrgBookings, type Booking, type ListingResult } from '@/lib/bookings';
+import { NO_PWYW, pwywBody, pwywErrors, type PwywDraft } from '@/lib/pwyw';
 import { useMyOrgs } from '@/lib/queries';
 import type { UploadedCover } from '@/lib/media-upload';
 import { defaultCover } from '@/lib/stock-covers';
@@ -61,9 +67,9 @@ const STEPS = ['Basics', 'When and where', 'Tickets', 'Cover photo', 'Review'];
 const SHORT = ['Basics', 'When & where', 'Tickets', 'Cover', 'Review'];
 const CATEGORIES = Object.keys(CATEGORY_NAME) as Category[];
 
-/** One ticket type; `style` null is Auto (the look comes from the name). */
-type Tier = { key: string; name: string; price: string; qty: string; perks: string[]; badge: string; style: TierLook | null };
-const newTier = (name = '', perks: string[] = [], badge = ''): Tier => ({ key: `t${Date.now()}${Math.random().toString(36).slice(2, 6)}`, name, price: '', qty: '', perks, badge, style: null });
+/** One ticket type; `style` null is Auto (the look comes from the name). `pwyw` is used when `pricing` is PWYW. */
+type Tier = { key: string; name: string; price: string; qty: string; perks: string[]; badge: string; style: TierLook | null; pricing: Pricing; pwyw: PwywDraft };
+const newTier = (name = '', perks: string[] = [], badge = ''): Tier => ({ key: `t${Date.now()}${Math.random().toString(36).slice(2, 6)}`, name, price: '', qty: '', perks, badge, style: null, pricing: 'FIXED', pwyw: NO_PWYW });
 type Draft = {
   title: string;
   category: Category | '';
@@ -94,6 +100,10 @@ type Draft = {
   currencyChosen: boolean;
   feeMode: 'BUYER' | 'ORGANIZER';
   tiers: Tier[];
+  /** charity donations at checkout (optional) */
+  donations: DonationDraft;
+  /** the most live comps (a whole number; empty: no limit) */
+  compLimit: string;
   cover: string;
 };
 
@@ -122,7 +132,9 @@ const EMPTY: Draft = {
   currency: '',
   currencyChosen: false,
   feeMode: 'BUYER',
-  tiers: [{ key: 't0', name: 'General admission', price: '', qty: '', perks: [], badge: '', style: null }],
+  tiers: [{ key: 't0', name: 'General admission', price: '', qty: '', perks: [], badge: '', style: null, pricing: 'FIXED', pwyw: NO_PWYW }],
+  donations: NO_DONATIONS,
+  compLimit: '',
   cover: '',
 };
 
@@ -158,13 +170,19 @@ function validate(step: number, d: Draft, today: string) {
     if (!d.tiers.length) e.tiers = 'Add at least one ticket type.';
     for (const t of d.tiers) {
       if (!t.name.trim()) e[`${t.key}-name`] = 'Name this ticket.';
-      const p = parseMoney(t.price);
-      if (p === null) e[`${t.key}-price`] = 'Enter a price (0 for free).';
-      else if (p > 0 && p < 100) e[`${t.key}-price`] = `Paid tickets start at ${money(100, d.currency || 'USD')}.`;
+      if (t.pricing === 'PWYW') Object.assign(e, pwywErrors(t.pwyw, t.key, d.currency || 'USD'));
+      else {
+        const p = parseMoney(t.price);
+        if (p === null) e[`${t.key}-price`] = 'Enter a price (0 for free).';
+        else if (p > 0 && p < 100) e[`${t.key}-price`] = `Paid tickets start at ${money(100, d.currency || 'USD')}.`;
+      }
       const q = Number(t.qty);
       if (!Number.isInteger(q) || q < 1) e[`${t.key}-qty`] = 'Enter a quantity.';
       else if (q > 200_000) e[`${t.key}-qty`] = 'At most 200,000.';
     }
+    for (const [k, v] of Object.entries(donationErrors(d.donations))) e[`donation-${k}`] = v;
+    const limit = d.compLimit.trim() ? Number(d.compLimit) : null;
+    if (limit !== null && (!Number.isInteger(limit) || limit < 0)) e.compLimit = 'A whole number, or leave it empty for no limit.';
   }
   if (step === 3 && !d.cover) e.cover = 'Pick a cover photo.';
   return e;
@@ -305,12 +323,15 @@ export default function CreateEvent() {
             visibility: 'PUBLIC',
             ticketTypes: d.tiers.map((t) => ({
               name: t.name.trim(),
-              basePriceCents: parseMoney(t.price) ?? 0,
+              // Pay what you want: the API ignores the base price (sent as 0) and uses the PWYW amounts.
+              ...(t.pricing === 'PWYW' ? { basePriceCents: 0, ...pwywBody(t.pwyw) } : { basePriceCents: parseMoney(t.price) ?? 0 }),
               capacity: Number(t.qty),
               ...(t.perks.length ? { perks: cleanPerks(t.perks) } : {}),
               ...(t.badge.trim() ? { badge: t.badge.trim() } : {}),
               ...(t.style ? { style: t.style } : {}),
             })),
+            ...(d.donations.on ? donationBody(d.donations) : {}),
+            ...(d.compLimit.trim() ? { compLimit: Number(d.compLimit) } : {}),
           },
         });
         id = ev.id;
@@ -357,8 +378,8 @@ export default function CreateEvent() {
     </View>
   );
 
-  // What the event card will look like, for the cover and review steps.
-  const lowest = d.tiers.map((t) => parseMoney(t.price)).filter((p): p is number => p !== null).sort((a, b) => a - b)[0];
+  // What the event card will look like, for the cover and review steps (a pay-what-you-want tier from its minimum).
+  const lowest = d.tiers.map((t) => parseMoney(t.pricing === 'PWYW' ? t.pwyw.min : t.price)).filter((p): p is number => p !== null).sort((a, b) => a - b)[0];
   const preview: PreviewProps = {
     cover: d.cover,
     title: d.title.trim() || 'Your event name',
@@ -587,9 +608,12 @@ export default function CreateEvent() {
             </Txt>
           ) : null}
           {d.tiers.map((t, i) => {
+            const pwyw = t.pricing === 'PWYW';
             const base = parseMoney(t.price);
             const fan = base !== null ? buyerPrice(base, d.feeMode) : null;
             const you = base !== null && fan !== null ? (d.feeMode === 'BUYER' ? base : organizerNet(fan, 'ORGANIZER')) : null;
+            const pwMin = parseMoney(t.pwyw.min);
+            const shown = pwyw ? (pwMin === null ? undefined : pwMin > 0 ? `From ${money(buyerPrice(pwMin, d.feeMode), cur)}` : 'Any amount') : fan ? money(fan, cur) : base === 0 ? 'Free' : undefined;
             return (
               <View key={t.key} style={styles.tier}>
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.sm }}>
@@ -605,23 +629,33 @@ export default function CreateEvent() {
                   ) : null}
                 </View>
                 <Field label="Name" placeholder="General admission" value={t.name} onChangeText={(v) => patchTier(t.key, { name: v })} maxLength={60} error={errors[`${t.key}-name`]} />
-                <View style={styles.row2}>
-                  <Field style={{ flex: 1 }} label={`Your price (${currencySymbol(cur)})`} placeholder="0 = free" keyboardType="decimal-pad" value={t.price} onChangeText={(v) => patchTier(t.key, { price: v.replace(/[^\d.]/g, '') })} error={errors[`${t.key}-price`]} />
-                  <Field style={{ flex: 1 }} label="Quantity" placeholder="100" keyboardType="number-pad" value={t.qty} onChangeText={(v) => patchTier(t.key, { qty: v.replace(/\D/g, '') })} error={errors[`${t.key}-qty`]} />
-                </View>
-                {fan ? (
-                  <Txt variant="small" color={colors.muted}>
-                    Fans pay {money(fan, cur)} all-in · you get {money(you ?? 0, cur)}
-                  </Txt>
-                ) : base === 0 ? (
-                  <Txt variant="small" color={colors.muted}>
-                    Free ticket
-                  </Txt>
-                ) : null}
+                <PricingMode value={t.pricing} onChange={(pricing) => patchTier(t.key, { pricing })} />
+                {pwyw ? (
+                  <>
+                    <Field label="Quantity" placeholder="100" keyboardType="number-pad" value={t.qty} onChangeText={(v) => patchTier(t.key, { qty: v.replace(/\D/g, '') })} error={errors[`${t.key}-qty`]} />
+                    <PwywFields value={t.pwyw} onChange={(p) => patchTier(t.key, { pwyw: { ...t.pwyw, ...p } })} currency={cur} feeMode={d.feeMode} errors={errors} errorKey={t.key} />
+                  </>
+                ) : (
+                  <>
+                    <View style={styles.row2}>
+                      <Field style={{ flex: 1 }} label={`Your price (${currencySymbol(cur)})`} placeholder="0 = free" keyboardType="decimal-pad" value={t.price} onChangeText={(v) => patchTier(t.key, { price: v.replace(/[^\d.]/g, '') })} error={errors[`${t.key}-price`]} />
+                      <Field style={{ flex: 1 }} label="Quantity" placeholder="100" keyboardType="number-pad" value={t.qty} onChangeText={(v) => patchTier(t.key, { qty: v.replace(/\D/g, '') })} error={errors[`${t.key}-qty`]} />
+                    </View>
+                    {fan ? (
+                      <Txt variant="small" color={colors.muted}>
+                        Fans pay {money(fan, cur)} all-in · you get {money(you ?? 0, cur)}
+                      </Txt>
+                    ) : base === 0 ? (
+                      <Txt variant="small" color={colors.muted}>
+                        Free ticket
+                      </Txt>
+                    ) : null}
+                  </>
+                )}
                 <View style={styles.tierDivider} />
                 <TierExtras
                   name={t.name}
-                  price={fan ? money(fan, cur) : base === 0 ? 'Free' : undefined}
+                  price={shown}
                   value={{ perks: t.perks, badge: t.badge, style: t.style }}
                   onChange={(patch) => patchTier(t.key, patch)}
                 />
@@ -645,6 +679,27 @@ export default function CreateEvent() {
               <Chip label="Fans pay it" active={d.feeMode === 'BUYER'} onPress={() => set('feeMode', 'BUYER')} />
               <Chip label="I absorb it" active={d.feeMode === 'ORGANIZER'} onPress={() => set('feeMode', 'ORGANIZER')} />
             </View>
+          </Section>
+
+          <Section icon="heart" title="Donations" sub="Optional. Let fans add a donation to a cause when they check out.">
+            <DonationFields
+              value={d.donations}
+              onChange={(p) => setD((x) => ({ ...x, donations: { ...x.donations, ...p } }))}
+              currency={cur}
+              errors={{ cause: errors['donation-cause'], description: errors['donation-description'], suggested: errors['donation-suggested'], min: errors['donation-min'] }}
+            />
+          </Section>
+
+          <Section icon="gift" title="Comps" sub="Optional. Complimentary tickets for press, artists, sponsors and crew are issued after saving.">
+            <Field
+              label="Comp limit (optional)"
+              placeholder="No limit"
+              keyboardType="number-pad"
+              value={d.compLimit}
+              onChangeText={(v) => set('compLimit', v.replace(/\D/g, ''))}
+              error={errors.compLimit}
+              hint={errors.compLimit ? undefined : 'The most complimentary tickets that can be live at once. Revoked comps don’t count.'}
+            />
           </Section>
           <Notice tone="plain" icon="seat" title="Reserved seating?">
             Save the event first, then design its seat map on the website. Ticket quantities follow the map.
@@ -709,9 +764,13 @@ export default function CreateEvent() {
             />
             {d.tiers.map((t) => {
               const base = parseMoney(t.price) ?? 0;
+              const min = parseMoney(t.pwyw.min) ?? 0;
+              const price = t.pricing === 'PWYW' ? `Pay what you want${min ? `, from ${money(min, cur)}` : ''}` : base ? `${money(buyerPrice(base, d.feeMode), cur)} all-in` : 'Free';
               const extras = [t.badge.trim(), t.perks.length ? `${t.perks.length} ${t.perks.length === 1 ? 'perk' : 'perks'}` : ''].filter(Boolean).join(', ');
-              return <ReviewLine key={t.key} icon="ticket" text={`${t.name.trim()} · ${base ? `${money(buyerPrice(base, d.feeMode), cur)} all-in` : 'Free'} · ${Number(t.qty).toLocaleString('en-US')}${extras ? ` · ${extras}` : ''}`} onEdit={() => setStep(2)} />;
+              return <ReviewLine key={t.key} icon="ticket" text={`${t.name.trim()} · ${price} · ${Number(t.qty).toLocaleString('en-US')}${extras ? ` · ${extras}` : ''}`} onEdit={() => setStep(2)} />;
             })}
+            {d.donations.on ? <ReviewLine icon="heart" text={`Donations to ${d.donations.cause.trim()}`} onEdit={() => setStep(2)} /> : null}
+            {d.compLimit.trim() ? <ReviewLine icon="gift" text={`Up to ${Number(d.compLimit).toLocaleString('en-US')} ${Number(d.compLimit) === 1 ? 'comp' : 'comps'} at once`} onEdit={() => setStep(2)} /> : null}
           </View>
           {d.format === 'book' && d.booking ? (
             <Txt variant="small" color={colors.dim}>
@@ -796,7 +855,7 @@ function Mini({ label, onPress, disabled, rotate, icon = 'chevronDown' }: { labe
   );
 }
 
-function ReviewLine({ icon, text, onEdit }: { icon: 'tag' | 'calendar' | 'pin' | 'stream' | 'ticket'; text: string; onEdit: () => void }) {
+function ReviewLine({ icon, text, onEdit }: { icon: 'tag' | 'calendar' | 'pin' | 'stream' | 'ticket' | 'heart' | 'gift'; text: string; onEdit: () => void }) {
   return (
     <Pressable accessibilityRole="button" accessibilityLabel={`${text}. Edit`} onPress={onEdit} style={({ pressed }) => [styles.line, pressed && { opacity: 0.7 }]}>
       <Icon name={icon} size={17} color={colors.muted} />

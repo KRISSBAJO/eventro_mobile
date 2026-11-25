@@ -22,7 +22,7 @@ import { useMyVenues } from '@/lib/bookings';
 import { useHealth, useMyOrgs } from '@/lib/queries';
 import { pendingDoorScans } from '@/lib/door';
 import { pendingClaims } from '@/lib/guarantee';
-import { colors, gutter, radius, space } from '@/theme';
+import { appearance, colors, gutter, radius, space } from '@/theme';
 
 const openWeb = (path: string) => {
   haptic.select();
@@ -48,11 +48,11 @@ export default function Account() {
   // An in-app sheet, not Alert/window.confirm: the web build's confirm can be blocked (it then returns false at
   // once, and Sign out did nothing).
   const confirmSignOut = async () => {
-    // Door scans made offline and not synced yet are deleted with everything else this phone kept.
+    // Door scans and guest-list check-ins made offline and not synced yet are deleted with everything else this phone kept.
     const pending = await pendingDoorScans().catch(() => 0);
     const claims = pendingClaims();
     const warn =
-      (pending ? ` ${pending} door scan${pending === 1 ? '' : 's'} on this phone haven’t synced yet and will be lost.` : '') +
+      (pending ? ` ${pending} door check-in${pending === 1 ? '' : 's'} on this phone ${pending === 1 ? 'hasn’t' : 'haven’t'} synced yet and will be lost.` : '') +
       (claims ? ` ${claims === 1 ? 'An Eventro Guarantee claim' : `${claims} Eventro Guarantee claims`} saved on this phone ${claims === 1 ? 'hasn’t' : 'haven’t'} been sent yet and will be lost.` : '');
     const yes = await ask({ title: 'Sign out?', message: `Your tickets stay in your account. Sign in again to see them here.${warn}`, confirmLabel: 'Sign out', destructive: true });
     if (!yes) return;
@@ -145,6 +145,8 @@ export default function Account() {
         <Row icon="heart" label="Saved events" onPress={() => router.push('/saved')} />
         <Divider style={{ marginLeft: 62 }} />
         <Row icon="pin" label="Location" detail={placeLabel(place)} onPress={() => router.push('/place')} />
+        <Divider style={{ marginLeft: 62 }} />
+        <Row icon="sun" label="Appearance" detail={appearance === 'system' ? 'Match my phone' : appearance === 'light' ? 'Light' : 'Dark'} onPress={() => router.push('/appearance')} />
         {user ? (
           <>
             <Divider style={{ marginLeft: 62 }} />

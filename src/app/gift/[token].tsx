@@ -4,6 +4,10 @@
  *   scheduled  a wrapped box and the date it opens, nothing else (no peeking)
  *   ready      "Open your gift" reveals the tickets, the sender's message, and "Add to my tickets" (sign in first)
  *   claimed    a calm note that it's been added to an account
+ *   cancelled  a comp the organizer revoked
+ *
+ * A comp (`comp: true`) is a complimentary ticket from the organizer, claimed the same way: "You're on the guest
+ * list", from the organizer, with its group ("Press", "Artist"…); it skips the wrapping.
  *
  * GET /gifts/:token is public; POST /gifts/:token/claim needs a signed-in account (any email: the link is the proof).
  */
@@ -15,7 +19,7 @@ import { Animated, Easing, Platform, ScrollView, StyleSheet, View } from 'react-
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Icon } from '@/components/icons';
 import { TierBadge, TierGlyph, TierSurface } from '@/components/tier-look';
-import { Button, EmptyState, IconButton, Notice, Skeleton, Txt } from '@/components/ui';
+import { Badge, Button, EmptyState, IconButton, Notice, Skeleton, Txt } from '@/components/ui';
 import { api, ApiError, errorText } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { firstName, localStamp, money, when } from '@/lib/format';
@@ -82,9 +86,26 @@ export default function GiftScreen() {
               Times are shown in your time zone.
             </Txt>
           </View>
+        ) : gift.status === 'cancelled' ? (
+          <View style={styles.center}>
+            <View style={styles.doneIcon}>
+              <Icon name="close" size={32} color={colors.muted} />
+            </View>
+            <Txt variant="eyebrow" color={colors.accent}>
+              {gift.comp ? `Complimentary ticket from ${gift.from}` : `Gift from ${gift.from}`}
+            </Txt>
+            <Txt variant="h1" style={{ textAlign: 'center' }}>
+              {gift.comp ? 'This complimentary ticket was cancelled by the organizer.' : 'This gift was cancelled.'}
+            </Txt>
+            <Txt color={colors.muted} style={{ textAlign: 'center' }}>
+              {gift.event ? `It no longer works for ${gift.event.title}. ` : 'It no longer works. '}
+              If you think that’s a mistake, contact the organizer.
+            </Txt>
+            {gift.event ? <Button label="See the event" variant="ghost" onPress={() => router.replace({ pathname: '/event/[slug]', params: { slug: gift.event!.slug } })} /> : null}
+          </View>
         ) : gift.status === 'claimed' ? (
           <Claimed gift={gift} />
-        ) : !opened ? (
+        ) : !opened && !gift.comp ? (
           <View style={styles.center}>
             <Txt variant="eyebrow" color={colors.accent}>
               A gift for {gift.to}
@@ -142,10 +163,10 @@ function Claimed({ gift }: { gift: Gift }) {
         <Icon name="check" size={32} color={colors.muted} />
       </View>
       <Txt variant="eyebrow" color={colors.accent}>
-        Gift from {gift.from}
+        {gift.comp ? `Complimentary ticket from ${gift.from}` : `Gift from ${gift.from}`}
       </Txt>
       <Txt variant="h1" style={{ textAlign: 'center' }}>
-        This gift has been added to an account
+        {gift.comp ? 'This ticket has been added to an account' : 'This gift has been added to an account'}
       </Txt>
       <Txt color={colors.muted} style={{ textAlign: 'center' }}>
         {gift.event ? `The tickets to ${gift.event.title} have been opened. ` : 'It’s been opened. '}
@@ -189,6 +210,7 @@ function Revealed({ gift, token, onStatus }: { gift: Gift; token: string; onStat
       else if (/no tickets left/i.test(message)) setClaim({ kind: 'empty' });
       else if (/already been claimed/i.test(message)) onStatus('claimed');
       else if (/delivered yet/i.test(message)) onStatus('scheduled');
+      else if (/cancel/i.test(message)) onStatus('cancelled');
       else setClaim({ kind: 'error', message });
     }
   };
@@ -196,12 +218,17 @@ function Revealed({ gift, token, onStatus }: { gift: Gift; token: string; onStat
   return (
     <Animated.View style={{ width: '100%', gap: space.xl, alignItems: 'center', opacity: fade, transform: [{ translateY: fade.interpolate({ inputRange: [0, 1], outputRange: [16, 0] }) }] }}>
       <Txt variant="eyebrow" color={colors.accent}>
-        A gift from {gift.from}
+        {gift.comp ? `Complimentary ticket from ${gift.from}` : `A gift from ${gift.from}`}
       </Txt>
       <Txt variant="h1" style={{ textAlign: 'center' }}>
-        You’ve got tickets, {firstName(gift.to)}!
+        {gift.comp ? 'You’re on the guest list' : `You’ve got tickets, ${firstName(gift.to)}!`}
       </Txt>
-      {gift.message ? (
+      {gift.comp && gift.group ? <Badge label={gift.group} tone="accent" style={{ alignSelf: 'center' }} /> : null}
+      {gift.comp && !gift.message ? (
+        <Txt color={colors.muted} style={{ textAlign: 'center' }}>
+          {`${gift.from} added you${e ? ` to ${e.title}` : ''}. It’s free: add it to your tickets for the QR code at the door.`}
+        </Txt>
+      ) : gift.message ? (
         <View style={{ gap: 6, alignItems: 'center' }}>
           <Txt variant="small" color={colors.muted}>
             From {gift.from}:
@@ -242,7 +269,7 @@ function Revealed({ gift, token, onStatus }: { gift: Gift; token: string; onStat
                 {gift.seats.map((s) => [s.sectionName, s.row ? `Row ${s.row}` : '', s.seat ? `Seat ${s.seat}` : ''].filter(Boolean).join(' · ')).join('\n')}
               </Txt>
             ) : null}
-            {gift.totalCents !== undefined && gift.currency ? (
+            {gift.totalCents !== undefined && gift.currency && !gift.comp ? (
               <Txt variant="small" color={colors.inkMuted}>
                 Worth {money(gift.totalCents, gift.currency)}
               </Txt>

@@ -39,7 +39,7 @@ export function HeartButton({
         pressed && { transform: [{ scale: 0.9 }] },
         style,
       ]}>
-      <Icon name="heart" size={Math.round(size * 0.5)} color={on ? colors.accent : colors.text} fill={on ? colors.accent : undefined} />
+      <Icon name="heart" size={Math.round(size * 0.5)} color={on ? colors.accent : glass ? colors.onImage : colors.text} fill={on ? colors.accent : undefined} />
     </Pressable>
   );
 }

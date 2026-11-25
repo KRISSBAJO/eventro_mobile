@@ -10,10 +10,11 @@ import { Button, Chip, ErrorState, FadeIn, focusRing, Notice, SectionHeader, Ske
 import { errorText, isOffline } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { BROWSE_CATEGORIES, CATEGORY_NAME, cityOnly, countryName, distanceLabel, firstName, flag, greeting } from '@/lib/format';
+import { openGuaranteeTerms } from '@/lib/guarantee';
 import { haptic } from '@/lib/haptics';
 import { nearestCountry, placeLabel, placeOptions, placeShort, preciseLocation, rankNear, shortCity, usePlace } from '@/lib/place';
 import { useAllEvents, useEventsBetween, useEventsNear, useTrendingEvents } from '@/lib/queries';
-import { colors, gutter, radius, space } from '@/theme';
+import { colors, gutter, radius, scheme, space } from '@/theme';
 
 const SHOW = 8;
 
@@ -25,19 +26,23 @@ const WHEN_PILLS = [
   { id: 'month', label: 'This month', icon: 'calendar' },
 ] as const;
 
-/** Each browse category's icon and tint on Discover. */
-const CATEGORY_LOOK: Partial<Record<string, { icon: IconName; color: string }>> = {
-  CONCERTS: { icon: 'music', color: '#a78bfa' },
-  SPORTS: { icon: 'trophy', color: '#34d399' },
-  COMEDY: { icon: 'smile', color: '#fbbf24' },
-  THEATER: { icon: 'mask', color: '#f472b6' },
-  FESTIVALS: { icon: 'flag', color: '#fb923c' },
-  FAMILY: { icon: 'users', color: '#38bdf8' },
-  FAITH: { icon: 'sun', color: '#2dd4bf' },
-  NIGHTLIFE: { icon: 'moon', color: '#818cf8' },
-  FOOD: { icon: 'food', color: '#a3e635' },
-  CONFERENCE: { icon: 'mic', color: '#94a3b8' },
+/**
+ * Each browse category's icon and colour on Discover: bright on dark, and a deeper shade of the same hue on light
+ * (the bright ones wash out on cream).
+ */
+const CATEGORY_LOOK: Partial<Record<string, { icon: IconName; color: string; deep: string }>> = {
+  CONCERTS: { icon: 'music', color: '#a78bfa', deep: '#6d28d9' },
+  SPORTS: { icon: 'trophy', color: '#34d399', deep: '#047857' },
+  COMEDY: { icon: 'smile', color: '#fbbf24', deep: '#b45309' },
+  THEATER: { icon: 'mask', color: '#f472b6', deep: '#be185d' },
+  FESTIVALS: { icon: 'flag', color: '#fb923c', deep: '#c2410c' },
+  FAMILY: { icon: 'users', color: '#38bdf8', deep: '#0369a1' },
+  FAITH: { icon: 'sun', color: '#2dd4bf', deep: '#0f766e' },
+  NIGHTLIFE: { icon: 'moon', color: '#818cf8', deep: '#4338ca' },
+  FOOD: { icon: 'food', color: '#a3e635', deep: '#4d7c0f' },
+  CONFERENCE: { icon: 'mic', color: '#94a3b8', deep: '#334155' },
 };
+const LIGHT = scheme === 'light';
 
 const initialsOf = (name: string) =>
   name
@@ -295,7 +300,8 @@ export default function Discover() {
         <SectionHeader eyebrow="Browse" title="What are you into?" />
         <View style={styles.cats}>
           {BROWSE_CATEGORIES.map((c) => {
-            const look = CATEGORY_LOOK[c] ?? { icon: 'tag' as IconName, color: colors.accent };
+            const base = CATEGORY_LOOK[c] ?? { icon: 'tag' as IconName, color: colors.accent, deep: colors.accent };
+            const look = { icon: base.icon, color: LIGHT ? base.deep : base.color };
             const n = catCounts[c] ?? 0;
             return (
               <Pressable
@@ -306,8 +312,13 @@ export default function Discover() {
                   haptic.select();
                   router.push({ pathname: '/category/[category]', params: { category: c } });
                 }}
-                style={({ pressed }) => [styles.catTile, { backgroundColor: `${look.color}10`, borderColor: `${look.color}26` }, pressed && { transform: [{ scale: 0.97 }] }]}>
-                <View style={[styles.catIcon, { backgroundColor: `${look.color}22`, borderColor: `${look.color}40` }]}>
+                style={({ pressed }) => [
+                  styles.catTile,
+                  // Light: white cards with a firm edge and a solid tinted icon tile; dark: soft tints of each hue.
+                  LIGHT ? { backgroundColor: colors.surface, borderColor: colors.line2 } : { backgroundColor: `${look.color}10`, borderColor: `${look.color}26` },
+                  pressed && { transform: [{ scale: 0.97 }] },
+                ]}>
+                <View style={[styles.catIcon, LIGHT ? { backgroundColor: `${look.color}1f`, borderColor: `${look.color}55` } : { backgroundColor: `${look.color}22`, borderColor: `${look.color}40` }]}>
                   <Icon name={look.icon} size={19} color={look.color} />
                 </View>
                 <View style={{ flex: 1, gap: 2 }}>
@@ -368,15 +379,52 @@ export default function Discover() {
       ) : null}
 
       <View style={{ paddingHorizontal: gutter, marginTop: space.xxxl }}>
-        <Notice tone="plain" icon="shield" title="Covered by the Eventro Guarantee">
-          If a paid ticket doesn’t scan at the door, you get that ticket’s money back, fees included. If an event is cancelled, you’re refunded in full. Prices include fees, always.
-        </Notice>
+        <GuaranteeCard />
       </View>
     </ScrollView>
   );
 }
 
+/** The Eventro Guarantee in one line and two ticks; the tap opens the full terms (comps, donations, timing). */
+function GuaranteeCard() {
+  return (
+    <Pressable
+      accessibilityRole="link"
+      accessibilityLabel="Eventro Guarantee: ticket doesn’t scan? Money back, fees included. Full refund if the event is cancelled. Opens the full terms."
+      onPress={openGuaranteeTerms}
+      style={({ pressed }) => [styles.promise, pressed && { opacity: 0.85 }]}>
+      <View style={styles.promiseTop}>
+        <View style={styles.promiseIcon}>
+          <Icon name="shield" size={20} color={colors.accent} />
+        </View>
+        <View style={{ flex: 1, gap: 2 }}>
+          <Txt variant="eyebrow" color={colors.accent}>
+            Eventro Guarantee
+          </Txt>
+          <Txt variant="title">Doesn’t scan? Money back.</Txt>
+        </View>
+        <Icon name="chevronRight" size={18} color={colors.dim} />
+      </View>
+      <View style={styles.promisePoints}>
+        {['Fees included', 'Full refund if cancelled'].map((p) => (
+          <View key={p} style={styles.promisePoint}>
+            <Icon name="check" size={13} color={colors.success} strokeWidth={2.8} />
+            <Txt variant="tiny" color={colors.muted}>
+              {p}
+            </Txt>
+          </View>
+        ))}
+      </View>
+    </Pressable>
+  );
+}
+
 const styles = StyleSheet.create({
+  promise: { padding: space.lg, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.line2, backgroundColor: colors.surface, gap: space.md },
+  promiseTop: { flexDirection: 'row', alignItems: 'center', gap: space.md },
+  promiseIcon: { width: 40, height: 40, borderRadius: 12, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.accentSoft, borderWidth: 1, borderColor: colors.accentLine },
+  promisePoints: { flexDirection: 'row', flexWrap: 'wrap', columnGap: space.lg, rowGap: 6, paddingTop: space.md, borderTopWidth: 1, borderTopColor: colors.line },
+  promisePoint: { flexDirection: 'row', alignItems: 'center', gap: 5 },
   glow: { position: 'absolute', top: 0, left: 0, right: 0 },
   header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: gutter, gap: space.md, minHeight: 44 },
   avatar: { width: 40, height: 40, borderRadius: 20, backgroundColor: colors.surface2, borderWidth: 2, borderColor: colors.accent, alignItems: 'center', justifyContent: 'center' },
@@ -398,7 +446,7 @@ const styles = StyleSheet.create({
   searchRow: { flexDirection: 'row', alignItems: 'center', gap: space.sm, marginHorizontal: gutter, marginTop: space.xl },
   filterBtn: { width: 52, height: 52, borderRadius: 26, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: colors.line2, backgroundColor: colors.surface },
   whenRow: { gap: space.sm, paddingHorizontal: gutter, paddingTop: space.md },
-  whenPill: { flexDirection: 'row', alignItems: 'center', gap: 6, height: 36, paddingHorizontal: 14, borderRadius: radius.pill, borderWidth: 1, borderColor: colors.line2, backgroundColor: 'rgba(26,18,20,0.7)' },
+  whenPill: { flexDirection: 'row', alignItems: 'center', gap: 6, height: 36, paddingHorizontal: 14, borderRadius: radius.pill, borderWidth: 1, borderColor: colors.line2, backgroundColor: colors.surface },
   fakeSearch: {
     flex: 1,
     flexDirection: 'row',

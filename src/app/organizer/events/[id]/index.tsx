@@ -1,7 +1,9 @@
 /**
  * One event's dashboard: live numbers (GET /organizer/events/:id/stats: sales by ticket type, revenue, check-ins and
- * 30 days of sales), quick actions (scan, pause / resume sales, share the link, edit), attendees, promo codes,
- * price drops, the seat map (on the web) and, for org admins, cancelling. Drafts are submitted for review here.
+ * 30 days of sales), quick actions (scan, pause / resume sales, share the link, edit), attendees, comps, the guest
+ * list, promo codes, price drops, the seat map (on the web) and, for org admins, cancelling. Drafts are submitted for
+ * review here. Ticket sales, donations, comps and guest-list arrivals are reported separately: sales and revenue
+ * never include comps or donations.
  *
  * An event held at a venue booked on Eventro (`venueBooking`) shows the booking's status; it can't be submitted
  * until the venue confirms (the API answers 409 VENUE_BOOKING_PENDING), and a booking that fell through
@@ -22,6 +24,7 @@ import { Button, Divider, EmptyState, ErrorState, Notice, Row, Skeleton, Txt } f
 import { api, errorText } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { localMoment, rangeLabel } from '@/lib/bookings';
+import { donationLabel } from '@/lib/donations';
 import { money, num, when } from '@/lib/format';
 import { haptic } from '@/lib/haptics';
 import {
@@ -297,7 +300,24 @@ export default function EventDashboard() {
             <StatTile label="Sold" value={num(s.sold)} sub={`of ${num(s.capacity)}`} />
             <StatTile label="Checked in" value={num(s.checkedIn)} sub={s.sold ? `${Math.round((s.checkedIn / s.sold) * 100)}% of sold` : 'No tickets yet'} tone={s.checkedIn ? 'success' : undefined} />
           </TileRow>
-          <StatTile label="Revenue" value={money(s.grossCents, e.currency)} sub={`You get ${money(s.netCents, e.currency)} after Eventro’s fee`} />
+          <StatTile label="Revenue" value={money(s.grossCents, e.currency)} sub={`Ticket sales. You get ${money(s.netCents, e.currency)} after Eventro’s fee`} />
+          {s.donations && (s.donations.orders > 0 || e.donationsEnabled) ? (
+            <StatTile
+              label="Donations"
+              value={money(s.donations.cents, e.currency)}
+              sub={`${donationLabel(s.donations.cause ?? e.donationCause)}: ${num(s.donations.orders)} ${s.donations.orders === 1 ? 'order' : 'orders'}, no fee taken.${s.donations.refundedCents ? ` ${money(s.donations.refundedCents, e.currency)} refunded.` : ''} Separate from ticket sales; you pass it on to the cause.`}
+            />
+          ) : null}
+          {s.comps || s.guestList ? (
+            <TileRow>
+              {s.comps ? (
+                <StatTile label="Comps" value={num(s.comps.issued)} sub={`${s.comps.limit !== null ? `of ${num(s.comps.limit)} · ` : ''}${num(s.comps.claimed)} claimed · ${num(s.comps.checkedIn)} in`} />
+              ) : null}
+              {s.guestList ? (
+                <StatTile label="Guest list" value={`${num(s.guestList.arrived)} of ${num(s.guestList.expected)}`} sub={`here · ${num(s.guestList.entries)} ${s.guestList.entries === 1 ? 'entry' : 'entries'}`} tone={s.guestList.arrived ? 'success' : undefined} />
+              ) : null}
+            </TileRow>
+          ) : null}
 
           {anySales ? (
             <View style={styles.card}>
@@ -315,10 +335,11 @@ export default function EventDashboard() {
                     {t.name}
                   </Txt>
                   <Txt variant="small" color={colors.muted}>
-                    {num(t.sold)} / {num(t.capacity)} · {t.priceCents ? money(t.priceCents, e.currency) : 'Free'}
+                    {num(t.sold)} / {num(t.capacity)}
+                    {t.comps ? ` + ${num(t.comps)} comp${t.comps === 1 ? '' : 's'}` : ''} · {e.ticketTypes.find((x) => x.id === t.id)?.pricing === 'PWYW' ? 'Pay what you want' : t.priceCents ? money(t.priceCents, e.currency) : 'Free'}
                   </Txt>
                 </View>
-                <Progress value={t.sold} max={t.capacity} />
+                <Progress value={t.sold + (t.comps ?? 0)} max={t.capacity} />
               </View>
             ))}
           </View>
@@ -350,6 +371,10 @@ export default function EventDashboard() {
 
       <Group>
         <Row icon="users" label="Attendees" detail={s ? `${num(s.sold)}` : undefined} onPress={() => router.push({ pathname: '/organizer/events/[id]/attendees', params: { id: e.id } })} />
+        <Divider style={{ marginLeft: 62 }} />
+        <Row icon="gift" label="Comps" detail={s?.comps ? `${num(s.comps.issued)}` : undefined} onPress={() => router.push({ pathname: '/organizer/events/[id]/comps', params: { id: e.id } })} />
+        <Divider style={{ marginLeft: 62 }} />
+        <Row icon="file" label="Guest list" detail={s?.guestList ? `${num(s.guestList.arrived)} of ${num(s.guestList.expected)}` : undefined} onPress={() => router.push({ pathname: '/organizer/events/[id]/guest-list', params: { id: e.id } })} />
         {editor ? (
           <>
             <Divider style={{ marginLeft: 62 }} />
@@ -372,7 +397,7 @@ export default function EventDashboard() {
 
       <WebButton label="Open on the web" path={webPaths.event(e.id)} />
       {!editor && role ? (
-        <EmptyState compact icon="lock" title="Door staff view" body="Ask an admin to make you a manager to edit this event or see its promo codes." />
+        <EmptyState compact icon="lock" title="Door staff view" body="You can scan tickets, check guests in and see comps. Ask an admin to make you a manager to edit this event, issue comps or see its promo codes." />
       ) : null}
     </OrgScreen>
   );

@@ -15,9 +15,11 @@ import { Inter_600SemiBold } from '@expo-google-fonts/inter/600SemiBold';
 import { Inter_700Bold } from '@expo-google-fonts/inter/700Bold';
 import { RedditMono_500Medium } from '@expo-google-fonts/reddit-mono/500Medium';
 import { RedditMono_600SemiBold } from '@expo-google-fonts/reddit-mono/600SemiBold';
-import type { TextStyle } from 'react-native';
+import { Appearance, type TextStyle } from 'react-native';
+import { readAppearance } from './lib/theme-store';
 
-export const colors = {
+/** The current, dark palette. */
+const DARK = {
   bg: '#0f0a0b',
   bg2: '#140d0f',
   surface: '#1a1214',
@@ -49,7 +51,65 @@ export const colors = {
   paper: '#f3f1ec',
   ink: '#0d0d0f',
   inkMuted: '#55555c',
+  /** Text and icons laid over photos (which keep a dark fade in both themes) */
+  onImage: '#f7f2f2',
+  onImageSoft: 'rgba(247,242,242,0.8)',
 } as const;
+
+export type Palette = { [K in keyof typeof DARK]: string };
+
+/**
+ * Light: Eventro red (deepened to #D63A2B so text and white-on-red buttons pass contrast on light backgrounds) on
+ * warm cream, with white cards. Photos keep their dark fade and white text (fade, glass, onImage), so event imagery
+ * reads the same in both themes.
+ */
+const LIGHT: Palette = {
+  bg: '#faf7f5',
+  bg2: '#f4efec',
+  surface: '#ffffff',
+  surface2: '#f3ecea',
+  field: '#ffffff',
+  // Light needs firmer edges than dark: on cream, faint borders and soft greys look washed out.
+  fieldLine: 'rgba(28,20,22,0.24)',
+  line: 'rgba(28,20,22,0.12)',
+  line2: 'rgba(28,20,22,0.20)',
+  text: '#16100f',
+  muted: '#544a4c',
+  dim: '#766b6d',
+  accent: '#d63a2b',
+  accentHi: '#b8321f',
+  accentInk: '#ffffff',
+  accentSoft: 'rgba(214,58,43,0.10)',
+  accentLine: 'rgba(214,58,43,0.32)',
+  success: '#17824a',
+  successSoft: 'rgba(23,130,74,0.10)',
+  successLine: 'rgba(23,130,74,0.30)',
+  warning: '#a35f00',
+  warningSoft: 'rgba(163,95,0,0.10)',
+  scrim: 'rgba(28,20,22,0.45)',
+  glass: 'rgba(15,10,11,0.6)',
+  fade0: 'rgba(15,10,11,0)',
+  fade: 'rgba(15,10,11,0.85)',
+  paper: '#f3f1ec',
+  ink: '#0d0d0f',
+  inkMuted: '#55555c',
+  onImage: '#f7f2f2',
+  onImageSoft: 'rgba(247,242,242,0.8)',
+};
+
+/** What the person picked in Account → Appearance. "system" follows the phone's light/dark setting. */
+export type AppearanceChoice = 'dark' | 'light' | 'system';
+export const APPEARANCES: AppearanceChoice[] = ['system', 'light', 'dark'];
+
+const saved = readAppearance();
+/** The saved choice; the phone's setting until the person picks one. */
+export const appearance: AppearanceChoice = saved === 'dark' || saved === 'light' || saved === 'system' ? saved : 'system';
+/**
+ * The palette in use, fixed for this run of the app: screens build their styles from it when they load, so changing
+ * the appearance saves the choice and reloads the app (lib/appearance.ts).
+ */
+export const scheme: 'dark' | 'light' = appearance === 'system' ? (Appearance.getColorScheme() === 'light' ? 'light' : 'dark') : appearance;
+export const colors: Palette = scheme === 'light' ? LIGHT : DARK;
 
 export const radius = {
   sm: 10,

@@ -3,7 +3,10 @@
  * (eventro components/checkout.tsx, CheckoutForResale). The hold (key, expiry, prices, seat, tier) comes from memory
  * (lib/resale-hold.ts), never the route; the event's details from GET /events/:slug.
  *
- * One seat from a fan: no promo codes, protection or gifting. POST /resale/:id/orders { holdKey, email, name }, then
+ * One seat from a fan: no promo codes, protection or gifting. When the event takes donations (GET /events/:slug
+ * `donations`), the same optional "Add a donation to {cause}" as the normal checkout (lib/donations.ts): no Eventro fee,
+ * the seller's payout is unchanged, and it's its own summary line; it's fixed once the order exists.
+ * POST /resale/:id/orders { holdKey, email, name, donationCents } (the total is the price plus the donation), then
  * the same payment completion as the normal checkout (mock: POST /orders/:id/pay; Paystack's page then
  * POST /orders/:id/verify; Stripe's in-app sheet then verify). The browser build has no card sheet, so the event
  * screen sends Stripe buyers to the website instead of holding here. The hold lasts 10 minutes: when the timer ends
@@ -15,6 +18,7 @@ import { router, useLocalSearchParams } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
 import { AppState, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { AmountPicker } from '@/components/amount-picker';
 import { CheckoutSuccess } from '@/components/checkout-success';
 import { FacePill, GuaranteeTermsLink, RESALE_PROMISE } from '@/components/fan-resale';
 import { GradientButton, Section } from '@/components/form-ui';
@@ -24,6 +28,7 @@ import { Button, EmptyState, ErrorState, Field, IconButton, Notice, Skeleton, Tx
 import { api, errorText } from '@/lib/api';
 import { emailOk, useAuth } from '@/lib/auth';
 import { NATIVE, openPaystack, providerFor, sleep } from '@/lib/checkout';
+import { DONATION_NO_REFUND, DONATION_ON_BEHALF, donationLabel, donationProblem } from '@/lib/donations';
 import { money, when, zoneAbbr } from '@/lib/format';
 import { haptic } from '@/lib/haptics';
 import { useEvent, useHealth, useRefreshWallet } from '@/lib/queries';
@@ -57,6 +62,8 @@ export default function ResaleCheckout() {
   const [paid, setPaid] = useState<Order | null>(null);
   const [now, setNow] = useState(() => Date.now());
   const verifying = useRef(false);
+  /** the donation added to the order (0: none) */
+  const [donation, setDonation] = useState<number | null>(0);
 
   // Prefill when the session arrives (e.g. signed in from the prompt below), without overwriting what was typed.
   const [prefilledFor, setPrefilledFor] = useState(user?.id ?? null);
@@ -92,6 +99,9 @@ export default function ResaleCheckout() {
     email: !emailOk(email) ? 'Enter a valid email; your ticket goes there.' : '',
   };
   const valid = !errors.name && !errors.email;
+  const dn = e?.donations ?? null;
+  const donationErr = dn && !order ? donationProblem(donation, dn, currency) : null;
+  const donationCents = dn && donation && !donationErr ? donation : 0;
 
   const finish = (o: Order) => {
     setPaid(o);
@@ -152,6 +162,11 @@ export default function ResaleCheckout() {
       setPayError('Card payments for resale tickets aren’t available in the browser version of the app. Use the Eventro app on your phone, or the website.');
       return;
     }
+    if (donationErr) {
+      haptic.warning();
+      setPayError(donationErr);
+      return;
+    }
     setPhase('paying');
     setPayError('');
     try {
@@ -163,6 +178,8 @@ export default function ResaleCheckout() {
             holdKey: hold.holdKey,
             email: email.trim().toLowerCase(),
             name: name.trim(),
+            // The donation (0: none), only when the event takes them (otherwise the API refuses it).
+            ...(dn ? { donationCents } : {}),
             // Paystack sends the fan back to the website; with this, the website hands them back to the app.
             ...(NATIVE && provider === 'paystack' ? { returnTo: 'app' } : {}),
           },
@@ -274,7 +291,8 @@ export default function ResaleCheckout() {
   const ss = msLeft !== null ? String(Math.max(0, Math.floor((msLeft % 60000) / 1000))).padStart(2, '0') : '00';
   const low = msLeft !== null && msLeft < 120000;
   const busy = phase === 'paying';
-  const total = order?.totalCents ?? hold.priceCents;
+  const donated = order?.donationCents ?? donationCents;
+  const total = order?.totalCents ?? hold.priceCents + donationCents;
   const seatLine = seatText(hold, 'No reserved seat');
   const seated = !!(hold.row && hold.seat);
 
@@ -376,14 +394,32 @@ export default function ResaleCheckout() {
           />
         </Section>
 
+        {/* Donation (optional, when the event takes them) */}
+        {dn && !order ? (
+          <Section icon="heart" title={`Add a donation to ${dn.cause}`} sub={`${dn.description ? `${dn.description} ` : ''}Optional. No Eventro fee is taken on it.`}>
+            <AmountPicker label="Donation" chips={dn.suggestedCents} none="No donation" value={donation} onChange={setDonation} currency={currency} error={donationErr ?? undefined} />
+            <Txt variant="tiny" color={colors.dim}>
+              {`${DONATION_NO_REFUND} ${DONATION_ON_BEHALF}`}
+            </Txt>
+          </Section>
+        ) : null}
+
         {/* Summary */}
         <Section icon="receipt" title="Order summary">
           <View style={{ flexDirection: 'row', justifyContent: 'space-between', gap: space.md }}>
             <Txt variant="small" color={colors.muted} style={{ flex: 1 }}>
               1 × {hold.ticketType.name} · resale
             </Txt>
-            <Txt variant="smallStrong">{money(hold.priceCents, currency)}</Txt>
+            <Txt variant="smallStrong">{money(order?.ticketTotalCents ?? hold.priceCents, currency)}</Txt>
           </View>
+          {donated ? (
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', gap: space.md }}>
+              <Txt variant="small" color={colors.muted} style={{ flex: 1 }}>
+                {donationLabel(dn?.cause)}
+              </Txt>
+              <Txt variant="smallStrong">{money(donated, currency, { decimals: donated % 100 !== 0 })}</Txt>
+            </View>
+          ) : null}
           <View style={styles.totalRow}>
             <View style={{ flex: 1 }}>
               <Txt variant="bodyStrong">Total</Txt>

@@ -2,9 +2,11 @@
  * The Eventro Guarantee (the scan guarantee): if a ticket doesn't scan at the door, its holder gets that ticket's
  * money back, all-in (its share of what was paid for the order, fees included), to the original payment method.
  *
- * It covers every ticket from a paid order, fan resale tickets and tickets transferred or gifted on included. Free
- * tickets, comps and $0 orders aren't covered: there's nothing to refund. Cancelled events are refunded in full with
- * the event instead.
+ * It covers every ticket from a paid order, fan resale tickets and tickets transferred or gifted on included. A
+ * pay-what-you-want ticket bought for more than $0 is covered too, and a claim refunds what was paid for it. Free
+ * tickets ($0 pay what you want included: notCovered FREE), comps (COMP) and $0 orders aren't covered: there's
+ * nothing to refund. A donation added at checkout is never part of a claim. Cancelled events are refunded in full with
+ * the event instead, donations included.
  *
  * Claims go to POST /tickets/:id/guarantee-claims, one per ticket by its current holder, from 3 hours before the event
  * starts until 48 hours after it ends. The server declines a claim at once when the door's scan log shows the ticket
@@ -44,8 +46,12 @@ export const DETAILS_MAX = 1000;
 export const GUARANTEE_NAME = 'Eventro Guarantee';
 /** The badge on a covered ticket. */
 export const COVERED_LABEL = `Covered by the ${GUARANTEE_NAME}`;
-/** The muted note on a free ticket, where the guarantee would otherwise show. */
+/** The muted note on a free ticket ($0 pay what you want too), where the guarantee would otherwise show. */
 export const FREE_NOTE = `Free ticket: not covered by the ${GUARANTEE_NAME}, as there’s nothing to refund.`;
+/** The same for a comp. */
+export const COMP_NOTE = `Complimentary ticket: not covered by the ${GUARANTEE_NAME}, as nothing was paid for it.`;
+/** On the claim screen: a donation isn't part of a claim. */
+export const DONATION_NOT_COVERED = 'A donation added at checkout isn’t part of a claim: donations go to the cause and aren’t refunded if a ticket doesn’t scan.';
 /** How long a refund takes to arrive. Never promise automatic or instant refunds. */
 export const REFUND_TIMING = 'Usually 5–10 business days to your card; bank transfer and USSD refunds through Paystack can take longer.';
 /** How a claim is decided (the server: declined on arrival if scanned in, otherwise reviewed). */
@@ -62,8 +68,10 @@ export function openGuaranteeTerms() {
 
 /** Covered by the guarantee (a saved copy from an older app version without the block counts as unknown: no). */
 export const isCovered = (t: Pick<Ticket, 'guarantee'>) => t.guarantee?.covered === true;
-/** A free ticket (or comp, or $0 order): not covered, as there's nothing to refund. */
+/** A free ticket (or $0 order, $0 pay what you want included): not covered, as there's nothing to refund. */
 export const isFree = (t: Pick<Ticket, 'guarantee'>) => t.guarantee?.covered === false && t.guarantee.notCovered === 'FREE';
+/** A complimentary ticket from the organizer (the order says so even in a saved copy without the guarantee block). */
+export const isComp = (t: Pick<Ticket, 'guarantee' | 'order'>) => t.guarantee?.notCovered === 'COMP' || t.order.kind === 'COMP';
 
 /* ---------- the API ---------- */
 
@@ -106,6 +114,7 @@ export function claimBlocker(t: Ticket, now: number): string | null {
   if (g.claim) return 'There’s already a claim for this ticket.';
   if (t.event.status === 'CANCELLED') return 'This event was cancelled, so the ticket is refunded in full with the event.';
   if (!g.covered && g.notCovered === 'FREE') return 'This ticket was free, so there’s nothing to refund. The Eventro Guarantee covers paid tickets.';
+  if (!g.covered && g.notCovered === 'COMP') return 'This is a complimentary ticket from the organizer, so there’s nothing to refund. The Eventro Guarantee covers paid tickets.';
   if (!g.covered || t.order.status === 'REFUNDED' || t.order.status === 'CANCELLED') return 'This order was cancelled or refunded.';
   if (t.status === 'VOID') return 'This ticket no longer works.';
   if (t.status === 'LISTED') return 'This ticket is listed for resale. Remove the listing to claim on it.';

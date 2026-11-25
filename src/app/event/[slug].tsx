@@ -4,6 +4,10 @@
  * Below the organizer's tickets, "Fan resale" lists tickets other fans are selling (components/fan-resale.tsx); when
  * nothing else is on sale, the bar becomes "Sold out · Get resale tickets" and scrolls there. `?resale=1` (links to
  * /events/<slug>#resale) opens the screen scrolled to it.
+ *
+ * Pay-what-you-want tiers (lib/pwyw.ts): the selected tier gets "Choose your price" (quick picks, the suggested price
+ * picked to start, or another amount) with the all-in per ticket; the quantity applies at that amount, and the hold
+ * carries it (`amountCents` on POST /holds, or on to the seat map).
  */
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -11,6 +15,7 @@ import { router, useLocalSearchParams } from 'expo-router';
 import { useRef, useState, type ReactNode } from 'react';
 import { Platform, Pressable, ScrollView, Share, StyleSheet, View, type LayoutChangeEvent, type ScrollViewInstance } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { AmountPicker } from '@/components/amount-picker';
 import { FanResale } from '@/components/fan-resale';
 import { Gallery } from '@/components/gallery';
 import { HeartButton } from '@/components/heart';
@@ -22,6 +27,7 @@ import { api, ApiError, errorText, WEB_URL } from '@/lib/api';
 import { CATEGORY_NAME, cityOnly, isPast, localTimeText, money, when, zoneAbbr } from '@/lib/format';
 import { haptic } from '@/lib/haptics';
 import { openMaps } from '@/lib/maps';
+import { allInLine, allInOf, amountProblem, fromLabel, isPwyw, pickChips, PROMO_PWYW_NOTE, startAmount } from '@/lib/pwyw';
 import { useEvent, useEventResale } from '@/lib/queries';
 import { cardOf } from '@/lib/saved';
 import { lookOf } from '@/lib/tiers';
@@ -106,7 +112,13 @@ function EventBody({ e, topBar, refetch, jumpToResale }: { e: EventDetail; topBa
   const [error, setError] = useState('');
   const [aboutOpen, setAboutOpen] = useState(false);
   const [solid, setSolid] = useState(false);
-  const total = (tier?.priceCents ?? 0) * qty;
+  // Pay what you want: the amount picked per tier (null while what's typed isn't an amount).
+  const [amounts, setAmounts] = useState<Record<string, number | null>>({});
+  const pw = isPwyw(tier) ? tier.pwyw : null;
+  const amount = pw && tier ? (tier.id in amounts ? amounts[tier.id] : startAmount(pw)) : null;
+  const amountErr = pw ? amountProblem(amount, pw, e.currency) : null;
+  const unit = pw ? (amount !== null && !amountErr ? allInOf(amount, pw.feePermille) : 0) : (tier?.priceCents ?? 0);
+  const total = unit * qty;
   const lowest = types.length ? Math.min(...types.map((t) => t.priceCents)) : e.fromCents;
   const seatMap = !!e.seatMap?.sections.length;
   const city = e.venue?.city ?? null;
@@ -136,10 +148,15 @@ function EventBody({ e, topBar, refetch, jumpToResale }: { e: EventDetail; topBa
 
   const getTickets = async () => {
     if (!tier) return;
+    if (amountErr) {
+      haptic.warning();
+      setError(amountErr);
+      return;
+    }
     setBusy(true);
     setError('');
     try {
-      const h = await api<HoldCreated>('/holds', { body: { ticketTypeId: tier.id, quantity: qty } });
+      const h = await api<HoldCreated>('/holds', { body: { ticketTypeId: tier.id, quantity: qty, ...(pw && amount !== null ? { amountCents: amount } : {}) } });
       haptic.success();
       router.push({ pathname: '/checkout/[holdId]', params: { holdId: h.id } });
     } catch (err) {
@@ -261,6 +278,36 @@ function EventBody({ e, topBar, refetch, jumpToResale }: { e: EventDetail; topBa
             {types.map((t) => (
               <TierCard key={t.id} t={t} currency={e.currency} on={t.id === tier?.id} disabled={e.salesPaused} onPress={() => setTierId(t.id)} />
             ))}
+            {onSale && tier && pw && tier.available > 0 ? (
+              <View style={styles.pwyw}>
+                <View style={{ gap: 2 }}>
+                  <Txt variant="bodyStrong">Choose your price</Txt>
+                  <Txt variant="small" color={colors.muted}>
+                    {`Pay what you want for ${tier.name}${pw.minCents > 0 ? `, from ${money(pw.minCents, e.currency, { decimals: pw.minCents % 100 !== 0 })}` : ''}${pw.maxSet ? ` up to ${money(pw.maxCents, e.currency)}` : ''}. Every ticket in this order is at the same price.`}
+                  </Txt>
+                </View>
+                <AmountPicker
+                  key={tier.id}
+                  label="Your price per ticket"
+                  chips={pickChips(pw)}
+                  value={amount}
+                  onChange={(c) => {
+                    setError('');
+                    setAmounts((m) => ({ ...m, [tier.id]: c }));
+                  }}
+                  currency={e.currency}
+                  error={amountErr ?? undefined}
+                />
+                {amount !== null && !amountErr ? (
+                  <Txt variant="smallStrong" accessibilityLiveRegion="polite">
+                    {allInLine(amount, pw, e.currency)}
+                  </Txt>
+                ) : null}
+                <Txt variant="tiny" color={colors.dim}>
+                  {`${PROMO_PWYW_NOTE}${amount === 0 ? ' A ticket taken for free isn’t covered by the Eventro Guarantee.' : ''}`}
+                </Txt>
+              </View>
+            ) : null}
             {onSale && tier && tier.available > 0 ? (
               <View style={styles.qtyRow}>
                 <View>
@@ -283,9 +330,11 @@ function EventBody({ e, topBar, refetch, jumpToResale }: { e: EventDetail; topBa
             <View style={styles.trust}>
               {[
                 // The Eventro Guarantee covers paid tickets only: free ones have nothing to refund.
-                types.every((t) => t.priceCents <= 0) ? null : types.some((t) => t.priceCents <= 0) ? 'Paid tickets covered by the Eventro Guarantee' : 'Covered by the Eventro Guarantee',
+                // A pay-what-you-want ticket that can be free is only covered when it's paid for ("from" is 0 then).
+                types.every((t) => t.priceCents <= 0 && !isPwyw(t)) ? null : types.some((t) => t.priceCents <= 0) ? 'Paid tickets covered by the Eventro Guarantee' : 'Covered by the Eventro Guarantee',
                 'Instant mobile delivery',
                 seatMap ? 'Pick your exact seats, or let us find the best together' : 'Prices include all fees',
+                e.donations ? `Add an optional donation to ${e.donations.cause} at checkout` : null,
               ]
                 .filter((s): s is string => !!s)
                 .map((s) => (
@@ -332,9 +381,10 @@ function EventBody({ e, topBar, refetch, jumpToResale }: { e: EventDetail; topBa
             <View style={{ flex: 1 }}>
               <Txt variant="small" color={colors.dim} numberOfLines={1}>
                 {qty} × {tier.name}
+                {pw && !amountErr ? ` at ${money(unit, e.currency)}` : ''}
               </Txt>
-              <Txt variant="priceLg" style={{ fontSize: 26, lineHeight: 30 }} accessibilityLabel={`Total ${money(total, e.currency)}, fees included`} numberOfLines={1}>
-                {money(total, e.currency)}
+              <Txt variant="priceLg" style={{ fontSize: 26, lineHeight: 30 }} accessibilityLabel={amountErr ? 'Choose your price first' : `Total ${money(total, e.currency)}, fees included`} numberOfLines={1}>
+                {amountErr ? '—' : money(total, e.currency)}
                 <Txt variant="small" color={colors.dim}>
                   {'  '}all-in
                 </Txt>
@@ -345,7 +395,14 @@ function EventBody({ e, topBar, refetch, jumpToResale }: { e: EventDetail; topBa
                 label={tier.available === 0 ? 'Sold out' : 'Choose seats'}
                 icon="seat"
                 disabled={tier.available === 0 || busy}
-                onPress={() => router.push({ pathname: '/seats/[slug]', params: { slug: e.slug, tier: tier.id, qty: String(qty) } })}
+                onPress={() => {
+                  if (amountErr) {
+                    haptic.warning();
+                    setError(amountErr);
+                    return;
+                  }
+                  router.push({ pathname: '/seats/[slug]', params: { slug: e.slug, tier: tier.id, qty: String(qty), ...(pw && amount !== null ? { amount: String(amount) } : {}) } });
+                }}
                 style={{ minWidth: 140 }}
                 feedback="firm"
               />
@@ -427,12 +484,14 @@ function TierCard({ t, currency, on, disabled, onPress }: { t: TicketType; curre
   const look = lookOf(t);
   const perks = open ? t.perks : t.perks.slice(0, 3);
   const glow = look.colors[look.colors.length - 1];
-  const hasBody = !!t.description || perks.length > 0 || out || t.available < 50;
+  const pw = isPwyw(t) ? t.pwyw : null;
+  const price = pw ? fromLabel(pw, currency) : money(t.priceCents, currency);
+  const hasBody = !!t.description || perks.length > 0 || out || t.available < 50 || !!pw;
   return (
     <Pressable
       accessibilityRole="radio"
       accessibilityState={{ checked: on, disabled: out || !!disabled }}
-      accessibilityLabel={`${t.name}${t.badge ? `, ${t.badge}` : ''}, ${money(t.priceCents, currency)} each${out ? ', sold out' : t.available < 50 ? `, only ${t.available} left` : ''}`}
+      accessibilityLabel={`${t.name}${t.badge ? `, ${t.badge}` : ''}, ${pw ? `pay what you want, ${price.toLowerCase()}` : `${price} each`}${out ? ', sold out' : t.available < 50 ? `, only ${t.available} left` : ''}`}
       disabled={out || disabled}
       onPress={() => {
         haptic.select();
@@ -456,13 +515,19 @@ function TierCard({ t, currency, on, disabled, onPress }: { t: TicketType; curre
               </Txt>
               {t.badge ? <TierBadge label={t.badge} look={look} /> : null}
             </View>
-            <Txt variant="price" color={look.ink}>
-              {money(t.priceCents, currency)}
+            <Txt variant={pw ? 'smallStrong' : 'price'} color={look.ink}>
+              {price}
             </Txt>
           </View>
         </TierSurface>
         {hasBody ? (
           <View style={styles.tierBody}>
+            {pw ? (
+              <Txt variant="smallStrong" color={colors.text}>
+                Pay what you want
+                {pw.suggestedCents !== null ? <Txt variant="small" color={colors.muted}>{` · suggested ${money(allInOf(pw.suggestedCents, pw.feePermille), currency)} all-in`}</Txt> : null}
+              </Txt>
+            ) : null}
             {t.description ? (
               <Txt variant="small" color={colors.muted}>
                 {t.description}
@@ -522,6 +587,7 @@ const styles = StyleSheet.create({
   radio: { width: 20, height: 20, borderRadius: 10, borderWidth: 2, borderColor: colors.line2, alignItems: 'center', justifyContent: 'center' },
   radioDot: { width: 10, height: 10, borderRadius: 5, backgroundColor: colors.accent },
   qtyRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: space.sm },
+  pwyw: { gap: space.md, padding: space.lg, borderRadius: radius.card, borderWidth: 1, borderColor: colors.accentLine, backgroundColor: colors.surface },
   trust: { gap: 6, paddingTop: space.md, borderTopWidth: 1, borderTopColor: colors.line, borderStyle: 'dashed' },
   bar: {
     position: 'absolute',

@@ -1,7 +1,8 @@
 /**
  * Edit an event from the phone (admins and managers), with the website's endpoints:
  *
- *   PATCH /organizer/events/:id                          title, tagline, description, start (and doors), a stock cover
+ *   PATCH /organizer/events/:id                          title, tagline, description, start (and doors), a stock cover,
+ *                                                        donations (cause, description, amounts) and the comp limit
  *   PUT   /organizer/events/:id/media                    a photo uploaded from the phone becomes the cover (first item)
  *   PATCH /organizer/events/:id/ticket-types/:ttId       name, price, quantity, perks, badge, look (a lower price may alert watchers)
  *   POST  /organizer/events/:id/ticket-types             a new ticket type
@@ -9,7 +10,8 @@
  *   PUT   /organizer/events/:id/ticket-types/order       the order fans see them in, top tier first
  *
  * Prices here are what fans pay (all-in), as on the website; the API takes the organizer's base price, so they're
- * converted with the event's fee mode. Times are the venue's wall-clock time stored as UTC (the website does the
+ * converted with the event's fee mode. Pay-what-you-want amounts (minimum, suggested, quick picks, maximum) are the
+ * organizer's base amounts, as the API takes them. Times are the venue's wall-clock time stored as UTC (the website does the
  * same). "Change venue" opens its own screen (…/venue, PUT /organizer/events/:id/venue); seat maps are designed on
  * the web.
  */
@@ -22,16 +24,19 @@ import { useConfirm } from '@/components/confirm';
 import { DateField, TimeField } from '@/components/date-time';
 import { Icon, type IconName } from '@/components/icons';
 import { CoverUpload } from '@/components/cover-upload';
+import { DonationFields } from '@/components/donation-fields';
 import { Label, OrgScreen, WebButton } from '@/components/org-ui';
 import { StockPicker } from '@/components/stock-picker';
-import { TierExtras, TierPresets } from '@/components/tier-editor';
+import { PricingMode, PwywFields, TierExtras, TierPresets, type Pricing } from '@/components/tier-editor';
 import { Button, ErrorState, Field, Notice, Skeleton, Txt } from '@/components/ui';
 import { api, errorText } from '@/lib/api';
+import { donationChanges, donationDraftOf, donationErrors, type DonationDraft } from '@/lib/donations';
 import { CATEGORY_NAME, currencySymbol, money, num, todayYmd } from '@/lib/format';
 import { haptic } from '@/lib/haptics';
 import type { UploadedCover } from '@/lib/media-upload';
 import {
   baseFromAllIn,
+  buyerPrice,
   canEdit,
   membershipOf,
   moneyInput,
@@ -43,12 +48,13 @@ import {
   type OrgEventDetail,
 } from '@/lib/organizer';
 import { useAuth } from '@/lib/auth';
+import { NO_PWYW, pwywBody, pwywDraftOf, pwywErrors, type PwywDraft } from '@/lib/pwyw';
 import { useMyOrgs } from '@/lib/queries';
 import { cleanPerks, isTierLook, presetIndex, samePerks, type TierLook, type TierPreset } from '@/lib/tiers';
 import { colors, radius, space, touch } from '@/theme';
 
-/** `style` null is Auto: the look comes from the name. */
-type Tier = { key: string; id: string | null; name: string; price: string; qty: string; sold: number; mapped: boolean; perks: string[]; badge: string; style: TierLook | null };
+/** `style` null is Auto: the look comes from the name. `pwyw` is used when `pricing` is PWYW. */
+type Tier = { key: string; id: string | null; name: string; price: string; qty: string; sold: number; mapped: boolean; perks: string[]; badge: string; style: TierLook | null; pricing: Pricing; pwyw: PwywDraft };
 
 export default function EditEvent() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -89,7 +95,20 @@ function Editor({ e }: { e: OrgEventDetail }) {
   const fromApi = (): Tier[] =>
     [...e.ticketTypes]
       .sort((a, b) => a.sortOrder - b.sortOrder)
-      .map((t) => ({ key: t.id, id: t.id, name: t.name, price: moneyInput(t.priceCents), qty: String(t.capacity), sold: t.sold, mapped: mappedIds.has(t.id), perks: t.perks ?? [], badge: t.badge ?? '', style: isTierLook(t.style) ? t.style : null }));
+      .map((t) => ({
+        key: t.id,
+        id: t.id,
+        name: t.name,
+        price: moneyInput(t.priceCents),
+        qty: String(t.capacity),
+        sold: t.sold,
+        mapped: mappedIds.has(t.id),
+        perks: t.perks ?? [],
+        badge: t.badge ?? '',
+        style: isTierLook(t.style) ? t.style : null,
+        pricing: t.pricing === 'PWYW' ? 'PWYW' : 'FIXED',
+        pwyw: t.pricing === 'PWYW' ? pwywDraftOf(t) : NO_PWYW,
+      }));
 
   const [title, setTitle] = useState(e.title);
   const [subtitle, setSubtitle] = useState(e.subtitle ?? '');
@@ -103,6 +122,8 @@ function Editor({ e }: { e: OrgEventDetail }) {
   const [upload, setUpload] = useState<UploadedCover | null>(null);
   const [now] = useState(() => Date.now());
   const [tiers, setTiers] = useState<Tier[]>(fromApi);
+  const [donations, setDonations] = useState<DonationDraft>(() => donationDraftOf(e));
+  const [compLimit, setCompLimit] = useState(e.compLimit !== null && e.compLimit !== undefined ? String(e.compLimit) : '');
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -127,7 +148,7 @@ function Editor({ e }: { e: OrgEventDetail }) {
     haptic.select();
     setTiers((list) => {
       if (list.length >= 20) return list;
-      const t: Tier = { key: `new-${Date.now()}`, id: null, name: preset?.name ?? '', price: '', qty: '', sold: 0, mapped: false, perks: preset ? [...preset.perks] : [], badge: preset?.badge ?? '', style: null };
+      const t: Tier = { key: `new-${Date.now()}`, id: null, name: preset?.name ?? '', price: '', qty: '', sold: 0, mapped: false, perks: preset ? [...preset.perks] : [], badge: preset?.badge ?? '', style: null, pricing: 'FIXED', pwyw: NO_PWYW };
       const at = preset ? presetIndex(list.map((x) => x.name), preset.level) : list.length;
       return [...list.slice(0, at), t, ...list.slice(at)];
     });
@@ -159,12 +180,16 @@ function Editor({ e }: { e: OrgEventDetail }) {
     const parsed = tiers.map((t) => ({ t, cents: parseMoney(t.price), qty: Number(t.qty) }));
     for (const { t, cents, qty } of parsed) {
       if (!t.name.trim()) ers[`${t.key}-name`] = 'Name this ticket.';
-      if (cents === null) ers[`${t.key}-price`] = 'Enter a price (0 for free).';
+      if (t.pricing === 'PWYW') Object.assign(ers, pwywErrors(t.pwyw, t.key, e.currency));
+      else if (cents === null) ers[`${t.key}-price`] = 'Enter a price (0 for free).';
       else if (cents > 0 && cents < 100) ers[`${t.key}-price`] = `Paid tickets start at ${money(100, e.currency)}.`;
       if (!t.mapped && (!Number.isInteger(qty) || qty < 1)) ers[`${t.key}-qty`] = 'Enter a quantity.';
       else if (!t.mapped && qty < t.sold) ers[`${t.key}-qty`] = `Can’t be below the ${num(t.sold)} already sold.`;
     }
     if (!tiers.length) ers.tiers = 'Keep at least one ticket type.';
+    for (const [k, v] of Object.entries(donationErrors(donations))) ers[`donation-${k}`] = v;
+    const limit = compLimit.trim() ? Number(compLimit) : null;
+    if (limit !== null && (!Number.isInteger(limit) || limit < 0)) ers.compLimit = 'A whole number, or leave it empty for no limit.';
     setErrors(ers);
     if (Object.keys(ers).length) {
       haptic.warning();
@@ -177,7 +202,7 @@ function Editor({ e }: { e: OrgEventDetail }) {
     try {
       const path = `/organizer/events/${encodeURIComponent(e.id)}`;
       // 1. The event. Doors and the end move with the date, so a new date doesn't leave them on the old day.
-      const body: Record<string, string> = {};
+      const body: Record<string, unknown> = {};
       if (title.trim() !== e.title) body.title = title.trim();
       if (subtitle.trim() !== (e.subtitle ?? '')) body.subtitle = subtitle.trim();
       if (about.trim() !== (e.description ?? '')) body.description = about.trim();
@@ -191,6 +216,8 @@ function Editor({ e }: { e: OrgEventDetail }) {
       if (e.endsAt && shift) body.endsAt = new Date(new Date(e.endsAt).getTime() + shift).toISOString();
       const uploaded = upload && cover === upload.url ? upload : null;
       if (cover && !uploaded && cover !== (e.imageUrl ?? '')) body.imageUrl = cover;
+      Object.assign(body, donationChanges(donations, e));
+      if (limit !== (e.compLimit ?? null)) body.compLimit = limit;
       if (Object.keys(body).length) await api(path, { method: 'PATCH', body });
       // An uploaded photo goes first in the event's media (the cover), ahead of what's already there.
       if (uploaded) {
@@ -205,14 +232,22 @@ function Editor({ e }: { e: OrgEventDetail }) {
         if (!t.id) continue;
         const was = byId.get(t.id);
         if (!was) continue;
-        const b: Record<string, string | number | string[] | null> = {};
+        const b: Record<string, unknown> = {};
         if (t.name.trim() !== was.name) b.name = t.name.trim();
         const perks = cleanPerks(t.perks);
         if (!samePerks(perks, was.perks ?? [])) b.perks = perks;
         if (t.badge.trim() !== (was.badge ?? '')) b.badge = t.badge.trim();
         // null sends it back to Auto
         if (t.style !== (isTierLook(was.style) ? was.style : null)) b.style = t.style;
-        if (cents !== was.priceCents) b.basePriceCents = baseFromAllIn(cents!, e.feeMode);
+        const wasPwyw = was.pricing === 'PWYW';
+        if (t.pricing === 'PWYW') {
+          // Pay what you want: its amounts (base), sent when they (or the pricing) changed.
+          const now = pwywBody(t.pwyw);
+          if (!wasPwyw || JSON.stringify(now) !== JSON.stringify(pwywBody(pwywDraftOf(was)))) Object.assign(b, now);
+        } else if (wasPwyw) {
+          b.pricing = 'FIXED';
+          b.basePriceCents = baseFromAllIn(cents!, e.feeMode);
+        } else if (cents !== was.priceCents) b.basePriceCents = baseFromAllIn(cents!, e.feeMode);
         if (!t.mapped && qty !== was.capacity) b.capacity = qty;
         if (!Object.keys(b).length) continue;
         const r = await api<{ priceDrop: { alerting: boolean; reason: string | null; audience: number } | null }>(`${path}/ticket-types/${encodeURIComponent(t.id)}`, { method: 'PATCH', body: b });
@@ -230,7 +265,7 @@ function Editor({ e }: { e: OrgEventDetail }) {
         const made = await api<{ id: string }>(`${path}/ticket-types`, {
           body: {
             name: t.name.trim(),
-            basePriceCents: baseFromAllIn(cents!, e.feeMode),
+            ...(t.pricing === 'PWYW' ? { basePriceCents: 0, ...pwywBody(t.pwyw) } : { basePriceCents: baseFromAllIn(cents!, e.feeMode) }),
             capacity: qty,
             ...(t.perks.length ? { perks: cleanPerks(t.perks) } : {}),
             ...(t.badge.trim() ? { badge: t.badge.trim() } : {}),
@@ -354,7 +389,7 @@ function Editor({ e }: { e: OrgEventDetail }) {
       <View style={styles.card}>
         <Label>Tickets</Label>
         <Txt variant="small" color={colors.dim}>
-          Prices are what fans pay, all-in. The order here is the order fans see, top tier first.
+          Fixed prices are what fans pay, all-in; pay-what-you-want amounts are your price, before {e.feeMode === 'BUYER' ? 'Eventro’s fee is added' : 'Eventro’s fee comes out'}. The order here is the order fans see, top tier first.
           {e.seatMap ? ' Quantities for ticket types on the seat map come from the map.' : ''}
         </Txt>
         {errors.tiers ? (
@@ -373,8 +408,11 @@ function Editor({ e }: { e: OrgEventDetail }) {
               <Mini icon="trash" label={`Delete ${t.name || 'ticket'}`} disabled={t.sold > 0 || t.mapped || tiers.length === 1} onPress={() => void removeTier(t)} />
             </View>
             <Field label="Name" value={t.name} onChangeText={(v) => patchTier(t.key, { name: v })} maxLength={60} error={errors[`${t.key}-name`]} placeholder="General admission" />
+            <PricingMode value={t.pricing} onChange={(pricing) => patchTier(t.key, { pricing })} />
             <View style={{ flexDirection: 'row', gap: space.md }}>
-              <Field style={{ flex: 1 }} label={`Price (${sym})`} value={t.price} onChangeText={(v) => patchTier(t.key, { price: v.replace(/[^\d.]/g, '') })} keyboardType="decimal-pad" error={errors[`${t.key}-price`]} placeholder="0 = free" />
+              {t.pricing === 'FIXED' ? (
+                <Field style={{ flex: 1 }} label={`Price (${sym})`} value={t.price} onChangeText={(v) => patchTier(t.key, { price: v.replace(/[^\d.]/g, '') })} keyboardType="decimal-pad" error={errors[`${t.key}-price`]} placeholder="0 = free" />
+              ) : null}
               <Field
                 style={{ flex: 1 }}
                 label="Quantity"
@@ -386,6 +424,7 @@ function Editor({ e }: { e: OrgEventDetail }) {
                 hint={t.mapped ? 'From the seat map' : undefined}
               />
             </View>
+            {t.pricing === 'PWYW' ? <PwywFields value={t.pwyw} onChange={(p) => patchTier(t.key, { pwyw: { ...t.pwyw, ...p } })} currency={e.currency} feeMode={e.feeMode} errors={errors} errorKey={t.key} /> : null}
             {t.sold > 0 ? (
               <Txt variant="tiny" color={colors.dim}>
                 Sold tickets can’t be deleted. Lowering the price tells fans watching this event.
@@ -395,6 +434,10 @@ function Editor({ e }: { e: OrgEventDetail }) {
             <TierExtras
               name={t.name}
               price={(() => {
+                if (t.pricing === 'PWYW') {
+                  const min = parseMoney(t.pwyw.min);
+                  return min === null ? undefined : min > 0 ? `From ${money(buyerPrice(min, e.feeMode), e.currency)}` : 'Any amount';
+                }
                 const c = parseMoney(t.price);
                 return c === null ? undefined : c === 0 ? 'Free' : money(c, e.currency);
               })()}
@@ -410,6 +453,29 @@ function Editor({ e }: { e: OrgEventDetail }) {
           </View>
         ) : null}
         {e.seatMap ? <WebButton label="Edit the seat map on the web" path={webPaths.seating(e.id)} /> : null}
+      </View>
+
+      <View style={styles.card}>
+        <Label>Donations</Label>
+        <DonationFields
+          value={donations}
+          onChange={(p) => setDonations((d) => ({ ...d, ...p }))}
+          currency={e.currency}
+          errors={{ cause: errors['donation-cause'], description: errors['donation-description'], suggested: errors['donation-suggested'], min: errors['donation-min'] }}
+        />
+      </View>
+
+      <View style={styles.card}>
+        <Label>Comps</Label>
+        <Field
+          label="Comp limit (optional)"
+          placeholder="No limit"
+          keyboardType="number-pad"
+          value={compLimit}
+          onChangeText={(v) => setCompLimit(v.replace(/\D/g, ''))}
+          error={errors.compLimit}
+          hint={errors.compLimit ? undefined : 'The most complimentary tickets that can be live at once. Revoked comps don’t count.'}
+        />
       </View>
     </OrgScreen>
   );

@@ -1,4 +1,7 @@
-/** Account → Orders & receipts (GET /me/orders): every paid, refunded or cancelled order, newest first. */
+/**
+ * Account → Orders & receipts (GET /me/orders): every paid, refunded or cancelled order, newest first. Comps are
+ * marked as complimentary, and an order with a donation says so.
+ */
 import { Image } from 'expo-image';
 import { router } from 'expo-router';
 import { useState } from 'react';
@@ -10,6 +13,7 @@ import { TierChip } from '@/components/tier-look';
 import { Badge, EmptyState, ErrorState, Skeleton, Txt } from '@/components/ui';
 import { errorText } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
+import { donationLabel } from '@/lib/donations';
 import { money, when } from '@/lib/format';
 import { haptic } from '@/lib/haptics';
 import { orderStatus, refundStatus, useMyOrders } from '@/lib/orders';
@@ -77,10 +81,13 @@ function OrderRow({ o }: { o: MyOrder }) {
   const s = orderStatus(o.status);
   const refund = o.refundRequest ? refundStatus(o.refundRequest.status) : null;
   const d = when(o.event.startsAt);
+  const comp = o.kind === 'COMP';
+  const donation = o.donationCents ?? 0;
+  const price = comp || !o.totalCents ? 'Free' : money(o.totalCents, o.currency);
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityLabel={`Order ${o.id}, ${o.event.title}, ${money(o.totalCents, o.currency)}, ${s.label}`}
+      accessibilityLabel={`Order ${o.id}, ${o.event.title}, ${comp ? 'complimentary' : price}, ${s.label}${donation ? `, includes a ${money(donation, o.currency)} donation` : ''}`}
       onPress={() => {
         haptic.select();
         router.push({ pathname: '/order/[id]', params: { id: o.id } });
@@ -94,15 +101,20 @@ function OrderRow({ o }: { o: MyOrder }) {
         <Txt variant="small" color={colors.muted} numberOfLines={1}>
           {o.quantity} {o.quantity === 1 ? 'ticket' : 'tickets'} · {d.short}
         </Txt>
+        {donation ? (
+          <Txt variant="tiny" color={colors.dim} numberOfLines={1}>
+            {`Includes ${money(donation, o.currency, { decimals: donation % 100 !== 0 })} · ${donationLabel(o.donationCause)}`}
+          </Txt>
+        ) : null}
         <View style={{ flexDirection: 'row', gap: 6, flexWrap: 'wrap', alignItems: 'center', marginTop: 2 }}>
           <TierChip tier={o.ticketType} />
-          <Badge label={s.label} tone={s.tone} />
+          {comp ? <Badge label={o.compGroup ? `Complimentary · ${o.compGroup}` : 'Complimentary'} /> : <Badge label={s.label} tone={s.tone} />}
           {refund ? <Badge label={refund.short} tone={refund.tone} /> : null}
-          {o.gift ? <Badge label="Gift" /> : null}
+          {o.gift && !comp ? <Badge label="Gift" /> : null}
         </View>
       </View>
       <View style={{ alignItems: 'flex-end', gap: 4 }}>
-        <Txt variant="title">{money(o.totalCents, o.currency)}</Txt>
+        <Txt variant="title">{price}</Txt>
         <Icon name="chevronRight" size={16} color={colors.dim} />
       </View>
     </Pressable>

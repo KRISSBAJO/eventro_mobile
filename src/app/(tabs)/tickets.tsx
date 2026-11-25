@@ -17,7 +17,7 @@ import { rankNear, usePlace } from '@/lib/place';
 import { useAllEvents, useMyTickets, useRefreshWallet } from '@/lib/queries';
 import { inTime } from '@/lib/resale';
 import { useSaved } from '@/lib/saved';
-import { claimShort, COVERED_LABEL, FREE_NOTE } from '@/lib/guarantee';
+import { claimShort, COVERED_LABEL, FREE_NOTE, isComp } from '@/lib/guarantee';
 import { groupTickets, seatLine, ticketState, type TicketGroup } from '@/lib/tickets';
 import type { EventCard, IncomingTransfer } from '@/lib/types';
 import { colors, gutter, radius, space } from '@/theme';
@@ -339,7 +339,7 @@ function PickRow({ e }: { e: EventCard }) {
           <Txt variant="eyebrow" color={colors.accent} style={{ fontSize: 9, lineHeight: 11 }}>
             {d.month}
           </Txt>
-          <Txt variant="bodyStrong" style={{ lineHeight: 18 }}>
+          <Txt variant="bodyStrong" color={colors.onImage} style={{ lineHeight: 18 }}>
             {d.day}
           </Txt>
         </View>
@@ -410,14 +410,16 @@ function IncomingTransfers({ items }: { items: IncomingTransfer[] }) {
         const left = x.transferExpiresAt ? new Date(x.transferExpiresAt).getTime() - now : null;
         if (x.gift) {
           const n = items.filter((y) => y.gift?.id === x.gift!.id).length;
+          // A comp: a complimentary ticket from the organizer, claimed the same way as a gift.
+          const comp = !!x.gift.comp;
           return (
             <View key={x.gift.id} style={{ flexDirection: 'row', alignItems: 'center', gap: space.md }}>
               <View style={{ flex: 1, gap: 2 }}>
                 <Txt variant="bodyStrong" numberOfLines={2}>
-                  🎁 A gift from {x.gift.from}: {x.event.title}
+                  {comp ? `You’re on the guest list: ${x.event.title}` : `🎁 A gift from ${x.gift.from}: ${x.event.title}`}
                 </Txt>
                 <Txt variant="small" color={colors.muted}>
-                  {n} × {x.ticketType.name} · {when(x.event.startsAt).short}
+                  {comp ? `Complimentary ticket from ${x.gift.from}${x.gift.group ? ` · ${x.gift.group}` : ''}` : `${n} × ${x.ticketType.name}`} · {when(x.event.startsAt).short}
                 </Txt>
                 {x.gift.message ? (
                   <Txt variant="small" color={colors.text} numberOfLines={3}>
@@ -425,7 +427,7 @@ function IncomingTransfers({ items }: { items: IncomingTransfer[] }) {
                   </Txt>
                 ) : null}
               </View>
-              <Button label={busy === x.id ? 'Accepting…' : 'Accept gift'} size="sm" loading={busy === x.id} onPress={() => accept(x.id)} />
+              <Button label={busy === x.id ? 'Accepting…' : comp ? 'Accept ticket' : 'Accept gift'} size="sm" loading={busy === x.id} onPress={() => accept(x.id)} />
             </View>
           );
         }
@@ -473,10 +475,10 @@ function GroupCard({ g }: { g: TicketGroup }) {
               {!g.cancelled && ready ? <Badge label={`${ready} ready`} tone="success" /> : null}
               {g.past && !g.cancelled ? <Badge label="Ended" tone="glass" /> : null}
             </View>
-            <Txt variant="h3" numberOfLines={1}>
+            <Txt variant="h3" color={colors.onImage} numberOfLines={1}>
               {g.event.title}
             </Txt>
-            <Txt variant="small" color="rgba(247,242,242,0.8)" numberOfLines={1}>
+            <Txt variant="small" color={colors.onImageSoft} numberOfLines={1}>
               {d.short} · {d.time}
               {g.event.venue ? ` · ${g.event.venue.name}` : g.event.online ? ' · Online' : ''}
             </Txt>
@@ -485,6 +487,7 @@ function GroupCard({ g }: { g: TicketGroup }) {
       </Pressable>
       {g.tickets.map((tk, i) => {
         const s = ticketState(tk);
+        const comp = isComp(tk);
         return (
           <Pressable
             key={tk.id}
@@ -516,6 +519,10 @@ function GroupCard({ g }: { g: TicketGroup }) {
                     {tk.guarantee.claim ? claimShort(tk.guarantee.claim) : COVERED_LABEL}
                   </Txt>
                 </View>
+              ) : comp ? (
+                <Txt variant="tiny" color={colors.dim} numberOfLines={1}>
+                  {tk.order.compGroup ? `Complimentary ticket · ${tk.order.compGroup}` : 'Complimentary ticket'}
+                </Txt>
               ) : tk.guarantee && s.key !== 'refunded' && s.key !== 'cancelled' && tk.guarantee.notCovered === 'FREE' ? (
                 <Txt variant="tiny" color={colors.dim} numberOfLines={2}>
                   {FREE_NOTE}
@@ -575,7 +582,7 @@ const styles = StyleSheet.create({
   pick: { flexDirection: 'row', gap: space.md, padding: space.sm, paddingRight: space.md, borderRadius: radius.card, borderWidth: 1, borderColor: colors.line, backgroundColor: colors.surface },
   pickThumb: { width: 84, height: 96, borderRadius: radius.md, overflow: 'hidden', backgroundColor: colors.surface2 },
   pickDate: { position: 'absolute', top: 6, left: 6, width: 34, paddingVertical: 3, borderRadius: 9, alignItems: 'center', backgroundColor: colors.glass, borderWidth: 1, borderColor: 'rgba(255,255,255,0.16)' },
-  pickCat: { position: 'absolute', left: 6, right: 6, bottom: 6, color: colors.text },
+  pickCat: { position: 'absolute', left: 6, right: 6, bottom: 6, color: colors.onImage },
   bookPill: { height: 28, paddingHorizontal: 12, borderRadius: 14, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: colors.line2, backgroundColor: colors.surface2 },
   group: { borderRadius: radius.card, borderWidth: 1, borderColor: colors.line, backgroundColor: colors.surface, overflow: 'hidden' },
   banner: { height: 132, backgroundColor: colors.surface2 },

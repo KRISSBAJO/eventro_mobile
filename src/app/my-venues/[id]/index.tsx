@@ -67,7 +67,7 @@ export default function ManageVenue() {
             {v.verified || v.verifiedAt ? <Badge label="Verified" tone="success" /> : null}
             {l ? l.active ? <Badge label="Taking bookings" tone="success" /> : <Badge label="Bookings off" tone="warning" /> : null}
           </View>
-          <Txt variant="small" color="rgba(247,242,242,0.85)" numberOfLines={2}>
+          <Txt variant="small" color={colors.onImageSoft} numberOfLines={2}>
             {placeLine(v)}
           </Txt>
         </View>

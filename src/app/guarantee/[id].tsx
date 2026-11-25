@@ -1,6 +1,8 @@
 /**
  * "Didn't scan? Get your money back": an Eventro Guarantee claim for one ticket (POST /tickets/:id/guarantee-claims).
- * It refunds that ticket only, all-in (its share of the order, fees included); other tickets on the order keep working.
+ * It refunds that ticket only, all-in (its share of the order, fees included; for pay what you want, what was paid for
+ * it); other tickets on the order keep working, and a donation on the order isn't part of it. Free tickets ($0 pay what
+ * you want too) and comps aren't covered.
  *
  * Opened from the wallet ticket. The ticket comes from the saved wallet, so the screen works with no signal at the
  * door: a claim that can't reach the API is saved on this phone and sent when it can (guarantee.ts), and the server
@@ -22,9 +24,11 @@ import {
   claimView,
   clearOutcome,
   DETAILS_MAX,
+  DONATION_NOT_COVERED,
   dropQueued,
   flushClaims,
   HOW_DECIDED,
+  isComp,
   isFree,
   openGuaranteeTerms,
   queueClaim,
@@ -174,7 +178,7 @@ export default function GuaranteeClaimScreen() {
             <Icon name="close" size={20} color={colors.muted} />
           </View>
           <Txt variant="title" style={{ textAlign: 'center' }}>
-            {isFree(t) ? 'Free tickets aren’t covered' : 'You can’t claim on this ticket right now'}
+            {isFree(t) ? 'Free tickets aren’t covered' : isComp(t) ? 'Complimentary tickets aren’t covered' : 'You can’t claim on this ticket right now'}
           </Txt>
           <Txt variant="small" color={colors.muted} style={{ textAlign: 'center' }}>
             {blocker}
@@ -226,6 +230,9 @@ export default function GuaranteeClaimScreen() {
     <AuthShell title={TITLE} icon="shield" subtitle={subtitle}>
       <Txt color={colors.muted}>
         {`This ticket is covered by the Eventro Guarantee. If it didn’t scan at the door, you can claim a refund for this ticket only${refund ? `: ${refund}, its full share of what was paid, fees included` : ', its full share of what was paid, fees included'}. It goes back to the payment method that paid for the order.${t.order.quantity > 1 ? ' Your other tickets on this order aren’t affected.' : ''}`}
+      </Txt>
+      <Txt variant="small" color={colors.dim}>
+        {DONATION_NOT_COVERED}
       </Txt>
       {outcome?.kind === 'refused' ? (
         <Notice icon="alert" title="Your last claim wasn’t accepted">
