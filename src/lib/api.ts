@@ -6,10 +6,11 @@
  */
 import { fromBase64url, fromUtf8 } from './hmac';
 
-export const API_URL =(process.env.EXPO_PUBLIC_API_URL || 'http://127.0.0.1:4000/api/v1').replace(/\/$/, '');
+// Release builds (TestFlight, the stores) without EXPO_PUBLIC_API_URL use the live API, never a local machine.
+export const API_URL = (process.env.EXPO_PUBLIC_API_URL || (__DEV__ ? 'http://127.0.0.1:4000/api/v1' : 'https://api.omoshow.com/api/v1')).replace(/\/$/, '');
 
 /** The website, for help pages, legal pages and the browser checkout fallback. */
-export const WEB_URL = (process.env.EXPO_PUBLIC_WEB_URL || 'http://127.0.0.1:3500').replace(/\/$/, '');
+export const WEB_URL = (process.env.EXPO_PUBLIC_WEB_URL || (__DEV__ ? 'http://127.0.0.1:3500' : 'https://omoshow.com')).replace(/\/$/, '');
 
 export class ApiError extends Error {
   constructor(
