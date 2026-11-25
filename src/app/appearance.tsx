@@ -6,7 +6,7 @@
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useState } from 'react';
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Switch, View } from 'react-native';
+import { ActivityIndicator, Platform, Pressable, ScrollView, StyleSheet, Switch, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Icon } from '@/components/icons';
 import { ScreenHeader } from '@/components/screen-header';
@@ -133,6 +133,8 @@ export default function AppearanceScreen() {
               trackColor={{ false: colors.line2, true: colors.accent }}
               thumbColor="#ffffff"
               ios_backgroundColor={colors.line2}
+              // the web build ignores thumbColor when on (it draws a green knob); Notifications does the same
+              {...(Platform.OS === 'web' ? ({ activeThumbColor: '#ffffff' } as object) : {})}
             />
           )}
         </View>

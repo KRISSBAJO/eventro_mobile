@@ -892,7 +892,7 @@ function CardPreview({ cover, title, subtitle, category, date, time, place, onli
                 <Txt variant="eyebrow" color={colors.accent} style={{ fontSize: 10, lineHeight: 12 }}>
                   {day.toLocaleString('en-US', { month: 'short', timeZone: 'UTC' })}
                 </Txt>
-                <Txt variant="h3" style={{ lineHeight: 21 }}>
+                <Txt variant="h3" color={colors.onImage} style={{ lineHeight: 21 }}>
                   {day.getUTCDate()}
                 </Txt>
               </View>
@@ -901,16 +901,18 @@ function CardPreview({ cover, title, subtitle, category, date, time, place, onli
             )}
             {category ? (
               <View style={styles.previewBadge}>
-                <Txt variant="tiny">{category}</Txt>
+                <Txt variant="tiny" color={colors.onImage}>
+                  {category}
+                </Txt>
               </View>
             ) : null}
           </View>
           <View style={styles.previewText}>
-            <Txt variant="h3" numberOfLines={1}>
+            <Txt variant="h3" color={colors.onImage} numberOfLines={1}>
               {title}
             </Txt>
             {subtitle ? (
-              <Txt variant="small" color="rgba(247,242,242,0.8)" numberOfLines={1}>
+              <Txt variant="small" color={colors.onImageSoft} numberOfLines={1}>
                 {subtitle}
               </Txt>
             ) : null}

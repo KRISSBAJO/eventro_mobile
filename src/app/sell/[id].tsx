@@ -16,7 +16,7 @@ import { useEventResale, useMyTickets, useRefreshWallet } from '@/lib/queries';
 import { blockers, breakdown, capCentsOf, fmt, pct, presets, RESALE_FEE_PERMILLE, rulesOf, vsFace } from '@/lib/resale';
 import { seatLine, ticketCurrency } from '@/lib/tickets';
 import type { Listed } from '@/lib/types';
-import { colors, font, radius, space } from '@/theme';
+import { colors, font, radius, space, scheme } from '@/theme';
 
 export default function Sell() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -216,5 +216,5 @@ const styles = StyleSheet.create({
   total: { flexDirection: 'row', alignItems: 'center', gap: space.md, paddingVertical: space.md, marginTop: 4, borderTopWidth: 1, borderStyle: 'dashed', borderTopColor: colors.line2 },
   meter: { height: 8, borderRadius: 99, backgroundColor: colors.surface2, overflow: 'hidden' },
   meterFill: { position: 'absolute', top: 0, bottom: 0, left: 0, borderRadius: 99 },
-  faceTick: { position: 'absolute', top: 0, bottom: 0, width: 2, backgroundColor: 'rgba(255,255,255,0.5)' },
+  faceTick: { position: 'absolute', top: 0, bottom: 0, width: 2, backgroundColor: scheme === 'light' ? 'rgba(28,20,22,0.5)' : 'rgba(255,255,255,0.5)' },
 });

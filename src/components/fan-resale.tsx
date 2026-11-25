@@ -21,7 +21,7 @@ import { vsFace } from '@/lib/resale';
 import { holdErrorText, holdFrom, liveHoldFor, saveResaleHold, seatText, type ResaleHold } from '@/lib/resale-hold';
 import { stripeSheetAvailable } from '@/lib/stripe-sheet';
 import type { ResaleHoldCreated, ResaleListing } from '@/lib/types';
-import { colors, radius, space } from '@/theme';
+import { colors, radius, space, scheme } from '@/theme';
 import { Section } from './form-ui';
 import { Icon } from './icons';
 import { TierChip } from './tier-look';
@@ -53,7 +53,8 @@ const SHOWN = 4;
 export function FacePill({ priceCents, faceCents }: { priceCents: number; faceCents: number }) {
   const v = vsFace(priceCents, faceCents);
   const tone = v.pct > 0 ? styles.faceUp : v.pct < 0 ? styles.faceDown : styles.faceEven;
-  const fg = v.pct > 0 ? '#f5d08a' : v.pct < 0 ? '#8be9bd' : colors.muted;
+  // pale amber/green read on dark; Light needs the deeper shades
+  const fg = v.pct > 0 ? (scheme === 'light' ? '#a35f00' : '#f5d08a') : v.pct < 0 ? (scheme === 'light' ? '#17824a' : '#8be9bd') : colors.muted;
   return (
     <View style={[styles.face, tone]}>
       <Txt variant="tiny" color={fg} numberOfLines={1}>

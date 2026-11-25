@@ -25,7 +25,7 @@ import { allInOf, amountProblem, isPwyw, startAmount } from '@/lib/pwyw';
 import { haptic } from '@/lib/haptics';
 import { useEvent } from '@/lib/queries';
 import type { Availability, EventDetail, HoldCreated, MapSection, SectionSeats, TicketType } from '@/lib/types';
-import { colors, gutter, radius, space } from '@/theme';
+import { colors, gutter, radius, space, scheme } from '@/theme';
 
 /** Seat buttons: big enough to tap (with the gap, about a fingertip). */
 const SEAT = 34;
@@ -405,7 +405,7 @@ const styles = StyleSheet.create({
   legend: { flexDirection: 'row', gap: space.lg },
   stage: { marginLeft: 36, height: 30, borderRadius: radius.sm, backgroundColor: colors.surface2, alignItems: 'center', justifyContent: 'center', marginBottom: space.sm },
   seat: { width: SEAT, height: SEAT, borderRadius: 9, alignItems: 'center', justifyContent: 'center', borderWidth: 1 },
-  seatFree: { backgroundColor: colors.surface2, borderColor: 'rgba(255,228,232,0.3)' },
+  seatFree: { backgroundColor: colors.surface2, borderColor: scheme === 'light' ? 'rgba(28,20,22,0.3)' : 'rgba(255,228,232,0.3)' },
   seatOn: { backgroundColor: colors.accent, borderColor: colors.accent },
   seatTaken: { backgroundColor: 'transparent', borderColor: colors.line, borderStyle: 'dashed' },
   bar: { position: 'absolute', left: 0, right: 0, bottom: 0, gap: space.sm, paddingTop: space.md, paddingHorizontal: gutter, backgroundColor: colors.bg2, borderTopWidth: 1, borderTopColor: colors.line2 },

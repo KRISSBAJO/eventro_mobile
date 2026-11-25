@@ -81,11 +81,17 @@ export function StatTile({ label, value, sub, tone }: { label: string; value: st
       <Txt variant="eyebrow" color={colors.dim} numberOfLines={1}>
         {label}
       </Txt>
-      <Txt variant="priceLg" color={tone === 'accent' ? colors.accent : tone === 'success' ? colors.success : colors.text} numberOfLines={1} adjustsFontSizeToFit>
+      {/* long amounts (₦31,050.00) step down a size: adjustsFontSizeToFit only works on phones, not the web build */}
+      <Txt
+        variant="priceLg"
+        color={tone === 'accent' ? colors.accent : tone === 'success' ? colors.success : colors.text}
+        numberOfLines={1}
+        adjustsFontSizeToFit
+        style={value.length > 11 ? { fontSize: 18, lineHeight: 22 } : value.length > 8 ? { fontSize: 21, lineHeight: 26 } : null}>
         {value}
       </Txt>
       {sub ? (
-        <Txt variant="small" color={colors.muted} numberOfLines={2}>
+        <Txt variant="small" color={colors.muted}>
           {sub}
         </Txt>
       ) : null}

@@ -28,7 +28,7 @@ import { DonationFields } from '@/components/donation-fields';
 import { Label, OrgScreen, WebButton } from '@/components/org-ui';
 import { StockPicker } from '@/components/stock-picker';
 import { PricingMode, PwywFields, TierExtras, TierPresets, type Pricing } from '@/components/tier-editor';
-import { Button, ErrorState, Field, Notice, Skeleton, Txt } from '@/components/ui';
+import { Button, ErrorState, Field, Notice, Skeleton, TextArea, Txt } from '@/components/ui';
 import { api, errorText } from '@/lib/api';
 import { donationChanges, donationDraftOf, donationErrors, type DonationDraft } from '@/lib/donations';
 import { CATEGORY_NAME, currencySymbol, money, num, todayYmd } from '@/lib/format';
@@ -311,7 +311,8 @@ function Editor({ e }: { e: OrgEventDetail }) {
         <Label>Details</Label>
         <Field label="Event name" value={title} onChangeText={setTitle} maxLength={120} error={errors.title} />
         <Field label="Tagline (optional)" value={subtitle} onChangeText={setSubtitle} maxLength={120} placeholder="One line under the name" />
-        <Field label="Description" value={about} onChangeText={setAbout} maxLength={5000} multiline textAlignVertical="top" placeholder="What should people expect?" />
+        {/* grows with the text; drag the grip to make it taller (same box as Create Event) */}
+        <TextArea label="Description" value={about} onChangeText={setAbout} maxLength={5000} placeholder="What should people expect?" />
         <Txt variant="small" color={colors.dim}>
           Category: {CATEGORY_NAME[e.category] ?? e.category}
         </Txt>
