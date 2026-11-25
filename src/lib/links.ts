@@ -4,6 +4,8 @@
  *   /tickets/<id>   → /ticket/<id>
  *   /tickets        → the wallet tab
  *   /events/<slug>  → /event/<slug>
+ *   /events/<slug>#resale          → /event/<slug>, scrolled to Fan resale
+ *   /resale                        → Sales & payouts (what this account is selling)
  *   /gift/<token>   → /gift/<token>
  *   /organizer/bookings/<id>       → the organization's venue booking
  *   /venues/manage/bookings/<id>   → a booking at a venue this person manages
@@ -20,12 +22,13 @@ export function appPath(raw: string | null | undefined): Href | null {
   // eventro://tickets/X, https://eventro.app/tickets/X or /tickets/X
   let path = raw.trim().replace(/^eventro:\/\/\/?/i, '/').replace(/^https?:\/\/[^/]+/i, '');
   if (!path.startsWith('/')) path = `/${path}`;
-  path = path.split('#')[0];
-  const [p] = path.split('?');
+  const [bare, hash] = path.split('#');
+  const [p] = bare.split('?');
   const parts = p.split('/').filter(Boolean).map((s) => decodeURIComponent(s));
   const [first, second] = parts;
   if (first === 'tickets' || first === 'ticket') return second ? { pathname: '/ticket/[id]', params: { id: second } } : '/tickets';
-  if ((first === 'events' || first === 'event') && second) return { pathname: '/event/[slug]', params: { slug: second } };
+  if ((first === 'events' || first === 'event') && second) return { pathname: '/event/[slug]', params: hash === 'resale' ? { slug: second, resale: '1' } : { slug: second } };
+  if (first === 'resale') return '/resale';
   if (first === 'gift' && second) return { pathname: '/gift/[token]', params: { token: second } };
   // Venue booking pushes: the organizer's side, and the venue manager's.
   if (first === 'organizer' && second === 'bookings') return parts[2] ? { pathname: '/organizer/bookings/[id]', params: { id: parts[2] } } : '/organizer/bookings';

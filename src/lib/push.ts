@@ -110,7 +110,10 @@ const handled = new Set<string>();
 function open(data: Record<string, unknown> | undefined, id: string) {
   if (handled.has(id)) return;
   handled.add(id);
-  const href = appPath(typeof data?.path === 'string' ? data.path : typeof data?.url === 'string' ? data.url : null);
+  // "Your ticket sold" carries the website's /tickets (where its sales live); in the app they're in Sales & payouts.
+  // A resale buyer's "You're going" opens their new ticket (/tickets/<id>) like any order.
+  const path = data?.type === 'resale.sold' ? '/resale' : typeof data?.path === 'string' ? data.path : typeof data?.url === 'string' ? data.url : null;
+  const href = appPath(path);
   if (href) router.push(href);
 }
 

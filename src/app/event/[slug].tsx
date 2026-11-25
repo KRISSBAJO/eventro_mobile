@@ -1,13 +1,17 @@
 /**
  * An event: hero (save and share), when and where (venue, category and city pages), gallery, about, ticket types with
  * perks, a price-drop alert, quantity and a sticky "Get tickets" bar ("Choose seats" when the event has a seat map).
+ * Below the organizer's tickets, "Fan resale" lists tickets other fans are selling (components/fan-resale.tsx); when
+ * nothing else is on sale, the bar becomes "Sold out · Get resale tickets" and scrolls there. `?resale=1` (links to
+ * /events/<slug>#resale) opens the screen scrolled to it.
  */
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { router, useLocalSearchParams } from 'expo-router';
-import { useState, type ReactNode } from 'react';
-import { Platform, Pressable, ScrollView, Share, StyleSheet, View } from 'react-native';
+import { useRef, useState, type ReactNode } from 'react';
+import { Platform, Pressable, ScrollView, Share, StyleSheet, View, type LayoutChangeEvent, type ScrollViewInstance } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { FanResale } from '@/components/fan-resale';
 import { Gallery } from '@/components/gallery';
 import { HeartButton } from '@/components/heart';
 import { Icon } from '@/components/icons';
@@ -18,7 +22,7 @@ import { api, ApiError, errorText, WEB_URL } from '@/lib/api';
 import { CATEGORY_NAME, cityOnly, isPast, localTimeText, money, when, zoneAbbr } from '@/lib/format';
 import { haptic } from '@/lib/haptics';
 import { openMaps } from '@/lib/maps';
-import { useEvent } from '@/lib/queries';
+import { useEvent, useEventResale } from '@/lib/queries';
 import { cardOf } from '@/lib/saved';
 import { lookOf } from '@/lib/tiers';
 import type { EventDetail, HoldCreated, TicketType } from '@/lib/types';
@@ -27,7 +31,7 @@ import { colors, gutter, radius, space } from '@/theme';
 const HERO = 360;
 
 export default function EventScreen() {
-  const { slug } = useLocalSearchParams<{ slug: string }>();
+  const { slug, resale } = useLocalSearchParams<{ slug: string; resale?: string }>();
   const insets = useSafeAreaInsets();
   const q = useEvent(slug);
   const e = q.data;
@@ -73,7 +77,7 @@ export default function EventScreen() {
       </View>
     );
   }
-  return <EventBody e={e} topBar={topBar} refetch={() => q.refetch()} />;
+  return <EventBody e={e} topBar={topBar} refetch={() => q.refetch()} jumpToResale={resale === '1'} />;
 }
 
 function share(e: EventDetail) {
@@ -82,7 +86,7 @@ function share(e: EventDetail) {
   Share.share(Platform.OS === 'ios' ? { message: `${e.title} on Eventro`, url } : { message: `${e.title} on Eventro: ${url}` }).catch(() => undefined);
 }
 
-function EventBody({ e, topBar, refetch }: { e: EventDetail; topBar: ReactNode; refetch: () => void }) {
+function EventBody({ e, topBar, refetch, jumpToResale }: { e: EventDetail; topBar: ReactNode; refetch: () => void; jumpToResale: boolean }) {
   const insets = useSafeAreaInsets();
   const d = when(e.startsAt);
   const tz = e.timezone || e.venue?.timezone || null;
@@ -106,6 +110,29 @@ function EventBody({ e, topBar, refetch }: { e: EventDetail; topBar: ReactNode; 
   const lowest = types.length ? Math.min(...types.map((t) => t.priceCents)) : e.fromCents;
   const seatMap = !!e.seatMap?.sections.length;
   const city = e.venue?.city ?? null;
+
+  // Fan resale: other fans' tickets, while the event is still ahead.
+  const resaleQ = useEventResale(cancelled || ended ? undefined : e.slug);
+  const listings = !cancelled && !ended && resaleQ.data?.enabled ? resaleQ.data.listings : [];
+  const allSoldOut = types.length > 0 && types.every((t) => t.available === 0);
+  // Nothing from the organizer (sold out, or sales paused) but fans are selling: the bar points to resale.
+  const resaleBar = !cancelled && !ended && !onSale && listings.length > 0;
+  const scroller = useRef<ScrollViewInstance>(null);
+  const resaleY = useRef<number | null>(null);
+  const jumped = useRef(false);
+  const toResale = () => {
+    if (resaleY.current === null) return;
+    haptic.select();
+    scroller.current?.scrollTo({ y: Math.max(0, resaleY.current - 96), animated: true });
+  };
+  const onResaleLayout = (ev: LayoutChangeEvent) => {
+    resaleY.current = ev.nativeEvent.layout.y;
+    if (jumpToResale && !jumped.current) {
+      jumped.current = true;
+      const y = Math.max(0, ev.nativeEvent.layout.y - 96);
+      setTimeout(() => scroller.current?.scrollTo({ y, animated: true }), 50);
+    }
+  };
 
   const getTickets = async () => {
     if (!tier) return;
@@ -141,7 +168,8 @@ function EventBody({ e, topBar, refetch }: { e: EventDetail; topBar: ReactNode; 
   return (
     <View style={{ flex: 1, backgroundColor: colors.bg }}>
       <ScrollView
-        contentContainerStyle={{ paddingBottom: (onSale ? 120 : space.huge) + insets.bottom }}
+        ref={scroller}
+        contentContainerStyle={{ paddingBottom: (onSale ? 120 : resaleBar ? 150 : space.huge) + insets.bottom }}
         scrollEventThrottle={32}
         onScroll={(ev) => setSolid(ev.nativeEvent.contentOffset.y > HERO - 140)}>
         <View style={{ height: HERO }}>
@@ -268,7 +296,27 @@ function EventBody({ e, topBar, refetch }: { e: EventDetail; topBar: ReactNode; 
             <Notice tone="plain">Tickets for this event aren’t on sale yet.</Notice>
           </View>
         ) : null}
+
+        {!cancelled && !ended ? (
+          <View onLayout={onResaleLayout} style={{ paddingHorizontal: gutter, marginTop: space.xl }}>
+            <FanResale slug={e.slug} listings={listings} refetch={() => void resaleQ.refetch()} />
+          </View>
+        ) : null}
       </ScrollView>
+
+      {resaleBar ? (
+        <View style={[styles.bar, { paddingBottom: Math.max(insets.bottom, space.md) }]}>
+          <View style={{ flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between', gap: space.md }}>
+            <Txt variant="small" color={colors.dim} numberOfLines={1} style={{ flexShrink: 1 }}>
+              {listings.length === 1 ? '1 ticket from a fan' : `${listings.length} tickets from fans`}
+            </Txt>
+            <Txt variant="smallStrong" numberOfLines={1}>
+              from {money(listings[0].priceCents, listings[0].currency)}
+            </Txt>
+          </View>
+          <Button label={allSoldOut ? 'Sold out · Get resale tickets' : 'Get resale tickets'} iconRight="arrowRight" onPress={toResale} block feedback="firm" />
+        </View>
+      ) : null}
 
       {onSale && tier ? (
         <View style={[styles.bar, { paddingBottom: Math.max(insets.bottom, space.md) }]}>

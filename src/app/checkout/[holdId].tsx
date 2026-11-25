@@ -15,34 +15,20 @@ import { useEffect, useRef, useState } from 'react';
 import { AppState, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Switch, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Image } from 'expo-image';
+import { CheckoutSuccess } from '@/components/checkout-success';
 import { GiftOption, giftBody, giftErrors, NO_GIFT, type GiftDraft } from '@/components/gift-option';
 import { Icon } from '@/components/icons';
 import { TierChip } from '@/components/tier-look';
-import { Badge, Button, Card, EmptyState, ErrorState, Field, IconButton, Notice, Skeleton, Txt } from '@/components/ui';
+import { Button, Card, EmptyState, ErrorState, Field, IconButton, Notice, Skeleton, Txt } from '@/components/ui';
 import { api, ApiError, errorText, WEB_URL } from '@/lib/api';
 import { emailOk, useAuth } from '@/lib/auth';
-import { instantOf, localStamp, money, PAYSTACK, when, zoneAbbr } from '@/lib/format';
+import { NATIVE, openPaystack, providerFor, sleep } from '@/lib/checkout';
+import { instantOf, money, when, zoneAbbr } from '@/lib/format';
 import { haptic } from '@/lib/haptics';
-import { enablePush, markPushOffered, shouldOfferPush } from '@/lib/push';
 import { useHealth } from '@/lib/queries';
 import { payWithStripeSheet, stripeSheetAvailable } from '@/lib/stripe-sheet';
 import type { Hold, Order, OrderCreated, Quote } from '@/lib/types';
 import { colors, gutter, radius, space } from '@/theme';
-
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-
-/** The website's return page sends app buyers here once their payment is confirmed (eventro://tickets). */
-const APP_RETURN = 'eventro://';
-const NATIVE = Platform.OS !== 'web';
-
-/**
- * Paystack's payment page. On a phone it's an auth session that closes by itself when the website hands back to
- * eventro://; the web build (no app to return to) just opens it.
- */
-const openPaystack = (url: string) =>
-  NATIVE
-    ? WebBrowser.openAuthSessionAsync(url, APP_RETURN, { toolbarColor: colors.bg, controlsColor: colors.accent, dismissButtonStyle: 'close' })
-    : WebBrowser.openBrowserAsync(url, { toolbarColor: colors.bg, controlsColor: colors.accent, dismissButtonStyle: 'close' });
 
 type Phase = 'form' | 'paying' | 'waiting' | 'done';
 
@@ -103,7 +89,7 @@ export default function Checkout() {
   const msLeft = h ? new Date(h.expiresAt).getTime() - now : null;
   const expired = !!h && (h.status === 'EXPIRED' || h.status === 'RELEASED' || (msLeft !== null && msLeft <= 0)) && phase !== 'done' && !order;
   const currency = h?.event.currency ?? 'USD';
-  const provider: OrderCreated['provider'] = PAYSTACK.has(currency) ? (health.data?.paystack ? 'paystack' : 'mock') : health.data?.stripe ? 'stripe' : 'mock';
+  const provider: OrderCreated['provider'] = providerFor(currency, health.data);
   const testMode = health.data?.payments === 'mock' || provider === 'mock';
   const errors = {
     name: name.trim().length < 2 ? 'Enter the name for the tickets.' : '',
@@ -301,7 +287,7 @@ export default function Checkout() {
     );
   }
 
-  if (phase === 'done' && paid) return <Success order={paid} hold={h} testMode={paid.provider === 'mock'} signedIn={!!user && user.email === paid.email} />;
+  if (phase === 'done' && paid) return <CheckoutSuccess order={paid} eventSlug={h.event.slug} testMode={paid.provider === 'mock'} signedIn={!!user && user.email === paid.email} />;
 
   const d = when(h.event.startsAt);
   const abbr = zoneAbbr(h.event.timezone, h.event.startsAt);
@@ -570,139 +556,6 @@ function Line({ label, value, accent }: { label: string; value: string; accent?:
   );
 }
 
-/**
- * After a first purchase: the moment notifications are worth asking for (reminders before doors open). Shown once,
- * only when the phone hasn't been asked yet; the system prompt appears only if they tap the button.
- */
-function PushOffer() {
-  const [show, setShow] = useState(false);
-  const [busy, setBusy] = useState(false);
-  const [result, setResult] = useState<{ ok: boolean; text: string } | null>(null);
-  useEffect(() => {
-    let live = true;
-    void shouldOfferPush().then((v) => {
-      if (!live || !v) return;
-      setShow(true);
-      void markPushOffered();
-    });
-    return () => {
-      live = false;
-    };
-  }, []);
-  if (!show) return null;
-  if (result) {
-    return (
-      <Notice tone={result.ok ? 'success' : 'plain'} icon={result.ok ? 'check' : 'bell'}>
-        {result.text}
-      </Notice>
-    );
-  }
-  return (
-    <Card style={{ gap: space.md }}>
-      <View style={{ flexDirection: 'row', gap: space.md, alignItems: 'center' }}>
-        <View style={{ width: 40, height: 40, borderRadius: 12, backgroundColor: colors.accentSoft, alignItems: 'center', justifyContent: 'center' }}>
-          <Icon name="bell" size={20} color={colors.accent} />
-        </View>
-        <View style={{ flex: 1, gap: 2 }}>
-          <Txt variant="bodyStrong">Get a reminder before doors open?</Txt>
-          <Txt variant="small" color={colors.muted}>
-            We’ll also tell you when a friend sends you a ticket. Change it any time in Account.
-          </Txt>
-        </View>
-      </View>
-      <View style={{ flexDirection: 'row', gap: space.sm }}>
-        <Button
-          label="Turn on"
-          size="md"
-          loading={busy}
-          style={{ flex: 1 }}
-          onPress={async () => {
-            setBusy(true);
-            const r = await enablePush(true);
-            setBusy(false);
-            setResult(r.ok ? { ok: true, text: 'Notifications are on. We’ll remind you before the show.' } : { ok: false, text: r.reason });
-          }}
-        />
-        <Button label="Not now" size="md" variant="ghost" style={{ flex: 1 }} onPress={() => setShow(false)} />
-      </View>
-    </Card>
-  );
-}
-
-function Success({ order, hold, testMode, signedIn }: { order: Order; hold: Hold; testMode: boolean; signedIn: boolean }) {
-  const insets = useSafeAreaInsets();
-  const d = when(order.event.startsAt);
-  // Delivery runs right after payment, so a gift that's due now is on its way; read once so rendering stays pure.
-  const [scheduled] = useState(() => !!order.gift && new Date(order.gift.sendAt).getTime() > Date.now() + 60_000);
-  return (
-    <ScrollView style={{ flex: 1, backgroundColor: colors.bg }} contentContainerStyle={{ padding: gutter, paddingTop: insets.top + space.xxxl, paddingBottom: insets.bottom + space.xxxl, gap: space.lg }}>
-      <View style={{ alignItems: 'center', gap: space.md }}>
-        <View style={styles.successIcon}>
-          <Icon name="check" size={34} color="#ffffff" strokeWidth={2.6} />
-        </View>
-        <Txt variant="h1" accessibilityRole="header" style={{ textAlign: 'center' }}>
-          You’re in!
-        </Txt>
-        <Txt color={colors.muted} style={{ textAlign: 'center' }}>
-          {order.quantity} ticket{order.quantity === 1 ? '' : 's'} for {order.event.title}. We’ve emailed the receipt to {order.email}.
-        </Txt>
-        {testMode ? <Badge label="Test order · nothing was charged" tone="success" style={{ alignSelf: 'center' }} /> : null}
-      </View>
-
-      {order.gift ? (
-        <Notice tone="success" icon="gift" title={scheduled ? `Gift scheduled for ${localStamp(new Date(order.gift.sendAt).getTime())}` : `Gift on its way to ${order.gift.recipientName.split(' ')[0]}`}>
-          {`We’ll email ${order.gift.recipientEmail} a private link to open it. The tickets stay held until they do. Manage it from My tickets.`}
-        </Notice>
-      ) : null}
-
-      <Card style={{ gap: space.md }}>
-        <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-          <Txt variant="eyebrow" color={colors.dim}>
-            Order
-          </Txt>
-          <Txt variant="mono" color={colors.muted}>
-            {order.id}
-          </Txt>
-        </View>
-        <Txt variant="title">{order.event.title}</Txt>
-        <TierChip tier={order.ticketType} label={`${order.quantity} × ${order.ticketType.name}`} />
-        <Txt variant="small" color={colors.muted}>
-          {d.date} · {d.time}
-          {order.event.venue ? `\n${[order.event.venue.name, order.event.venue.city].filter(Boolean).join(', ')}` : ''}
-        </Txt>
-        <View style={{ gap: 6, paddingTop: space.sm, borderTopWidth: 1, borderTopColor: colors.line }}>
-          {order.tickets.map((t, i) => (
-            <View key={t.id} style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-              <Txt variant="small" color={colors.muted}>
-                Ticket {i + 1} · {order.ticketType.name}
-              </Txt>
-              <Txt variant="smallStrong">{t.row && t.seat ? `${t.section ?? ''} ${t.row}${t.seat}`.trim() : 'GA'}</Txt>
-            </View>
-          ))}
-        </View>
-        <View style={{ flexDirection: 'row', justifyContent: 'space-between', paddingTop: space.sm, borderTopWidth: 1, borderTopColor: colors.line }}>
-          <Txt variant="bodyStrong">Total paid</Txt>
-          <Txt variant="price">{money(order.totalCents, order.currency)}</Txt>
-        </View>
-      </Card>
-
-      {signedIn ? <PushOffer /> : null}
-
-      {signedIn ? (
-        <Button label="View my tickets" icon="ticket" onPress={() => router.replace('/tickets')} />
-      ) : (
-        <>
-          <Notice tone="plain" icon="user" title="Keep your tickets in the app">
-            {`Create an account with ${order.email} and these tickets move into your wallet, with the QR code for the door.`}
-          </Notice>
-          <Button label="Create an account" onPress={() => router.replace({ pathname: '/sign-up', params: { email: order.email, name: order.buyerName } })} />
-        </>
-      )}
-      <Button label="Back to the event" variant="ghost" onPress={() => router.replace({ pathname: '/event/[slug]', params: { slug: hold.event.slug } })} />
-    </ScrollView>
-  );
-}
-
 const styles = StyleSheet.create({
   header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: gutter - 4, paddingBottom: space.sm },
   timer: { flexDirection: 'row', alignItems: 'center', gap: space.sm, padding: space.md, borderRadius: radius.md, borderWidth: 1, borderColor: colors.line2, backgroundColor: colors.surface },
@@ -712,5 +565,4 @@ const styles = StyleSheet.create({
   protect: { flexDirection: 'row', gap: space.md, alignItems: 'center', padding: space.lg, borderRadius: radius.card, borderWidth: 1, borderColor: colors.line2, backgroundColor: colors.surface },
   totalRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end', paddingTop: space.md, marginTop: space.xs, borderTopWidth: 1, borderTopColor: colors.line, borderStyle: 'dashed' },
   bar: { position: 'absolute', left: 0, right: 0, bottom: 0, gap: space.sm, paddingTop: space.md, paddingHorizontal: gutter, backgroundColor: colors.bg2, borderTopWidth: 1, borderTopColor: colors.line2 },
-  successIcon: { width: 76, height: 76, borderRadius: 38, backgroundColor: colors.success, alignItems: 'center', justifyContent: 'center', marginBottom: space.sm },
 });

@@ -51,6 +51,8 @@ export type EventCard = {
   distanceKm?: number | null;
   /** paid tickets sold in the last 14 days (what sort=popular ranks by) */
   soldRecent?: number;
+  /** fan-resale listings on sale now (0 when resale is off or closed); older APIs leave it out */
+  resaleCount?: number;
   /** with ?currency=: fromCents converted to that currency (approximate, for display) */
   fromCentsIn?: { currency: string; cents: number };
 };
@@ -402,8 +404,25 @@ export type MyListing = {
 };
 export type MyResale = { listings: MyListing[]; totals: { owedCents: number; paidCents: number } };
 
+/** One listing of GET /events/:slug/resale (active only, cheapest first). */
+export type ResaleListing = {
+  id: string;
+  priceCents: number;
+  faceCents: number;
+  currency: string;
+  ticketType: { id: string; name: string } & TierFields;
+  section?: string | null;
+  /** the seat map's name for the section ("Lower Level 104") */
+  sectionName?: string | null;
+  row?: string | null;
+  seat?: number | null;
+  listedAt?: string;
+};
 /** GET /events/:slug/resale */
-export type EventResale = { enabled: boolean; listings: { id: string; priceCents: number; faceCents: number; currency: string; ticketType: { id: string; name: string } & TierFields }[] };
+export type EventResale = { enabled: boolean; listings: ResaleListing[] };
+
+/** POST /resale/:id/hold: the listing is held for this buyer for 10 minutes; the key creates the order. */
+export type ResaleHoldCreated = { listingId: string; holdKey: string; heldUntil: string; priceCents: number; currency: string };
 
 /** GET /gifts/:token (details only once delivered) */
 export type Gift = {

@@ -46,6 +46,7 @@ export default function RootLayout() {
                   <Stack.Screen name="(tabs)" />
                   <Stack.Screen name="event/[slug]" />
                   <Stack.Screen name="checkout/[holdId]" options={{ gestureEnabled: false }} />
+                  <Stack.Screen name="checkout/resale/[listingId]" options={{ gestureEnabled: false }} />
                   <Stack.Screen name="ticket/[id]" />
                   <Stack.Screen name="place" options={{ presentation: 'modal' }} />
                   <Stack.Screen name="sign-in" options={{ presentation: 'modal' }} />

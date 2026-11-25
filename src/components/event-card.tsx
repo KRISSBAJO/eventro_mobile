@@ -17,7 +17,21 @@ const open = (slug: string) => {
 };
 
 const where = (e: Ev) => [e.venue, cityOnly(e.city)].filter(Boolean).join(' · ') || 'Online';
-const a11y = (e: Ev) => `${e.title}, ${e.subtitle}. ${when(e.startsAt).date} at ${when(e.startsAt).time}. ${where(e)}. From ${money(e.fromCents, e.currency)}.`;
+const hasResale = (e: Ev) => (e.resaleCount ?? 0) > 0;
+const a11y = (e: Ev) =>
+  `${e.title}, ${e.subtitle}. ${when(e.startsAt).date} at ${when(e.startsAt).time}. ${where(e)}. From ${money(e.fromCents, e.currency)}.${hasResale(e) ? ' Fan resale tickets available.' : ''}`;
+
+/** Fans are selling tickets for this event (GET /events → resaleCount). `glass` sits on the image. */
+function ResaleBadge({ glass }: { glass?: boolean }) {
+  return (
+    <View style={[styles.resale, glass && styles.resaleGlass]} accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
+      <Icon name="tag" size={11} color={colors.accentHi} strokeWidth={2.4} />
+      <Txt variant="tiny" color={glass ? colors.text : colors.accentHi} numberOfLines={1}>
+        Resale
+      </Txt>
+    </View>
+  );
+}
 
 function DateTile({ iso }: { iso: string }) {
   const d = when(iso);
@@ -52,6 +66,7 @@ export function LargeEventCard({ e, width = 280, distanceKm }: { e: Ev; width?: 
           </View>
         </View>
         <View style={styles.largeBottom}>
+          {hasResale(e) ? <ResaleBadge glass /> : null}
           <Txt variant="h3" numberOfLines={1}>
             {e.title}
           </Txt>
@@ -118,6 +133,11 @@ export function CompactEventCard({ e }: { e: Ev }) {
               ≈ {money(e.fromCentsIn.cents, e.fromCentsIn.currency)}
             </Txt>
           ) : null}
+          {hasResale(e) ? (
+            <View style={{ alignSelf: 'center', marginLeft: 2 }}>
+              <ResaleBadge />
+            </View>
+          ) : null}
         </View>
       </View>
       <View style={{ justifyContent: 'center' }}>
@@ -155,6 +175,8 @@ const styles = StyleSheet.create({
   largeMedia: { aspectRatio: 1.5, overflow: 'hidden', backgroundColor: colors.surface2 },
   largeTop: { position: 'absolute', top: 12, left: 12, right: 12, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
   largeBottom: { position: 'absolute', left: 14, right: 14, bottom: 12, gap: 1 },
+  resale: { flexDirection: 'row', alignItems: 'center', gap: 4, alignSelf: 'flex-start', paddingHorizontal: 7, paddingVertical: 2, borderRadius: radius.pill, borderWidth: 1, borderColor: colors.accentLine, backgroundColor: colors.accentSoft },
+  resaleGlass: { marginBottom: 5, backgroundColor: colors.glass, borderColor: 'rgba(255,106,92,0.45)' },
   largeMeta: { flexDirection: 'row', alignItems: 'flex-end', gap: space.md, paddingVertical: space.md, paddingHorizontal: 14, borderTopWidth: 1, borderTopColor: colors.line },
   dateTile: { width: 44, paddingVertical: 5, borderRadius: 12, backgroundColor: colors.glass, borderWidth: 1, borderColor: 'rgba(255,255,255,0.16)', alignItems: 'center' },
   compact: {
