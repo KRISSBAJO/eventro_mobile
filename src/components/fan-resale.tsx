@@ -14,6 +14,7 @@ import { Pressable, StyleSheet, View } from 'react-native';
 import { api, errorText, WEB_URL } from '@/lib/api';
 import { providerFor } from '@/lib/checkout';
 import { money } from '@/lib/format';
+import { openGuaranteeTerms } from '@/lib/guarantee';
 import { haptic } from '@/lib/haptics';
 import { useHealth } from '@/lib/queries';
 import { vsFace } from '@/lib/resale';
@@ -26,8 +27,23 @@ import { Icon } from './icons';
 import { TierChip } from './tier-look';
 import { Button, Notice, Txt } from './ui';
 
-/** What the API does on a resale sale (checkout.service fulfil): the seller's ticket is voided, the buyer gets a new one. */
-export const RESALE_PROMISE = 'Sold by fans through Eventro. When you pay, the seller’s ticket is cancelled and you get a new one with its own QR code.';
+/**
+ * The fan resale promise. A sale voids the seller's ticket and gives the buyer a new one (checkout.service fulfil);
+ * the resale scan guarantee refunds the buyer in full if that ticket doesn't scan (guarantee.ts).
+ */
+export const RESALE_PROMISE = 'Sold by fans through Eventro. You get a new ticket with its own QR code, and if it doesn’t scan at the door, you get your money back.';
+
+/** " Guarantee terms" as a link inside the promise's text (the website's /guarantee#fan-resale). */
+export function GuaranteeTermsLink() {
+  return (
+    <>
+      {' '}
+      <Txt variant="smallStrong" color={colors.accent} accessibilityRole="link" onPress={openGuaranteeTerms}>
+        Guarantee terms
+      </Txt>
+    </>
+  );
+}
 
 /** Listings shown before "Show all". */
 const SHOWN = 4;
@@ -159,6 +175,7 @@ export function FanResale({ slug, listings, refetch }: { slug: string; listings:
         <Txt variant="small" color={colors.muted} style={{ flex: 1 }}>
           {RESALE_PROMISE}
           {cheapest && onWebsite(cheapest.currency) ? ' Card payments for resale finish on the Eventro website.' : ''}
+          <GuaranteeTermsLink />
         </Txt>
       </View>
     </Section>

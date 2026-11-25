@@ -36,9 +36,20 @@ export function seatLine(t: Pick<Ticket, 'sectionName' | 'section' | 'row' | 'se
   return section ? `${section} · General admission` : 'General admission';
 }
 
-export type TicketState = { key: 'ready' | 'cancelled' | 'used' | 'ended' | 'gift' | 'sent' | 'listed'; label: string; detail: string; tone: 'success' | 'accent' | 'plain' | 'warning' };
+export type TicketState = { key: 'ready' | 'cancelled' | 'used' | 'ended' | 'gift' | 'sent' | 'listed' | 'refunded'; label: string; detail: string; tone: 'success' | 'accent' | 'plain' | 'warning' };
 
 export function ticketState(t: Ticket): TicketState {
+  // GET /me/tickets returns a VOID ticket only when it has a resale guarantee claim (refunded under the guarantee).
+  if (t.status === 'VOID') {
+    const claim = t.guarantee?.claim;
+    const refunded = claim?.status === 'APPROVED';
+    return {
+      key: 'refunded',
+      label: refunded ? (claim.refundStatus === 'REFUNDED' ? 'Refunded · resale guarantee' : 'Refund approved · resale guarantee') : 'No longer valid',
+      detail: refunded ? 'Refunded under the resale guarantee. This ticket no longer works.' : 'This ticket no longer works.',
+      tone: 'plain',
+    };
+  }
   if (t.event.status === 'CANCELLED') {
     const refunded = t.order.status === 'REFUNDED';
     return { key: 'cancelled', label: refunded ? 'Event cancelled · refunded' : 'Event cancelled · refund pending', detail: refunded ? 'Refunded. This ticket no longer works.' : 'Refund on its way. This ticket no longer works.', tone: 'accent' };

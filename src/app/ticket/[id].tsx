@@ -22,6 +22,7 @@ import { api, errorText, isOffline } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { codeAt, WINDOW_MS } from '@/lib/door-code';
 import { localStamp, when, zoneAbbr } from '@/lib/format';
+import { claimBlocker, claimView, stamp, useClaimQueue } from '@/lib/guarantee';
 import { haptic } from '@/lib/haptics';
 import { useMyResale, useMyTickets, useRefreshWallet } from '@/lib/queries';
 import { blockedLine, blockers, breakdown, fmt, RESALE_FEE_PERMILLE, rulesOf, transferExpiry } from '@/lib/resale';
@@ -212,7 +213,7 @@ function TicketCard({ t, offline, feePermille, userId }: { t: Ticket; offline: b
             </>
           ) : (
             <View style={[styles.statusBox, { width: qrSize + 24 }, state.key === 'cancelled' && { backgroundColor: 'rgba(255,77,61,0.08)' }]}>
-              <Icon name={state.key === 'cancelled' ? 'alert' : state.key === 'gift' ? 'gift' : state.key === 'used' ? 'check' : state.key === 'listed' ? 'tag' : state.key === 'sent' ? 'mail' : 'clock'} size={28} color={state.key === 'cancelled' ? '#d7321f' : colors.inkMuted} />
+              <Icon name={state.key === 'cancelled' ? 'alert' : state.key === 'gift' ? 'gift' : state.key === 'used' ? 'check' : state.key === 'listed' ? 'tag' : state.key === 'sent' ? 'mail' : state.key === 'refunded' ? 'cash' : 'clock'} size={28} color={state.key === 'cancelled' ? '#d7321f' : colors.inkMuted} />
               <Txt variant="title" color={colors.ink} style={{ textAlign: 'center' }}>
                 {state.key === 'cancelled' ? 'Event cancelled' : state.label}
               </Txt>
@@ -293,11 +294,74 @@ function TicketCard({ t, offline, feePermille, userId }: { t: Ticket; offline: b
           {t.id}
         </Txt>
       </View>
+      {t.guarantee ? <GuaranteeBox t={t} userId={userId} /> : null}
       {note ? (
         <Notice tone={note.tone} icon={note.tone === 'success' ? 'check' : 'alert'} title={note.title}>
           {note.body}
         </Notice>
       ) : null}
+    </View>
+  );
+}
+
+/**
+ * The fan resale scan guarantee under a covered ticket: its claim's status when there is one (or one waiting on this
+ * phone), otherwise what's covered and, inside the claim window, the way to claim.
+ */
+function GuaranteeBox({ t, userId }: { t: Ticket; userId: string }) {
+  const g = t.guarantee!;
+  const { queued, outcome } = useClaimQueue(userId, t.id);
+  // The window opens and closes while the ticket is on screen (at the door), so keep the clock moving.
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 30_000);
+    return () => clearInterval(timer);
+  }, []);
+  const open = () => router.push({ pathname: '/guarantee/[id]', params: { id: t.id } });
+  const claim = g.claim ?? (outcome?.kind === 'sent' ? outcome.claim : null);
+
+  if (claim) {
+    const c = claimView(claim);
+    return (
+      <Notice tone={c.tone} icon={c.icon} title={c.title} action="See your claim" onAction={open}>
+        <Txt variant="small" color={colors.muted}>
+          {claim.message}
+          {c.extra ? ` ${c.extra}` : ''}
+        </Txt>
+      </Notice>
+    );
+  }
+  if (queued) {
+    return (
+      <Notice tone="warning" icon="offline" title="Claim saved on this phone" action="See your claim" onAction={open}>
+        Saved — we’ll send it as soon as you’re back online.
+      </Notice>
+    );
+  }
+  if (outcome?.kind === 'refused') {
+    return (
+      <Notice tone="accent" icon="alert" title="Your claim wasn’t accepted" action={claimBlocker(t, now) ? undefined : 'Try again'} onAction={open}>
+        {outcome.message}
+      </Notice>
+    );
+  }
+
+  // A cancelled event is refunded with the event: the guarantee has nothing to add.
+  if (t.event.status === 'CANCELLED' || t.status === 'VOID') return null;
+  const blocker = claimBlocker(t, now);
+  const body = blocker ? `If it doesn’t scan at the door, you get your money back. ${blocker}` : `If it doesn’t scan at the door, you get your money back, fees included. Claim until ${stamp(g.closesAt)}.`;
+  return (
+    <View style={styles.guarantee}>
+      <View style={{ flexDirection: 'row', gap: space.md, alignItems: 'flex-start' }}>
+        <Icon name="shield" size={18} color={colors.accent} />
+        <View style={{ flex: 1, gap: 2 }}>
+          <Txt variant="smallStrong">Covered by the resale guarantee</Txt>
+          <Txt variant="small" color={colors.muted}>
+            {body}
+          </Txt>
+        </View>
+      </View>
+      {!blocker ? <Button label="Didn’t scan? Get a refund" icon="shield" size="md" block onPress={open} /> : null}
     </View>
   );
 }
@@ -475,4 +539,5 @@ const styles = StyleSheet.create({
   actions: { flexDirection: 'row', borderTopWidth: 1, borderTopColor: 'rgba(13,13,15,0.1)', marginBottom: -space.lg + 4 },
   action: { flex: 1, flexDirection: 'row', gap: 8, alignItems: 'center', justifyContent: 'center', minHeight: 52 },
   actionSep: { width: 1, backgroundColor: 'rgba(13,13,15,0.1)' },
+  guarantee: { gap: space.md, padding: space.md + 2, borderRadius: radius.md, borderWidth: 1, borderColor: colors.line2, backgroundColor: colors.surface },
 });

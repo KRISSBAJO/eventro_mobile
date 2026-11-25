@@ -17,6 +17,7 @@ import { rankNear, usePlace } from '@/lib/place';
 import { useAllEvents, useMyTickets, useRefreshWallet } from '@/lib/queries';
 import { inTime } from '@/lib/resale';
 import { useSaved } from '@/lib/saved';
+import { claimShort } from '@/lib/guarantee';
 import { groupTickets, seatLine, ticketState, type TicketGroup } from '@/lib/tickets';
 import type { EventCard, IncomingTransfer } from '@/lib/types';
 import { colors, gutter, radius, space } from '@/theme';
@@ -495,7 +496,7 @@ function GroupCard({ g }: { g: TicketGroup }) {
             }}
             style={({ pressed }) => [styles.ticketRow, i > 0 && { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.line2 }, pressed && { backgroundColor: colors.surface2 }]}>
             <View style={[styles.ticketIcon, s.key === 'ready' && { backgroundColor: colors.accentSoft }]}>
-              <Icon name={s.key === 'ready' ? 'ticket' : s.key === 'gift' ? 'gift' : s.key === 'cancelled' ? 'alert' : 'ticket'} size={18} color={s.key === 'ready' ? colors.accent : colors.muted} />
+              <Icon name={s.key === 'ready' ? 'ticket' : s.key === 'gift' ? 'gift' : s.key === 'cancelled' ? 'alert' : s.key === 'refunded' ? 'cash' : 'ticket'} size={18} color={s.key === 'ready' ? colors.accent : colors.muted} />
             </View>
             <View style={{ flex: 1, gap: 4 }}>
               <TierChip tier={tk.ticketType} />
@@ -506,6 +507,15 @@ function GroupCard({ g }: { g: TicketGroup }) {
                 <Txt variant="tiny" color={s.tone === 'accent' ? colors.accentHi : s.tone === 'warning' ? colors.warning : colors.dim} numberOfLines={1}>
                   {s.label}
                 </Txt>
+              ) : null}
+              {/* Fan resale tickets: covered by the scan guarantee (or its claim's status). A refunded one already says so above. */}
+              {tk.guarantee && s.key !== 'refunded' && s.key !== 'cancelled' ? (
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                  <Icon name="shield" size={12} color={tk.guarantee.claim ? colors.warning : colors.dim} />
+                  <Txt variant="tiny" color={tk.guarantee.claim ? colors.warning : colors.dim} numberOfLines={1}>
+                    {tk.guarantee.claim ? claimShort(tk.guarantee.claim) : 'Resale guarantee'}
+                  </Txt>
+                </View>
               ) : null}
             </View>
             {s.key === 'ready' ? (

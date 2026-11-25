@@ -7,6 +7,7 @@ import { useEffect } from 'react';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { ConfirmProvider } from '@/components/confirm';
 import { AuthProvider } from '@/lib/auth';
+import { GuaranteeSync } from '@/lib/guarantee';
 import { PlaceProvider } from '@/lib/place';
 import { PushLinks } from '@/lib/push';
 import { queryClient } from '@/lib/query';
@@ -41,6 +42,8 @@ export default function RootLayout() {
               <PushLinks />
               {/* Hearts saved while signed out move into the account at sign-in. */}
               <SavedSync />
+              {/* Resale guarantee claims saved offline at the door go up when the API can be reached. */}
+              <GuaranteeSync />
               <ConfirmProvider>
                 <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.bg }, animation: 'default' }}>
                   <Stack.Screen name="(tabs)" />
@@ -56,6 +59,7 @@ export default function RootLayout() {
                   <Stack.Screen name="reset-password" options={{ presentation: 'modal' }} />
                   <Stack.Screen name="transfer/[id]" options={{ presentation: 'modal' }} />
                   <Stack.Screen name="sell/[id]" options={{ presentation: 'modal' }} />
+                  <Stack.Screen name="guarantee/[id]" options={{ presentation: 'modal' }} />
                   <Stack.Screen name="gift/[token]" />
                   <Stack.Screen name="resale" />
                   <Stack.Screen name="devices" />

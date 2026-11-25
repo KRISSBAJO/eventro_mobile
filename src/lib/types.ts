@@ -339,7 +339,50 @@ export type Ticket = {
     transfersEnabled?: boolean;
     transferCutoffMinutes?: number;
   };
+  /**
+   * The fan resale scan guarantee: null (or missing, in older answers and saved copies) when the ticket isn't
+   * covered. VOID tickets come back only when they have a claim, so a refunded ticket still shows its decision.
+   */
+  guarantee?: Guarantee | null;
 };
+
+/* ---------- the fan resale scan guarantee ---------- */
+
+export type GuaranteeReason = 'DID_NOT_SCAN' | 'TURNED_AWAY' | 'OTHER';
+
+/** A guarantee claim (POST/GET /tickets/:id/guarantee-claims, and on each covered ticket in GET /me/tickets). */
+export type GuaranteeClaim = {
+  id: string;
+  ticketId: string;
+  status: 'PENDING' | 'APPROVED' | 'DECLINED';
+  reason: GuaranteeReason;
+  details: string | null;
+  /** decided automatically on submit (checked in, or a rejected door scan of this ticket) */
+  auto: boolean;
+  decisionNote: string | null;
+  /** the whole resale order, fees included */
+  amountCents: number;
+  currency: string;
+  refundStatus: 'NONE' | 'PENDING' | 'REFUNDED' | 'FAILED';
+  createdAt: string;
+  decidedAt: string | null;
+  refundedAt: string | null;
+  /** a status line written by the server, ready to show */
+  message: string;
+};
+
+/** A covered ticket's guarantee: the claim window (real instants) and its claim, if any. */
+export type Guarantee = {
+  covered: true;
+  opensAt: string;
+  closesAt: string;
+  /** inside the window when the API answered */
+  open: boolean;
+  claim: GuaranteeClaim | null;
+};
+
+/** GET /tickets/:id/guarantee-claims (holder only). */
+export type GuaranteeAnswer = { covered: boolean; opensAt: string | null; closesAt: string | null; open: boolean; claim: GuaranteeClaim | null };
 
 export type IncomingTransfer = {
   id: string;

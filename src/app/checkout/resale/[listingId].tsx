@@ -16,7 +16,7 @@ import { useEffect, useRef, useState } from 'react';
 import { AppState, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { CheckoutSuccess } from '@/components/checkout-success';
-import { FacePill, RESALE_PROMISE } from '@/components/fan-resale';
+import { FacePill, GuaranteeTermsLink, RESALE_PROMISE } from '@/components/fan-resale';
 import { GradientButton, Section } from '@/components/form-ui';
 import { Icon } from '@/components/icons';
 import { TierBadge, TierGlyph, TierSurface } from '@/components/tier-look';
@@ -349,6 +349,7 @@ export default function ResaleCheckout() {
             <Icon name="check" size={15} color={colors.success} />
             <Txt variant="small" color={colors.muted} style={{ flex: 1 }}>
               {RESALE_PROMISE}
+              <GuaranteeTermsLink />
             </Txt>
           </View>
         </Section>
