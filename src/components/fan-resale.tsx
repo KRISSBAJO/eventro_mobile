@@ -29,11 +29,12 @@ import { Button, Notice, Txt } from './ui';
 
 /**
  * The fan resale promise. A sale voids the seller's ticket and gives the buyer a new one (checkout.service fulfil);
- * the resale scan guarantee refunds the buyer in full if that ticket doesn't scan (guarantee.ts).
+ * like every paid ticket it's covered by the Eventro Guarantee, which refunds it in full if it doesn't scan
+ * (guarantee.ts).
  */
-export const RESALE_PROMISE = 'Sold by fans through Eventro. You get a new ticket with its own QR code, and if it doesn’t scan at the door, you get your money back.';
+export const RESALE_PROMISE = 'Sold by fans through Eventro. You get a new ticket with its own QR code, covered by the Eventro Guarantee: if it doesn’t scan at the door, you get your money back, fees included.';
 
-/** " Guarantee terms" as a link inside the promise's text (the website's /guarantee#fan-resale). */
+/** " Guarantee terms" as a link inside the promise's text (the website's /guarantee#terms). */
 export function GuaranteeTermsLink() {
   return (
     <>

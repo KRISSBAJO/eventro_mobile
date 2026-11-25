@@ -1,10 +1,11 @@
 /**
- * "Didn't scan? Get your money back": a resale guarantee claim for one ticket (POST /tickets/:id/guarantee-claims).
+ * "Didn't scan? Get your money back": an Eventro Guarantee claim for one ticket (POST /tickets/:id/guarantee-claims).
+ * It refunds that ticket only, all-in (its share of the order, fees included); other tickets on the order keep working.
  *
  * Opened from the wallet ticket. The ticket comes from the saved wallet, so the screen works with no signal at the
  * door: a claim that can't reach the API is saved on this phone and sent when it can (guarantee.ts), and the server
  * still makes every check when it arrives. After sending, the same screen shows the decision: the server declines
- * scanned-in tickets and approves (and refunds) ones the door refused at once; anything else is reviewed within a day.
+ * scanned-in tickets at once; anything else is reviewed by the Eventro team within 24 hours.
  */
 import { router, useLocalSearchParams } from 'expo-router';
 import { useEffect, useState } from 'react';
@@ -15,6 +16,7 @@ import { Icon } from '@/components/icons';
 import { Button, Chip, Notice, TextArea, Txt } from '@/components/ui';
 import { ApiError, errorText } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
+import { money } from '@/lib/format';
 import {
   claimBlocker,
   claimView,
@@ -22,6 +24,8 @@ import {
   DETAILS_MAX,
   dropQueued,
   flushClaims,
+  HOW_DECIDED,
+  isFree,
   openGuaranteeTerms,
   queueClaim,
   REASONS,
@@ -99,7 +103,7 @@ export default function GuaranteeClaimScreen() {
         </Section>
         {claim.status === 'APPROVED' ? (
           <Txt variant="small" color={colors.dim}>
-            The full amount paid for the resale ticket, fees included, goes back to the original payment method. The ticket no longer works.
+            {`This ticket’s full share of what was paid, fees included, goes back to the payment method that paid for the order. This ticket no longer works${t.order.quantity > 1 ? '; your other tickets on this order aren’t affected' : ''}.`}
           </Txt>
         ) : null}
         <TermsLink />
@@ -170,7 +174,7 @@ export default function GuaranteeClaimScreen() {
             <Icon name="close" size={20} color={colors.muted} />
           </View>
           <Txt variant="title" style={{ textAlign: 'center' }}>
-            You can’t claim on this ticket right now
+            {isFree(t) ? 'Free tickets aren’t covered' : 'You can’t claim on this ticket right now'}
           </Txt>
           <Txt variant="small" color={colors.muted} style={{ textAlign: 'center' }}>
             {blocker}
@@ -183,6 +187,7 @@ export default function GuaranteeClaimScreen() {
   }
 
   /* ---------- the claim form ---------- */
+  const refund = t.guarantee && t.guarantee.refundCents > 0 ? money(t.guarantee.refundCents, t.order.currency, { decimals: true }) : '';
   const submit = async () => {
     if (!reason) {
       haptic.warning();
@@ -220,7 +225,7 @@ export default function GuaranteeClaimScreen() {
   return (
     <AuthShell title={TITLE} icon="shield" subtitle={subtitle}>
       <Txt color={colors.muted}>
-        This ticket came from Eventro fan resale. If it doesn’t scan at the door, Eventro refunds what was paid for it in full, fees included, to the original payment method.
+        {`This ticket is covered by the Eventro Guarantee. If it didn’t scan at the door, you can claim a refund for this ticket only${refund ? `: ${refund}, its full share of what was paid, fees included` : ', its full share of what was paid, fees included'}. It goes back to the payment method that paid for the order.${t.order.quantity > 1 ? ' Your other tickets on this order aren’t affected.' : ''}`}
       </Txt>
       {outcome?.kind === 'refused' ? (
         <Notice icon="alert" title="Your last claim wasn’t accepted">
@@ -256,10 +261,9 @@ export default function GuaranteeClaimScreen() {
       <Section icon="cash" title="What happens next">
         <View style={{ gap: space.sm }}>
           {t.status === 'CHECKED_IN' ? (
-            <Step text={`This ticket was scanned in${t.checkedInAt ? ` at ${stamp(t.checkedInAt)}` : ''}, so the claim will be declined automatically. If you were turned away anyway, say so below; Eventro can overturn the decision.`} />
+            <Step text={`This ticket was scanned in${t.checkedInAt ? ` at ${stamp(t.checkedInAt)}` : ''}, so the claim will be declined automatically. If you were turned away anyway, say so above; Eventro can overturn the decision.`} />
           ) : null}
-          <Step text="If the door scanner refused this ticket, your refund is approved straight away." />
-          <Step text="Otherwise we’ll get back to you within 24 hours." />
+          <Step text={HOW_DECIDED} />
           <Step text={`Refunds: ${REFUND_TIMING.charAt(0).toLowerCase()}${REFUND_TIMING.slice(1)}`} />
           <Step text={`You can claim until ${stamp(t.guarantee?.closesAt)} (48 hours after the event ends).`} />
         </View>
@@ -290,7 +294,7 @@ function TermsLink() {
     <Txt variant="small" color={colors.dim} style={{ textAlign: 'center' }}>
       Read the{' '}
       <Txt variant="smallStrong" color={colors.accent} accessibilityRole="link" onPress={openGuaranteeTerms}>
-        resale guarantee terms
+        Eventro Guarantee terms
       </Txt>
       .
     </Txt>

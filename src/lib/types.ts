@@ -340,15 +340,19 @@ export type Ticket = {
     transferCutoffMinutes?: number;
   };
   /**
-   * The fan resale scan guarantee: null (or missing, in older answers and saved copies) when the ticket isn't
-   * covered. VOID tickets come back only when they have a claim, so a refunded ticket still shows its decision.
+   * The Eventro Guarantee (the scan guarantee): always set by the API, covered or not. Missing (or null) only in
+   * saved copies from older app versions, where nothing is known about it. VOID tickets come back only when they
+   * have a claim or their event was cancelled, so a refunded ticket still shows its decision.
    */
-  guarantee?: Guarantee | null;
+  guarantee?: TicketGuarantee | null;
 };
 
-/* ---------- the fan resale scan guarantee ---------- */
+/* ---------- the Eventro Guarantee (the scan guarantee) ---------- */
 
 export type GuaranteeReason = 'DID_NOT_SCAN' | 'TURNED_AWAY' | 'OTHER';
+
+/** Who pays an approved claim: Eventro (fan resale tickets) or the organizer (every other paid ticket). Not for fans. */
+export type GuaranteePayer = 'EVENTRO' | 'ORGANIZER';
 
 /** A guarantee claim (POST/GET /tickets/:id/guarantee-claims, and on each covered ticket in GET /me/tickets). */
 export type GuaranteeClaim = {
@@ -357,12 +361,14 @@ export type GuaranteeClaim = {
   status: 'PENDING' | 'APPROVED' | 'DECLINED';
   reason: GuaranteeReason;
   details: string | null;
-  /** decided automatically on submit (checked in, or a rejected door scan of this ticket) */
+  /** decided on arrival from the door's records (declined: the ticket was scanned in) */
   auto: boolean;
   decisionNote: string | null;
-  /** the whole resale order, fees included */
+  /** this ticket's share of the order, fees included */
   amountCents: number;
   currency: string;
+  /** missing on claims saved by older app versions */
+  payer?: GuaranteePayer;
   refundStatus: 'NONE' | 'PENDING' | 'REFUNDED' | 'FAILED';
   createdAt: string;
   decidedAt: string | null;
@@ -371,18 +377,27 @@ export type GuaranteeClaim = {
   message: string;
 };
 
-/** A covered ticket's guarantee: the claim window (real instants) and its claim, if any. */
-export type Guarantee = {
-  covered: true;
+/**
+ * A ticket's Eventro Guarantee (GET /me/tickets, and GET /tickets/:id/guarantee-claims): covered when it's from a
+ * paid order; free tickets, comps and refunded orders aren't. The claim window is real instants.
+ */
+export type TicketGuarantee = {
+  covered: boolean;
+  /** who pays an approved claim (fans don't see this) */
+  payer: GuaranteePayer | null;
+  /** why it isn't covered */
+  notCovered: 'FREE' | 'REFUNDED' | null;
+  /** what a claim on this ticket refunds now: its all-in share of the order (0 if not covered), or the claim's amount */
+  refundCents: number;
   opensAt: string;
   closesAt: string;
-  /** inside the window when the API answered */
+  /** covered and inside the window when the API answered */
   open: boolean;
   claim: GuaranteeClaim | null;
 };
 
 /** GET /tickets/:id/guarantee-claims (holder only). */
-export type GuaranteeAnswer = { covered: boolean; opensAt: string | null; closesAt: string | null; open: boolean; claim: GuaranteeClaim | null };
+export type GuaranteeAnswer = TicketGuarantee;
 
 export type IncomingTransfer = {
   id: string;

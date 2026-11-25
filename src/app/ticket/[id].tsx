@@ -21,8 +21,8 @@ import { Button, EmptyState, IconButton, Notice, Skeleton, Txt } from '@/compone
 import { api, errorText, isOffline } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { codeAt, WINDOW_MS } from '@/lib/door-code';
-import { localStamp, when, zoneAbbr } from '@/lib/format';
-import { claimBlocker, claimView, stamp, useClaimQueue } from '@/lib/guarantee';
+import { localStamp, money, when, zoneAbbr } from '@/lib/format';
+import { claimBlocker, claimView, COVERED_LABEL, FREE_NOTE, stamp, useClaimQueue } from '@/lib/guarantee';
 import { haptic } from '@/lib/haptics';
 import { useMyResale, useMyTickets, useRefreshWallet } from '@/lib/queries';
 import { blockedLine, blockers, breakdown, fmt, RESALE_FEE_PERMILLE, rulesOf, transferExpiry } from '@/lib/resale';
@@ -305,8 +305,9 @@ function TicketCard({ t, offline, feePermille, userId }: { t: Ticket; offline: b
 }
 
 /**
- * The fan resale scan guarantee under a covered ticket: its claim's status when there is one (or one waiting on this
- * phone), otherwise what's covered and, inside the claim window, the way to claim.
+ * The Eventro Guarantee under a ticket: its claim's status when there is one (or one waiting on this phone),
+ * otherwise, for a covered ticket, what's covered and, inside the claim window, the way to claim. A free ticket gets a
+ * small note instead: there's nothing to refund.
  */
 function GuaranteeBox({ t, userId }: { t: Ticket; userId: string }) {
   const g = t.guarantee!;
@@ -348,20 +349,32 @@ function GuaranteeBox({ t, userId }: { t: Ticket; userId: string }) {
 
   // A cancelled event is refunded with the event: the guarantee has nothing to add.
   if (t.event.status === 'CANCELLED' || t.status === 'VOID') return null;
+  if (!g.covered) {
+    if (g.notCovered !== 'FREE') return null;
+    return (
+      <View style={styles.freeNote}>
+        <Icon name="shield" size={14} color={colors.dim} />
+        <Txt variant="tiny" color={colors.dim} style={{ flex: 1 }}>
+          {FREE_NOTE}
+        </Txt>
+      </View>
+    );
+  }
   const blocker = claimBlocker(t, now);
-  const body = blocker ? `If it doesn’t scan at the door, you get your money back. ${blocker}` : `If it doesn’t scan at the door, you get your money back, fees included. Claim until ${stamp(g.closesAt)}.`;
+  const share = g.refundCents > 0 ? ` (${money(g.refundCents, t.order.currency, { decimals: true })}, fees included)` : ', fees included';
+  const body = blocker ? `If it doesn’t scan at the door, you get this ticket’s money back. ${blocker}` : `If it doesn’t scan at the door, you get this ticket’s money back${share}. Claim until ${stamp(g.closesAt)}.`;
   return (
     <View style={styles.guarantee}>
       <View style={{ flexDirection: 'row', gap: space.md, alignItems: 'flex-start' }}>
         <Icon name="shield" size={18} color={colors.accent} />
         <View style={{ flex: 1, gap: 2 }}>
-          <Txt variant="smallStrong">Covered by the resale guarantee</Txt>
+          <Txt variant="smallStrong">{COVERED_LABEL}</Txt>
           <Txt variant="small" color={colors.muted}>
             {body}
           </Txt>
         </View>
       </View>
-      {!blocker ? <Button label="Didn’t scan? Get a refund" icon="shield" size="md" block onPress={open} /> : null}
+      {!blocker ? <Button label="Didn’t scan? Get your money back" icon="shield" size="md" block onPress={open} /> : null}
     </View>
   );
 }
@@ -540,4 +553,5 @@ const styles = StyleSheet.create({
   action: { flex: 1, flexDirection: 'row', gap: 8, alignItems: 'center', justifyContent: 'center', minHeight: 52 },
   actionSep: { width: 1, backgroundColor: 'rgba(13,13,15,0.1)' },
   guarantee: { gap: space.md, padding: space.md + 2, borderRadius: radius.md, borderWidth: 1, borderColor: colors.line2, backgroundColor: colors.surface },
+  freeNote: { flexDirection: 'row', gap: space.sm, alignItems: 'center', paddingHorizontal: space.xs },
 });

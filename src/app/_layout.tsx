@@ -42,7 +42,7 @@ export default function RootLayout() {
               <PushLinks />
               {/* Hearts saved while signed out move into the account at sign-in. */}
               <SavedSync />
-              {/* Resale guarantee claims saved offline at the door go up when the API can be reached. */}
+              {/* Eventro Guarantee claims saved offline at the door go up when the API can be reached. */}
               <GuaranteeSync />
               <ConfirmProvider>
                 <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.bg }, animation: 'default' }}>

@@ -39,14 +39,15 @@ export function seatLine(t: Pick<Ticket, 'sectionName' | 'section' | 'row' | 'se
 export type TicketState = { key: 'ready' | 'cancelled' | 'used' | 'ended' | 'gift' | 'sent' | 'listed' | 'refunded'; label: string; detail: string; tone: 'success' | 'accent' | 'plain' | 'warning' };
 
 export function ticketState(t: Ticket): TicketState {
-  // GET /me/tickets returns a VOID ticket only when it has a resale guarantee claim (refunded under the guarantee).
-  if (t.status === 'VOID') {
+  // GET /me/tickets returns a VOID ticket only when it has an Eventro Guarantee claim (refunded under the guarantee)
+  // or its event was cancelled (shown as cancelled below).
+  if (t.status === 'VOID' && (t.guarantee?.claim || t.event.status !== 'CANCELLED')) {
     const claim = t.guarantee?.claim;
     const refunded = claim?.status === 'APPROVED';
     return {
       key: 'refunded',
-      label: refunded ? (claim.refundStatus === 'REFUNDED' ? 'Refunded · resale guarantee' : 'Refund approved · resale guarantee') : 'No longer valid',
-      detail: refunded ? 'Refunded under the resale guarantee. This ticket no longer works.' : 'This ticket no longer works.',
+      label: refunded ? (claim.refundStatus === 'REFUNDED' ? 'Refunded · Eventro Guarantee' : 'Refund approved · Eventro Guarantee') : 'No longer valid',
+      detail: refunded ? 'Refunded under the Eventro Guarantee. This ticket no longer works.' : 'This ticket no longer works.',
       tone: 'plain',
     };
   }

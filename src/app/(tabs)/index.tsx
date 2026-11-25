@@ -369,7 +369,7 @@ export default function Discover() {
 
       <View style={{ paddingHorizontal: gutter, marginTop: space.xxxl }}>
         <Notice tone="plain" icon="shield" title="Covered by the Eventro Guarantee">
-          If an event is cancelled, you get your money back. Prices include fees, always.
+          If a paid ticket doesn’t scan at the door, you get that ticket’s money back, fees included. If an event is cancelled, you’re refunded in full. Prices include fees, always.
         </Notice>
       </View>
     </ScrollView>

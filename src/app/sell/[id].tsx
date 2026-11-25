@@ -60,7 +60,7 @@ export default function Sell() {
       <AuthShell title={`Listed for ${fmt(done.listCents ?? cents, currency)}`} icon="check" subtitle="Fans can buy it from the event page now.">
         <Breakdown price={done.listCents ?? cents} fee={done.feeCents} royalty={done.royaltyCents} payout={done.payoutCents} currency={currency} feePermille={feePermille} exact />
         <Txt variant="small" color={colors.dim}>
-          We pay you once the event has happened (a day after it starts), so buyers are protected. Track it in Sales & payouts. You can remove the listing any time before it sells.
+          Your payout becomes available a day after the event starts, so buyers are protected, and then the Eventro team sends it. Track it in Sales & payouts. You can remove the listing any time before it sells.
         </Txt>
         <Button label="Done" onPress={() => router.back()} />
         <Button label="Sales & payouts" variant="ghost" onPress={() => router.replace('/resale')} />
@@ -135,7 +135,7 @@ export default function Sell() {
       <Breakdown price={cents} fee={fee} royalty={royalty} payout={payout} currency={currency} feePermille={feePermille} royaltyPermille={rules.royaltyPermille} />
       <Txt variant="small" color={colors.dim}>
         {rules.capPercent === undefined ? 'The organizer may cap resale prices; if yours is over, we’ll tell you the most you can ask. ' : ''}
-        Paid out a day after the event, once it has happened.
+        Your payout becomes available a day after the event starts; then the Eventro team sends it.
       </Txt>
       {error ? <Notice icon="alert">{error}</Notice> : null}
       <Button label={busy ? 'Listing…' : `List for ${fmt(cents, currency)}`} loading={busy} disabled={overCap || tooLow} onPress={submit} />

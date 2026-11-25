@@ -1,10 +1,14 @@
 /**
- * The fan resale scan guarantee: if a ticket bought on fan resale doesn't scan at the door, its holder gets the
- * whole resale order back (fees included), paid by Eventro, to the original payment method.
+ * The Eventro Guarantee (the scan guarantee): if a ticket doesn't scan at the door, its holder gets that ticket's
+ * money back, all-in (its share of what was paid for the order, fees included), to the original payment method.
  *
- * Claims go to POST /tickets/:id/guarantee-claims, from 3 hours before the event until 48 hours after it ends. The
- * server decides at once when it can (checked in: declined; a refused door scan of this ticket: approved and
- * refunded) and otherwise within 24 hours.
+ * It covers every ticket from a paid order, fan resale tickets and tickets transferred or gifted on included. Free
+ * tickets, comps and $0 orders aren't covered: there's nothing to refund. Cancelled events are refunded in full with
+ * the event instead.
+ *
+ * Claims go to POST /tickets/:id/guarantee-claims, one per ticket by its current holder, from 3 hours before the event
+ * starts until 48 hours after it ends. The server declines a claim at once when the door's scan log shows the ticket
+ * was scanned in; everything else is reviewed by the Eventro team within 24 hours. Nothing is approved automatically.
  *
  * No signal at the door: a claim that can't reach the API is saved on this phone (the encrypted vault, per account)
  * and <GuaranteeSync /> sends it when the app comes back to the foreground, when the wallet reaches the API again,
@@ -21,7 +25,7 @@ import { api, ApiError, WEB_URL } from './api';
 import { useAuth } from './auth';
 import { localStamp, money } from './format';
 import { haptic } from './haptics';
-import type { Guarantee, GuaranteeAnswer, GuaranteeClaim, GuaranteeReason, Ticket } from './types';
+import type { GuaranteeAnswer, GuaranteeClaim, GuaranteeReason, Ticket, TicketGuarantee } from './types';
 import { readVault, writeVault } from './vault';
 
 export const REASONS: { id: GuaranteeReason; label: string }[] = [
@@ -34,21 +38,38 @@ export const reasonLabel = (r: GuaranteeReason) => REASONS.find((x) => x.id === 
 /** The API's limit for a claim's details. */
 export const DETAILS_MAX = 1000;
 
+/* ---------- copy ---------- */
+
+/** The guarantee's one name, everywhere (resale tickets too). */
+export const GUARANTEE_NAME = 'Eventro Guarantee';
+/** The badge on a covered ticket. */
+export const COVERED_LABEL = `Covered by the ${GUARANTEE_NAME}`;
+/** The muted note on a free ticket, where the guarantee would otherwise show. */
+export const FREE_NOTE = `Free ticket: not covered by the ${GUARANTEE_NAME}, as there’s nothing to refund.`;
+/** How long a refund takes to arrive. Never promise automatic or instant refunds. */
 export const REFUND_TIMING = 'Usually 5–10 business days to your card; bank transfer and USSD refunds through Paystack can take longer.';
+/** How a claim is decided (the server: declined on arrival if scanned in, otherwise reviewed). */
+export const HOW_DECIDED =
+  'If the door’s scan log shows this ticket was scanned in, the claim is declined automatically. Otherwise our team reviews what the door recorded and gets back to you within 24 hours.';
 
 /** The guarantee's terms on the website. */
-export const GUARANTEE_TERMS_URL = `${WEB_URL}/guarantee#fan-resale`;
+export const GUARANTEE_TERMS_URL = `${WEB_URL}/guarantee#terms`;
 
 export function openGuaranteeTerms() {
   haptic.select();
   void WebBrowser.openBrowserAsync(GUARANTEE_TERMS_URL, { toolbarColor: colors.bg, controlsColor: colors.accent }).catch(() => undefined);
 }
 
+/** Covered by the guarantee (a saved copy from an older app version without the block counts as unknown: no). */
+export const isCovered = (t: Pick<Ticket, 'guarantee'>) => t.guarantee?.covered === true;
+/** A free ticket (or comp, or $0 order): not covered, as there's nothing to refund. */
+export const isFree = (t: Pick<Ticket, 'guarantee'>) => t.guarantee?.covered === false && t.guarantee.notCovered === 'FREE';
+
 /* ---------- the API ---------- */
 
 const path = (ticketId: string) => `/tickets/${encodeURIComponent(ticketId)}/guarantee-claims`;
 
-/** Sends a claim; the answer may already be APPROVED (refunded) or DECLINED. Throws ApiError (status 0 offline). */
+/** Sends a claim; the answer may already be DECLINED (scanned in), otherwise PENDING. Throws ApiError (status 0 offline). */
 export const submitClaim = (ticketId: string, body: { reason: GuaranteeReason; details?: string }) => api<GuaranteeClaim>(path(ticketId), { body, timeoutMs: 15_000 });
 
 /** The ticket's guarantee and claim (holder only). */
@@ -58,8 +79,11 @@ export const fetchClaim = (ticketId: string) => api<GuaranteeAnswer>(path(ticket
 
 export type WindowState = 'before' | 'open' | 'closed';
 
-/** Where the ticket is in its claim window on this phone's clock (the window's times are real instants). */
-export function windowOf(g: Pick<Guarantee, 'opensAt' | 'closesAt'>, now: number): WindowState {
+/**
+ * Where the ticket is in its claim window on this phone's clock (the window's times are real instants). This is the
+ * API's `open` worked out now, so a wallet saved before the window opened still works at the door with no signal.
+ */
+export function windowOf(g: Pick<TicketGuarantee, 'opensAt' | 'closesAt'>, now: number): WindowState {
   const opens = Date.parse(g.opensAt);
   const closes = Date.parse(g.closesAt);
   if (Number.isFinite(opens) && now < opens) return 'before';
@@ -71,19 +95,19 @@ export function windowOf(g: Pick<Guarantee, 'opensAt' | 'closesAt'>, now: number
 export const stamp = (iso: string | null | undefined) => (iso && Number.isFinite(Date.parse(iso)) ? localStamp(Date.parse(iso)) : '');
 
 /**
- * Why this ticket can't be claimed on right now, or null when it can (the server checks all of this again). Mirrors
- * the API's refusals: not covered, cancelled or refunded orders, cancelled events, tickets being transferred or
- * listed, and VOID tickets; a scanned-in ticket would only be declined, so it isn't offered.
+ * Why this ticket can't be claimed on right now, or null when it can (the server checks all of this again): it has to
+ * be covered, inside its window and without a claim. Mirrors the API's refusals: free tickets, cancelled or refunded
+ * orders, cancelled events, tickets being transferred or listed, and VOID tickets. A scanned-in ticket can still
+ * claim (e.g. turned away after the scan); the server declines it and the claim screen says so up front.
  */
 export function claimBlocker(t: Ticket, now: number): string | null {
   const g = t.guarantee;
-  if (!g) return 'This ticket isn’t covered by the resale guarantee. It covers tickets bought on Eventro fan resale.';
+  if (!g) return 'We couldn’t check this ticket’s cover. Refresh your tickets and try again.';
   if (g.claim) return 'There’s already a claim for this ticket.';
-  if (t.event.status === 'CANCELLED') return 'This event was cancelled, so the ticket is refunded with the event.';
-  if (t.order.status === 'REFUNDED' || t.order.status === 'CANCELLED') return 'This order was cancelled or refunded.';
+  if (t.event.status === 'CANCELLED') return 'This event was cancelled, so the ticket is refunded in full with the event.';
+  if (!g.covered && g.notCovered === 'FREE') return 'This ticket was free, so there’s nothing to refund. The Eventro Guarantee covers paid tickets.';
+  if (!g.covered || t.order.status === 'REFUNDED' || t.order.status === 'CANCELLED') return 'This order was cancelled or refunded.';
   if (t.status === 'VOID') return 'This ticket no longer works.';
-  // Scanned-in tickets can still claim (e.g. turned away after the scan): the server declines it automatically and
-  // Eventro can overrule that. The claim screen says so up front.
   if (t.status === 'LISTED') return 'This ticket is listed for resale. Remove the listing to claim on it.';
   if (t.status === 'TRANSFER_PENDING') return 'This ticket is being transferred. Cancel the transfer to claim on it.';
   const w = windowOf(g, now);
@@ -94,7 +118,7 @@ export function claimBlocker(t: Ticket, now: number): string | null {
 
 /** A short status for the wallet list. */
 export function claimShort(c: GuaranteeClaim) {
-  if (c.status === 'APPROVED') return c.refundStatus === 'REFUNDED' ? 'Refunded · resale guarantee' : 'Refund approved · resale guarantee';
+  if (c.status === 'APPROVED') return c.refundStatus === 'REFUNDED' ? `Refunded · ${GUARANTEE_NAME}` : `Refund approved · ${GUARANTEE_NAME}`;
   if (c.status === 'DECLINED') return 'Guarantee claim declined';
   return 'Guarantee claim in review';
 }

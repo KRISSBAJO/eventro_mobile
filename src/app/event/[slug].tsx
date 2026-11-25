@@ -281,7 +281,14 @@ function EventBody({ e, topBar, refetch, jumpToResale }: { e: EventDetail; topBa
             ) : null}
             {!cancelled && !ended ? <PriceAlert slug={e.slug} /> : null}
             <View style={styles.trust}>
-              {['Covered by the Eventro Guarantee', 'Instant mobile delivery', seatMap ? 'Pick your exact seats, or let us find the best together' : 'Prices include all fees'].map((s) => (
+              {[
+                // The Eventro Guarantee covers paid tickets only: free ones have nothing to refund.
+                types.every((t) => t.priceCents <= 0) ? null : types.some((t) => t.priceCents <= 0) ? 'Paid tickets covered by the Eventro Guarantee' : 'Covered by the Eventro Guarantee',
+                'Instant mobile delivery',
+                seatMap ? 'Pick your exact seats, or let us find the best together' : 'Prices include all fees',
+              ]
+                .filter((s): s is string => !!s)
+                .map((s) => (
                 <View key={s} style={{ flexDirection: 'row', gap: space.sm, alignItems: 'center' }}>
                   <Icon name="check" size={15} color={colors.success} />
                   <Txt variant="small" color={colors.muted}>

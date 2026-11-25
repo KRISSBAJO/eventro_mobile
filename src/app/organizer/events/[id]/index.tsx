@@ -32,9 +32,11 @@ import {
   publicLink,
   statusOf,
   useEventStats,
+  useGuaranteeRefunds,
   useOrgEvent,
   usePriceDrops,
   webPaths,
+  type GuaranteeRefunds,
 } from '@/lib/organizer';
 import { useMyOrgs } from '@/lib/queries';
 import { colors, radius, space } from '@/theme';
@@ -48,13 +50,15 @@ export default function EventDashboard() {
   const role = membershipOf(orgs.data, ev.data?.orgId)?.role;
   const editor = canEdit(role);
   const drops = usePriceDrops(id, editor);
+  // Admins and managers only; door staff get 403, and any error just hides the section.
+  const refunds = useGuaranteeRefunds(id, editor);
   const qc = useQueryClient();
   const confirm = useConfirm();
   const [busy, setBusy] = useState<'' | 'pause' | 'submit' | 'detach'>('');
   const [error, setError] = useState('');
   const [note, setNote] = useState('');
 
-  const refresh = () => Promise.all([ev.refetch(), stats.refetch(), editor ? drops.refetch() : null]);
+  const refresh = () => Promise.all([ev.refetch(), stats.refetch(), editor ? drops.refetch() : null, editor ? refunds.refetch() : null]);
   const changed = () => Promise.all([qc.invalidateQueries({ queryKey: ['organizer', 'event', id] }), qc.invalidateQueries({ queryKey: ['organizer', 'events'] })]);
 
   if (ev.isPending || (ev.data && stats.isPending)) {
@@ -342,6 +346,8 @@ export default function EventDashboard() {
         </View>
       ) : null}
 
+      {editor && refunds.data ? <GuaranteeRefundsCard r={refunds.data} /> : null}
+
       <Group>
         <Row icon="users" label="Attendees" detail={s ? `${num(s.sold)}` : undefined} onPress={() => router.push({ pathname: '/organizer/events/[id]/attendees', params: { id: e.id } })} />
         {editor ? (
@@ -369,6 +375,54 @@ export default function EventDashboard() {
         <EmptyState compact icon="lock" title="Door staff view" body="Ask an admin to make you a manager to edit this event or see its promo codes." />
       ) : null}
     </OrgScreen>
+  );
+}
+
+/** The event's scan guarantee refunds: what went back to fans and what it took off the payout. Read-only. */
+function GuaranteeRefundsCard({ r }: { r: GuaranteeRefunds }) {
+  const m = (cents: number, currency = r.currency) => money(cents, currency);
+  return (
+    <View style={styles.card}>
+      <Label>Scan guarantee refunds</Label>
+      {!r.count && !r.items.length ? (
+        <Txt variant="small" color={colors.muted}>
+          No scan guarantee refunds on this event.
+        </Txt>
+      ) : (
+        <>
+          <Txt variant="small" color={colors.muted}>
+            {`${num(r.count)} ${r.count === 1 ? 'ticket' : 'tickets'} refunded to fans: ${m(r.refundedCents)}. Payout reduced by ${m(r.payoutReductionCents)}.`}
+          </Txt>
+          {r.owedCents > 0 ? (
+            <Txt variant="small" color={colors.warning}>
+              {`${m(r.owedCents)} owed to Eventro: you’d already been paid for these orders.`}
+            </Txt>
+          ) : null}
+          {r.items.map((x) => {
+            const at = x.refundedAt ?? x.decidedAt;
+            const seat = [x.section ? `Section ${x.section}` : null, x.row ? `Row ${x.row}` : null, x.seat !== null ? `Seat ${x.seat}` : null].filter(Boolean).join(' · ');
+            return (
+              <View key={x.id} style={{ flexDirection: 'row', gap: space.sm }}>
+                <View style={{ flex: 1, gap: 2 }}>
+                  <Txt variant="small" numberOfLines={1}>
+                    {seat ? `${x.ticketType} · ${seat}` : x.ticketType}
+                  </Txt>
+                  <Txt variant="tiny" color={colors.dim}>
+                    {`${at ? localMoment(at) : ''}${x.refundStatus === 'REFUNDED' ? '' : `${at ? ' · ' : ''}${x.refundStatus === 'FAILED' ? 'Refund failed; Eventro is on it' : 'Refund in progress'}`}`}
+                  </Txt>
+                </View>
+                <View style={{ alignItems: 'flex-end', gap: 2 }}>
+                  <Txt variant="smallStrong">{m(x.amountCents, x.currency)}</Txt>
+                  <Txt variant="tiny" color={colors.dim}>
+                    {`payout −${m(x.organizerCents, x.currency)}`}
+                  </Txt>
+                </View>
+              </View>
+            );
+          })}
+        </>
+      )}
+    </View>
   );
 }
 

@@ -146,6 +146,38 @@ export type PriceDrops = {
   drops: { id: string; ticketName: string; fromCents: number; toCents: number; currency: string; notified: number; skipReason: string | null; createdAt: string }[];
 };
 
+/**
+ * GET /organizer/events/:id/guarantee-refunds (org admins and managers; door staff get 403): approved Eventro
+ * Guarantee claims on the event that come out of the organizer's payout. `count` and the totals cover refunded claims;
+ * `items` also holds approved ones whose refund is still PENDING or FAILED. `amountCents` went back to the fan;
+ * `organizerCents` came out of the payout (less: Eventro returns its own fee and ticket protection);
+ * `organizerOwedCents` is owed to Eventro when the order had already been paid out.
+ */
+export type GuaranteeRefunds = {
+  currency: string;
+  count: number;
+  refundedCents: number;
+  payoutReductionCents: number;
+  owedCents: number;
+  items: {
+    id: string;
+    ticketId: string;
+    orderId: string;
+    ticketType: string;
+    section: string | null;
+    row: string | null;
+    seat: number | null;
+    reason: string;
+    amountCents: number;
+    organizerCents: number;
+    organizerOwedCents: number;
+    currency: string;
+    refundStatus: 'NONE' | 'PENDING' | 'REFUNDED' | 'FAILED';
+    decidedAt: string | null;
+    refundedAt: string | null;
+  }[];
+};
+
 export type Promo = { code: string; percent: number; limit: number | null; used: number; active: boolean };
 
 export type TeamMember = { id: string; email: string; role: OrgRole; status: 'ACTIVE' | 'INVITED'; user: { name: string } | null };
@@ -209,6 +241,12 @@ export function useEventStats(id: string | undefined) {
 export function usePriceDrops(id: string | undefined, enabled = true) {
   const on = useSignedIn();
   return useQuery({ queryKey: ['organizer', 'price-drops', id], queryFn: () => api<PriceDrops>(`/organizer/events/${enc(id!)}/price-drops`), enabled: on && !!id && enabled, staleTime: 60_000, retry: 0 });
+}
+
+/** The event's scan guarantee refunds (read-only; `enabled` for admins and managers, door staff get 403). */
+export function useGuaranteeRefunds(id: string | undefined, enabled = true) {
+  const on = useSignedIn();
+  return useQuery({ queryKey: ['organizer', 'guarantee-refunds', id], queryFn: () => api<GuaranteeRefunds>(`/organizer/events/${enc(id!)}/guarantee-refunds`), enabled: on && !!id && enabled, staleTime: 60_000, retry: 0 });
 }
 
 export function useAttendees(id: string | undefined, q: string, status: '' | 'checked-in' | 'not-checked-in') {

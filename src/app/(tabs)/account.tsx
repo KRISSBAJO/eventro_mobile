@@ -53,7 +53,7 @@ export default function Account() {
     const claims = pendingClaims();
     const warn =
       (pending ? ` ${pending} door scan${pending === 1 ? '' : 's'} on this phone haven’t synced yet and will be lost.` : '') +
-      (claims ? ` ${claims === 1 ? 'A resale guarantee claim' : `${claims} resale guarantee claims`} saved on this phone ${claims === 1 ? 'hasn’t' : 'haven’t'} been sent yet and will be lost.` : '');
+      (claims ? ` ${claims === 1 ? 'An Eventro Guarantee claim' : `${claims} Eventro Guarantee claims`} saved on this phone ${claims === 1 ? 'hasn’t' : 'haven’t'} been sent yet and will be lost.` : '');
     const yes = await ask({ title: 'Sign out?', message: `Your tickets stay in your account. Sign in again to see them here.${warn}`, confirmLabel: 'Sign out', destructive: true });
     if (!yes) return;
     haptic.firm();

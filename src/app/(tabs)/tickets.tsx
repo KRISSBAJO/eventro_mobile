@@ -17,7 +17,7 @@ import { rankNear, usePlace } from '@/lib/place';
 import { useAllEvents, useMyTickets, useRefreshWallet } from '@/lib/queries';
 import { inTime } from '@/lib/resale';
 import { useSaved } from '@/lib/saved';
-import { claimShort } from '@/lib/guarantee';
+import { claimShort, COVERED_LABEL, FREE_NOTE } from '@/lib/guarantee';
 import { groupTickets, seatLine, ticketState, type TicketGroup } from '@/lib/tickets';
 import type { EventCard, IncomingTransfer } from '@/lib/types';
 import { colors, gutter, radius, space } from '@/theme';
@@ -508,14 +508,18 @@ function GroupCard({ g }: { g: TicketGroup }) {
                   {s.label}
                 </Txt>
               ) : null}
-              {/* Fan resale tickets: covered by the scan guarantee (or its claim's status). A refunded one already says so above. */}
-              {tk.guarantee && s.key !== 'refunded' && s.key !== 'cancelled' ? (
+              {/* The Eventro Guarantee: covered paid tickets (or the claim's status), or a note on free ones. A refunded or cancelled one already says so above. */}
+              {tk.guarantee && s.key !== 'refunded' && s.key !== 'cancelled' && (tk.guarantee.covered || tk.guarantee.claim) ? (
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
                   <Icon name="shield" size={12} color={tk.guarantee.claim ? colors.warning : colors.dim} />
                   <Txt variant="tiny" color={tk.guarantee.claim ? colors.warning : colors.dim} numberOfLines={1}>
-                    {tk.guarantee.claim ? claimShort(tk.guarantee.claim) : 'Resale guarantee'}
+                    {tk.guarantee.claim ? claimShort(tk.guarantee.claim) : COVERED_LABEL}
                   </Txt>
                 </View>
+              ) : tk.guarantee && s.key !== 'refunded' && s.key !== 'cancelled' && tk.guarantee.notCovered === 'FREE' ? (
+                <Txt variant="tiny" color={colors.dim} numberOfLines={2}>
+                  {FREE_NOTE}
+                </Txt>
               ) : null}
             </View>
             {s.key === 'ready' ? (
