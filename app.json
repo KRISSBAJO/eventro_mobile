@@ -77,6 +77,10 @@
           "cameraPermission": "Omoshow uses the camera to scan ticket QR codes at the door.",
           "microphonePermission": false
         }
+      ],
+      [
+        "expo-build-properties",
+        { "ios": { "useFrameworks": "dynamic" } }
       ]
     ],
     "experiments": {
