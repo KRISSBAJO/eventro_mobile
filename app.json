@@ -1,20 +1,23 @@
 {
   "expo": {
     "name": "Omoshow",
-    "slug": "eventro",
+    "slug": "omoshow",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": "eventro",
+    "scheme": [
+      "omoshow",
+      "eventro"
+    ],
     "userInterfaceStyle": "automatic",
     "backgroundColor": "#0f0a0b",
     "primaryColor": "#ff4d3d",
     "ios": {
       "supportsTablet": false,
-      "bundleIdentifier": "app.eventro.mobile"
+      "bundleIdentifier": "com.omoshow.mobile"
     },
     "android": {
-      "package": "app.eventro.mobile",
+      "package": "com.omoshow.mobile",
       "adaptiveIcon": {
         "backgroundColor": "#0f0a0b",
         "foregroundImage": "./assets/images/android-icon-foreground.png",
@@ -76,6 +79,12 @@
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
+    },
+    "owner": "gatherplus",
+    "extra": {
+      "eas": {
+        "projectId": "eb61f69a-f495-483a-970f-eb9bd5a1841a"
+      }
     }
   }
 }
