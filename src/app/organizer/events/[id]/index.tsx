@@ -13,6 +13,9 @@
  *
  * Multiple dates: "By date" lists each date's sales, capacity and check-ins (stats `byDate`; a multi-day pass counts on
  * each of its days) and opens the attendees for that date; a run's ticket types are added up across dates.
+ *
+ * Sessions (stats `sessions`): each bookable session on the schedule with its places booked and check-ins; a row
+ * opens its bookings (organizer/events/[id]/sessions/[itemId].tsx), where people are checked in by tapping.
  */
 import { useQueryClient } from '@tanstack/react-query';
 import { Image } from 'expo-image';
@@ -30,6 +33,7 @@ import { localMoment, rangeLabel } from '@/lib/bookings';
 import { donationLabel } from '@/lib/donations';
 import { dateLine, rangeLine } from '@/lib/dates';
 import { money, num, when } from '@/lib/format';
+import { timeRange } from '@/lib/schedule';
 import { haptic } from '@/lib/haptics';
 import {
   canEdit,
@@ -377,6 +381,34 @@ export default function EventDashboard() {
                   </Pressable>
                 );
               })}
+            </View>
+          ) : null}
+
+          {s.sessions?.length ? (
+            <View style={styles.card}>
+              <Label>Sessions</Label>
+              {s.sessions.map((x) => (
+                <Pressable
+                  key={x.itemId}
+                  accessibilityRole="button"
+                  accessibilityLabel={`${x.title}: ${num(x.reserved)} of ${num(x.capacity)} places booked, ${num(x.checkedIn)} checked in. See bookings`}
+                  onPress={() => router.push({ pathname: '/organizer/events/[id]/sessions/[itemId]', params: { id: e.id, itemId: x.itemId } })}
+                  style={({ pressed }) => [{ gap: 6 }, pressed && { opacity: 0.7 }]}>
+                  <View style={{ flexDirection: 'row', gap: space.sm, alignItems: 'baseline' }}>
+                    <Txt variant="bodyStrong" style={{ flex: 1 }} numberOfLines={1}>
+                      {x.title}
+                    </Txt>
+                    <Txt variant="small" color={colors.muted}>
+                      {`${num(x.reserved)} / ${num(x.capacity)}${x.checkedIn ? ` · ${num(x.checkedIn)} in` : ''}`}
+                    </Txt>
+                    <Icon name="chevronRight" size={15} color={colors.dim} />
+                  </View>
+                  <Progress value={x.reserved} max={x.capacity} />
+                  <Txt variant="tiny" color={colors.dim}>
+                    {`${multi ? `${when(x.startsAt).short} · ` : ''}${timeRange(x.startsAt, null)}${x.reserved >= x.capacity ? ' · Full' : ''}`}
+                  </Txt>
+                </Pressable>
+              ))}
             </View>
           ) : null}
 

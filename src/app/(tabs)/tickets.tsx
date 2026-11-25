@@ -524,6 +524,15 @@ function GroupCard({ g }: { g: TicketGroup }) {
                   {s.label}
                 </Txt>
               ) : null}
+              {/* sessions booked with this ticket (the event's schedule) */}
+              {tk.sessions?.length && s.key !== 'refunded' && s.key !== 'cancelled' ? (
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                  <Icon name="calendar" size={12} color={colors.dim} />
+                  <Txt variant="tiny" color={colors.dim} numberOfLines={1}>
+                    {`${tk.sessions.length} ${tk.sessions.length === 1 ? 'session' : 'sessions'} booked`}
+                  </Txt>
+                </View>
+              ) : null}
               {/* The Eventro Guarantee: covered paid tickets (or the claim's status), or a note on free ones. A refunded or cancelled one already says so above. */}
               {tk.guarantee && s.key !== 'refunded' && s.key !== 'cancelled' && (tk.guarantee.covered || tk.guarantee.claim) ? (
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>

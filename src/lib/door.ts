@@ -138,6 +138,8 @@ export type Verdict = {
   offline?: boolean;
   /** what "Undo" reverses (and on which date) */
   undo?: { ticketId: string; offline: boolean; dateId?: string | null };
+  /** the line under the name instead of "type · seat" (session check-in: the ticket type and the session) */
+  line?: string;
 };
 
 export const seatText = (t: { sectionName?: string | null; section: string | null; row: string | null; seat: number | null }) =>

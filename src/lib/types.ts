@@ -1,6 +1,7 @@
 /** Shapes of the API responses the app uses (see eventro-be/src). Money is in minor units of `currency`. */
 import type { VenueListing } from './bookings';
 import type { Dated, DateMode, EventDate } from './dates';
+import type { BookedSession, ScheduleItem } from './schedule';
 import type { TierLook } from './tiers';
 
 /** What every ticket type sent to fans carries for its design: perks, badge, the organizer's pick and the resolved look. */
@@ -164,6 +165,10 @@ export type EventDetail = {
   nextDate?: { id: string; startsAt: string } | null;
   /** DATES: the date the seat map's `available` numbers are for */
   seatMapDateId?: string | null;
+  /** the schedule (lib/schedule.ts): every live item, by time; [] (or left out by older APIs) without one */
+  schedule?: ScheduleItem[];
+  /** the schedule's distinct stages, in schedule order (for the stage filter) */
+  stages?: string[];
 };
 
 /** A seat map section (GET /events/:slug). Reserved sections are `rows` × `seatsPerRow`; rows are A, B, … Z, AA … */
@@ -419,6 +424,8 @@ export type Ticket = Dated & {
    * have a claim or their event was cancelled, so a refunded ticket still shows its decision.
    */
   guarantee?: TicketGuarantee | null;
+  /** the sessions this ticket has booked (lib/schedule.ts), by time; older APIs and saved copies leave it out */
+  sessions?: BookedSession[];
 };
 
 /* ---------- the Eventro Guarantee (the scan guarantee) ---------- */

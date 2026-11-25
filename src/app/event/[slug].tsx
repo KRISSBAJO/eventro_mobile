@@ -12,10 +12,15 @@
  * Multiple dates (lib/dates.ts): a DATES event starts the tickets with "Pick a date" (date cards with "Few left" /
  * "Sold out"), then shows that date's tiers (each date has its own copy of every tier); `?date=` picks one. A DAYS
  * event lists its days under When, and each ticket type says which days it covers. SINGLE events are as before.
+ *
+ * Schedule (lib/schedule.ts, components/schedule.tsx): an event with one shows it as a timetable under About, by date or
+ * day, with stage filters. A signed-in fan holding a ticket that can book a session gets "Book a place" on it (booked
+ * with the first of their tickets that can); "Booked" opens that ticket. Events without a schedule are as before.
  */
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { router, useLocalSearchParams } from 'expo-router';
+import { useQueries, useQueryClient } from '@tanstack/react-query';
 import { useRef, useState, type ReactNode } from 'react';
 import { Platform, Pressable, ScrollView, Share, StyleSheet, View, type LayoutChangeEvent, type ScrollViewInstance } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -26,16 +31,19 @@ import { Gallery } from '@/components/gallery';
 import { HeartButton } from '@/components/heart';
 import { Icon } from '@/components/icons';
 import { PriceAlert } from '@/components/price-alert';
+import { ScheduleList } from '@/components/schedule';
 import { TierBadge, TierGlyph, TierSurface } from '@/components/tier-look';
 import { Badge, Button, EmptyState, ErrorState, FadeIn, IconButton, Notice, Skeleton, Stepper, Txt } from '@/components/ui';
 import { api, ApiError, errorText, WEB_URL } from '@/lib/api';
+import { useAuth } from '@/lib/auth';
 import { activeOnly, coverLine, dateLine, eventEnded, rangeLine, upcoming } from '@/lib/dates';
 import { CATEGORY_NAME, cityOnly, localTimeText, money, when, zoneAbbr } from '@/lib/format';
 import { haptic } from '@/lib/haptics';
 import { openMaps } from '@/lib/maps';
 import { allInLine, allInOf, amountProblem, fromLabel, isPwyw, pickChips, PROMO_PWYW_NOTE, startAmount } from '@/lib/pwyw';
-import { useEvent, useEventResale } from '@/lib/queries';
+import { useEvent, useEventResale, useMyTickets } from '@/lib/queries';
 import { cardOf } from '@/lib/saved';
+import { bookSession, statusText, type ScheduleItem, type TicketSessions } from '@/lib/schedule';
 import { lookOf } from '@/lib/tiers';
 import type { EventDetail, HoldCreated, TicketType } from '@/lib/types';
 import { colors, gutter, radius, space } from '@/theme';
@@ -316,6 +324,8 @@ function EventBody({ e, topBar, refetch, jumpToResale, dateParam }: { e: EventDe
           </View>
         ) : null}
 
+        {e.schedule?.length ? <EventSchedule e={e} dateId={picked?.id ?? null} /> : null}
+
         {!cancelled && !ended && allTypes.length ? (
           <View style={{ paddingHorizontal: gutter, marginTop: space.xxl, gap: space.md }}>
             <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline' }}>
@@ -507,6 +517,82 @@ function EventBody({ e, topBar, refetch, jumpToResale, dateParam }: { e: EventDe
         </View>
       ) : null}
       {topBar}
+    </View>
+  );
+}
+
+/**
+ * The event's schedule. Bookable sessions: a fan's tickets for this event say what each can book (GET
+ * /tickets/:id/sessions); "Book a place" books with the first ticket that can, "Booked" opens the ticket that has it,
+ * and otherwise the quiet line says why not (full, a clash, not for this ticket). Without tickets: places left only.
+ */
+function EventSchedule({ e, dateId }: { e: EventDetail; dateId: string | null }) {
+  const { user } = useAuth();
+  const qc = useQueryClient();
+  const items = e.schedule ?? [];
+  const bookable = items.some((i) => i.bookable) && e.status !== 'CANCELLED';
+  const wallet = useMyTickets(bookable ? user?.id : undefined);
+  const mine = bookable && !wallet.offline ? (wallet.data?.tickets ?? []).filter((t) => t.event.slug === e.slug && (t.status === 'ACTIVE' || t.status === 'CHECKED_IN')) : [];
+  const answers = useQueries({
+    queries: mine.map((t) => ({
+      queryKey: ['me', 'sessions', t.id],
+      queryFn: () => api<TicketSessions>(`/tickets/${encodeURIComponent(t.id)}/sessions`),
+      staleTime: 15_000,
+      retry: 0,
+    })),
+  });
+  const [busy, setBusy] = useState<string | null>(null);
+  const [error, setError] = useState('');
+  /** Every answer about this item, from each of the fan's tickets. */
+  const about = (item: ScheduleItem) => answers.flatMap((a) => (a.data ? a.data.items.filter((x) => x.id === item.id).map((x) => ({ ...x, ticketId: a.data!.ticketId })) : []));
+
+  const book = async (item: ScheduleItem, ticketId: string) => {
+    setBusy(item.id);
+    setError('');
+    try {
+      await bookSession(ticketId, item.id);
+      haptic.success();
+    } catch (err) {
+      haptic.error();
+      setError(`${item.title}: ${errorText(err)}`);
+    } finally {
+      setBusy(null);
+      await Promise.all([qc.invalidateQueries({ queryKey: ['me', 'sessions'] }), qc.invalidateQueries({ queryKey: ['me', 'tickets'] }), qc.invalidateQueries({ queryKey: ['event', e.slug] })]);
+    }
+  };
+
+  return (
+    <View style={{ paddingHorizontal: gutter, marginTop: space.xxl, gap: space.md }}>
+      <Txt variant="h2" accessibilityRole="header">
+        Schedule
+      </Txt>
+      {bookable && !mine.length ? (
+        <Txt variant="small" color={colors.muted}>
+          Sessions with places can be booked for free once you have a ticket.
+        </Txt>
+      ) : null}
+      {error ? <Notice tone="accent">{error}</Notice> : null}
+      <ScheduleList
+        items={items}
+        stages={e.stages ?? []}
+        dates={e.dates ?? []}
+        dateId={dateId}
+        status={(item) => {
+          const all = about(item);
+          if (!all.length || all.some((x) => x.status === 'BOOKED' || x.status === 'OPEN')) return null;
+          // Can't be booked with any of their tickets: the most useful reason.
+          const why = ['CLOSED', 'FULL', 'CLASH', 'NOT_ELIGIBLE'].map((k) => all.find((x) => x.status === k)).find(Boolean);
+          return why ? statusText(why) : null;
+        }}
+        action={(item) => {
+          const all = about(item);
+          const booked = all.find((x) => x.status === 'BOOKED');
+          const open = all.find((x) => x.status === 'OPEN');
+          if (booked) return <Button label="Booked" icon="check" variant="subtle" size="sm" onPress={() => router.push({ pathname: '/ticket/[id]', params: { id: booked.ticketId } })} />;
+          if (open) return <Button label="Book a place" variant="danger" size="sm" loading={busy === item.id} disabled={!!busy} onPress={() => void book(item, open.ticketId)} />;
+          return null;
+        }}
+      />
     </View>
   );
 }

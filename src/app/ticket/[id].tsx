@@ -6,10 +6,15 @@
  * so it works with no signal at all. Without a seed (an older saved copy) it falls back to GET /tickets/:id/qr.
  * The screen stays awake while the code shows. A comp (a complimentary ticket from the organizer) says so, and has
  * no Eventro Guarantee claim: nothing was paid for it.
+ *
+ * Sessions (lib/schedule.ts): when the event has bookable sessions, "Sessions" under the ticket lists what it has
+ * booked and what it can book (GET /tickets/:id/sessions), with Book a place / Cancel, and a plain reason when it can't
+ * (full, booking closed, not for this ticket, a clash). Offline it shows the saved bookings only.
  */
 import { Image } from 'expo-image';
 import { router, useLocalSearchParams } from 'expo-router';
 import * as WebBrowser from 'expo-web-browser';
+import { useQueryClient } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -17,17 +22,20 @@ import { CountdownRing } from '@/components/countdown-ring';
 import { Icon } from '@/components/icons';
 import { KeepAwake } from '@/components/keep-awake';
 import { QrCode } from '@/components/qr';
+import { SessionRow } from '@/components/schedule';
 import { TierBadge, TierGlyph, TierSurface } from '@/components/tier-look';
+import { useConfirm } from '@/components/confirm';
 import { Button, EmptyState, IconButton, Notice, Skeleton, Txt } from '@/components/ui';
 import { api, errorText, isOffline } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { codeAt, WINDOW_MS } from '@/lib/door-code';
 import { ownTimes, ticketWhen } from '@/lib/dates';
-import { localStamp, money, when, zoneAbbr } from '@/lib/format';
+import { isPast, localStamp, money, when, zoneAbbr } from '@/lib/format';
 import { claimBlocker, claimView, COMP_NOTE, COVERED_LABEL, FREE_NOTE, isComp, stamp, useClaimQueue } from '@/lib/guarantee';
 import { haptic } from '@/lib/haptics';
 import { useMyResale, useMyTickets, useRefreshWallet } from '@/lib/queries';
 import { blockedLine, blockers, breakdown, fmt, RESALE_FEE_PERMILLE, rulesOf, transferExpiry } from '@/lib/resale';
+import { bookSession, cancelSession, statusText, useTicketSessions, type TicketSessionItem } from '@/lib/schedule';
 import { readJson, writeJson } from '@/lib/storage';
 import { seatLine, ticketCurrency, ticketState } from '@/lib/tickets';
 import { lookOf } from '@/lib/tiers';
@@ -301,12 +309,108 @@ function TicketCard({ t, offline, feePermille, userId }: { t: Ticket; offline: b
           {t.id}
         </Txt>
       </View>
+      <SessionsBox t={t} offline={offline} />
       {t.guarantee ? <GuaranteeBox t={t} userId={userId} /> : null}
       {note ? (
         <Notice tone={note.tone} icon={note.tone === 'success' ? 'check' : 'alert'} title={note.title}>
           {note.body}
         </Notice>
       ) : null}
+    </View>
+  );
+}
+
+/**
+ * The ticket's sessions: booked ones first (Cancel), then the ones it can book (Book a place), then the ones it can't,
+ * each with the API's reason. Nothing shows for events without bookable sessions. Offline: the saved bookings.
+ */
+function SessionsBox({ t, offline }: { t: Ticket; offline: boolean }) {
+  const qc = useQueryClient();
+  const confirm = useConfirm();
+  const live = t.status !== 'VOID' && t.event.status !== 'CANCELLED';
+  const q = useTicketSessions(t.id, live && !offline);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [note, setNote] = useState<{ tone: 'success' | 'accent'; text: string } | null>(null);
+  const saved = t.sessions ?? [];
+  const items = q.data?.items ?? [];
+  // A multi-day pass or a run of dates: say which day each session is on.
+  const showDay = (t.validDates?.length ?? 0) > 1;
+
+  const refresh = () => Promise.all([qc.invalidateQueries({ queryKey: ['me', 'sessions'] }), qc.invalidateQueries({ queryKey: ['me', 'tickets'] }), qc.invalidateQueries({ queryKey: ['event', t.event.slug] })]);
+  const act = async (i: TicketSessionItem, cancel: boolean) => {
+    if (cancel && !(await confirm({ title: `Cancel your place at ${i.title}?`, message: 'Your place goes back to other ticket holders. You can book again while there are places.', confirmLabel: 'Cancel my place', cancelLabel: 'Keep it', destructive: true }))) return;
+    setBusy(i.id);
+    setNote(null);
+    try {
+      if (cancel) await cancelSession(t.id, i.id);
+      else await bookSession(t.id, i.id);
+      haptic.success();
+      setNote({ tone: 'success', text: cancel ? `Cancelled your place at ${i.title}.` : `Booked: ${i.title}. Show this ticket at the session.` });
+    } catch (e) {
+      haptic.error();
+      setNote({ tone: 'accent', text: errorText(e) });
+    } finally {
+      setBusy(null);
+      await refresh();
+    }
+  };
+
+  // Offline (or the list couldn't load): what's saved on the phone.
+  if (offline || !live || q.error) {
+    if (!saved.length) return null;
+    return (
+      <View style={styles.sessions}>
+        <Txt variant="title" accessibilityRole="header">
+          Sessions
+        </Txt>
+        {saved.map((s, n) => (
+          <SessionRow key={s.reservationId} first={n === 0} title={s.title} startsAt={s.startsAt} endsAt={s.endsAt} stage={s.stage} showDay={showDay} sub={s.checkedIn ? 'Booked · checked in' : 'Booked'} subTone="success" />
+        ))}
+        {offline ? (
+          <Txt variant="tiny" color={colors.dim}>
+            Booking or cancelling a place needs a connection.
+          </Txt>
+        ) : null}
+      </View>
+    );
+  }
+  if (!items.length) return null;
+  const rank = (i: TicketSessionItem) => (i.status === 'BOOKED' ? 0 : i.status === 'OPEN' ? 1 : 2);
+  const sorted = [...items].sort((a, b) => rank(a) - rank(b) || a.startsAt.localeCompare(b.startsAt));
+  const booked = items.filter((i) => i.status === 'BOOKED').length;
+  return (
+    <View style={styles.sessions}>
+      <View style={{ gap: 2 }}>
+        <Txt variant="title" accessibilityRole="header">
+          Sessions
+        </Txt>
+        <Txt variant="small" color={colors.muted}>
+          {booked ? `${booked} booked with this ticket. Show it at the session.` : 'Book a free place with this ticket.'}
+        </Txt>
+      </View>
+      {note ? <Notice tone={note.tone}>{note.text}</Notice> : null}
+      <View>
+        {sorted.map((i, n) => (
+          <SessionRow
+            key={i.id}
+            first={n === 0}
+            title={i.title}
+            startsAt={i.startsAt}
+            endsAt={i.endsAt}
+            stage={i.stage}
+            showDay={showDay}
+            sub={statusText(i)}
+            subTone={i.status === 'BOOKED' ? 'success' : 'muted'}
+            action={
+              i.status === 'BOOKED' && !i.checkedIn && !isPast(i.startsAt, 0) ? (
+                <Button label="Cancel" variant="ghost" size="sm" loading={busy === i.id} disabled={!!busy} onPress={() => void act(i, true)} />
+              ) : i.status === 'OPEN' ? (
+                <Button label="Book a place" variant="danger" size="sm" loading={busy === i.id} disabled={!!busy} onPress={() => void act(i, false)} />
+              ) : null
+            }
+          />
+        ))}
+      </View>
     </View>
   );
 }
@@ -562,6 +666,7 @@ const styles = StyleSheet.create({
   actions: { flexDirection: 'row', borderTopWidth: 1, borderTopColor: 'rgba(13,13,15,0.1)', marginBottom: -space.lg + 4 },
   action: { flex: 1, flexDirection: 'row', gap: 8, alignItems: 'center', justifyContent: 'center', minHeight: 52 },
   actionSep: { width: 1, backgroundColor: 'rgba(13,13,15,0.1)' },
+  sessions: { gap: space.sm, padding: space.lg, paddingBottom: space.sm, borderRadius: radius.card, borderWidth: 1, borderColor: colors.line, backgroundColor: colors.surface },
   guarantee: { gap: space.md, padding: space.md + 2, borderRadius: radius.md, borderWidth: 1, borderColor: colors.line2, backgroundColor: colors.surface },
   freeNote: { flexDirection: 'row', gap: space.sm, alignItems: 'center', paddingHorizontal: space.xs },
 });

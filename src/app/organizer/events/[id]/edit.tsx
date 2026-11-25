@@ -21,6 +21,13 @@
  * a PATCH on any copy changes them all): the quantity is the same on every date (`capacity`) or set per date
  * (`capacityByDate`). DAYS tiers pick their days (`validDates`; once sold, days can only be added). One date /
  * Multiple dates / Multi-day can be switched while nothing has sold (the API's DATE_MODE_LOCKED otherwise).
+ *
+ *   PUT   /organizer/events/:id/schedule                 the schedule as the full list (components/schedule-editor.tsx),
+ *                                                        sent last (once new dates and ticket types have ids) and only
+ *                                                        when it changed; read-only fields are never sent. Holders of a
+ *                                                        booked session that's removed or moved are told (`notified`).
+ *
+ * Schedule items keep their date and time of day: moving the event's date (or a date row) moves its items with it.
  */
 import { useQueryClient } from '@tanstack/react-query';
 import { Image } from 'expo-image';
@@ -36,6 +43,7 @@ import { CoverUpload } from '@/components/cover-upload';
 import { DonationFields } from '@/components/donation-fields';
 import { Label, OrgScreen, WebButton } from '@/components/org-ui';
 import { StockPicker } from '@/components/stock-picker';
+import { draftsOfSchedule, ScheduleEditor, scheduleBody, scheduleErrors, sortItems, type ItemDraft, type ScheduleDate } from '@/components/schedule-editor';
 import { PricingMode, PwywFields, TierExtras, TierPresets, type Pricing } from '@/components/tier-editor';
 import { Button, ErrorState, Field, Notice, Skeleton, TextArea, Txt } from '@/components/ui';
 import { api, errorText } from '@/lib/api';
@@ -63,6 +71,7 @@ import {
 import { useAuth } from '@/lib/auth';
 import { NO_PWYW, pwywBody, pwywDraftOf, pwywErrors, type PwywDraft } from '@/lib/pwyw';
 import { useMyOrgs } from '@/lib/queries';
+import { useOrgSchedule, type OrganizerItem } from '@/lib/schedule';
 import { cleanPerks, isTierLook, presetIndex, samePerks, type TierLook, type TierPreset } from '@/lib/tiers';
 import { colors, radius, space, touch } from '@/theme';
 
@@ -96,7 +105,8 @@ export default function EditEvent() {
   const { user } = useAuth();
   const orgs = useMyOrgs(user?.id);
   const ev = useOrgEvent(id);
-  if (ev.isPending || orgs.isPending) {
+  const sched = useOrgSchedule(id);
+  if (ev.isPending || orgs.isPending || sched.isPending) {
     return (
       <OrgScreen title="Edit event">
         <Skeleton height={300} radius={radius.card} />
@@ -118,10 +128,15 @@ export default function EditEvent() {
     );
   }
   // The form keeps its values across refetches; comparisons use the latest saved event.
-  return <Editor key={ev.data.id} e={ev.data} admin={isAdmin(membershipOf(orgs.data, ev.data.orgId)?.role)} />;
+  // A schedule that couldn't load is left alone (the card says so), so saving never wipes it.
+  return <Editor key={ev.data.id} e={ev.data} admin={isAdmin(membershipOf(orgs.data, ev.data.orgId)?.role)} schedule0={sched.data?.items ?? null} />;
 }
 
-function Editor({ e, admin }: { e: OrgEventDetail; admin: boolean }) {
+/** The dates schedule items can be on: the event's own date (one date), or the date rows. */
+const scheduleDates = (m: DateMode, list: DateDraft[], date: string, time: string): ScheduleDate[] =>
+  m === 'SINGLE' ? [{ key: 'event', date, start: time }] : list.map((x) => ({ key: x.key, date: x.date, start: x.start, label: x.label, cancelled: x.cancelled }));
+
+function Editor({ e, admin, schedule0 }: { e: OrgEventDetail; admin: boolean; schedule0: OrganizerItem[] | null }) {
   const qc = useQueryClient();
   const confirm = useConfirm();
   const start = wallParts(e.startsAt)!;
@@ -169,6 +184,20 @@ function Editor({ e, admin }: { e: OrgEventDetail; admin: boolean }) {
     mode0 === 'SINGLE' ? [{ key: 'd0', id: null, date: start.date, start: start.time, doors: doors0?.time ?? '', end: wallParts(e.endsAt)?.time ?? '', label: '' }] : draftsOf(dates0),
   );
   const [cancelling, setCancelling] = useState<string | null>(null);
+  // The schedule. "Who can book" names ticket types by the form's tier keys (a tier's first copy id); the API's ids
+  // and DATES tier keys map back to them.
+  const tierKeyOf = (raw: string) => {
+    for (const g of tiersOf(e.ticketTypes, dates0)) if (g.tier.id === raw || g.tier.tierKey === raw || g.copies.some((c) => c.id === raw)) return g.tier.id;
+    return null;
+  };
+  const [init] = useState(() => {
+    const at = scheduleDates(mode0, mode0 === 'SINGLE' ? [] : draftsOf(dates0), start.date, start.time);
+    const drafts = schedule0 ? sortItems(draftsOfSchedule(schedule0, mode0, at, tierKeyOf), mode0, at) : [];
+    return { drafts, base: schedule0 ? JSON.stringify(scheduleBody(drafts, mode0, at, { dateRef: (key) => ({ eventDateId: key }), tierRef: (key) => key })) : '' };
+  });
+  const [sched, setSched] = useState<ItemDraft[]>(init.drafts);
+  /** The schedule as the API has it (as last loaded or saved), so it's only sent when it changed. */
+  const [schedBase, setSchedBase] = useState(init.base);
   const totalSold = e.ticketTypes.reduce((n, t) => n + t.sold, 0);
   const canSwitch = totalSold === 0 && e.status !== 'CANCELLED';
   const multi = mode !== 'SINGLE';
@@ -184,6 +213,11 @@ function Editor({ e, admin }: { e: OrgEventDetail; admin: boolean }) {
       }
     } else if (mode === 'SINGLE' && mode0 === 'SINGLE') {
       setDates((list) => (list.length === 1 && !list[0].id ? [{ ...list[0], date, start: time, doors }] : list));
+    }
+    // Schedule items without a date (or on a date that's gone) go on the first date; they can be moved.
+    if (m !== 'SINGLE') {
+      const first = dates.find((d) => !d.cancelled);
+      if (first) setSched((list) => list.map((i) => (i.dateKey && dates.some((d) => d.key === i.dateKey && !d.cancelled) ? i : { ...i, dateKey: first.key })));
     }
     setMode(m);
   };
@@ -275,6 +309,8 @@ function Editor({ e, admin }: { e: OrgEventDetail; admin: boolean }) {
       if (mode === 'DAYS' && t.days && !t.days.some((k) => dates.some((d) => d.key === k && !d.cancelled))) ers[`${t.key}-days`] = 'Pick the days this ticket is valid on.';
     }
     if (!tiers.length) ers.tiers = 'Keep at least one ticket type.';
+    const sDates = scheduleDates(mode, dates, date, time);
+    if (schedule0) Object.assign(ers, scheduleErrors(sched, mode, sDates));
     for (const [k, v] of Object.entries(donationErrors(donations))) ers[`donation-${k}`] = v;
     const limit = compLimit.trim() ? Number(compLimit) : null;
     if (limit !== null && (!Number.isInteger(limit) || limit < 0)) ers.compLimit = 'A whole number, or leave it empty for no limit.';
@@ -392,12 +428,14 @@ function Editor({ e, admin }: { e: OrgEventDetail; admin: boolean }) {
 
       // 3. New ticket types, then the order (new ones are added last by the API).
       const ids: string[] = [];
+      /** new ticket types' ids by their form key (for the schedule's "Who can book") */
+      const made: Record<string, string> = {};
       for (const { t, cents, qty } of parsed) {
         if (t.id) {
           ids.push(t.id);
           continue;
         }
-        const made = await api<{ id: string }>(`${path}/ticket-types`, {
+        const created = await api<{ id: string }>(`${path}/ticket-types`, {
           body: {
             name: t.name.trim(),
             ...(t.pricing === 'PWYW' ? { basePriceCents: 0, ...pwywBody(t.pwyw) } : { basePriceCents: baseFromAllIn(cents!, e.feeMode) }),
@@ -409,8 +447,9 @@ function Editor({ e, admin }: { e: OrgEventDetail; admin: boolean }) {
             ...(t.style ? { style: t.style } : {}),
           },
         });
-        ids.push(made.id);
-        patchTier(t.key, { id: made.id, key: made.id });
+        ids.push(created.id);
+        made[t.key] = created.id;
+        patchTier(t.key, { id: created.id, key: created.id });
       }
       // one id per tier (DATES copies count once)
       const before = tiersOf(e.ticketTypes, dates0).map((g) => g.tier.id);
@@ -418,6 +457,19 @@ function Editor({ e, admin }: { e: OrgEventDetail; admin: boolean }) {
       const sameOrder = after.length === before.length && after.every((x, i) => x === before[i]);
       const appendedOnly = before.every((x, i) => after[i] === x);
       if (!sameOrder && !appendedOnly) await api(`${path}/ticket-types/order`, { method: 'PUT', body: { ids: after } });
+
+      // 4. The schedule, as the full list, when it changed (or the kind of event did: items move between dates).
+      if (schedule0) {
+        const items = scheduleBody(sched, mode, sDates, { dateRef: (key) => ({ eventDateId: idOf(key) }), tierRef: (key) => made[key] ?? (tiers.some((t) => t.key === key) ? key : null) });
+        if (mode !== mode0 || JSON.stringify(items) !== schedBase) {
+          const r = await api<{ items: OrganizerItem[]; notified: number }>(`${path}/schedule`, { method: 'PUT', body: { items } });
+          // The answer is in the order sent (time order): new items get their ids, so saving again keeps them.
+          const kept = sortItems(sched, mode, sDates).map((d, n) => ({ ...d, id: r.items[n]?.id ?? d.id, reserved: r.items[n]?.reserved ?? d.reserved, tiers: d.tiers ? d.tiers.map((k) => made[k] ?? k) : null }));
+          setSched(kept);
+          setSchedBase(JSON.stringify(items.map((x, n) => ({ ...(r.items[n] ? { id: r.items[n].id } : {}), ...x }))));
+          if (r.notified) notes.push(`${num(r.notified)} ${r.notified === 1 ? 'person who booked a session was' : 'people who booked sessions were'} told about the change.`);
+        }
+      }
 
       haptic.success();
       setSaved(['Saved.', ...notes].join(' '));
@@ -649,6 +701,22 @@ function Editor({ e, admin }: { e: OrgEventDetail; admin: boolean }) {
           </View>
         ) : null}
         {e.seatMap ? <WebButton label="Edit the seat map on the web" path={webPaths.seating(e.id)} /> : null}
+      </View>
+
+      <View style={styles.card}>
+        <Label>Schedule</Label>
+        {schedule0 ? (
+          <>
+            <Txt variant="small" color={colors.dim}>
+              Optional. What happens when: sets, talks, workshops. Bookable items let ticket holders reserve a free place.
+            </Txt>
+            <ScheduleEditor mode={mode} list={sched} onChange={setSched} dates={scheduleDates(mode, dates, date, time)} tiers={tiers.map((t) => ({ key: t.key, name: t.name }))} errors={errors} />
+          </>
+        ) : (
+          <Txt variant="small" color={colors.muted}>
+            The schedule couldn’t be loaded, so it’s left as it is. Open Edit again to change it.
+          </Txt>
+        )}
       </View>
 
       <View style={styles.card}>

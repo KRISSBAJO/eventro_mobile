@@ -26,6 +26,11 @@
  * (`capacityByDate`). Multi-day (DAYS) is a festival or conference: each ticket type says which days it's valid on
  * (`validDates`). Both send `dateMode` and `dates`; date refs are indexes into `dates` as sent. Venue bookings on
  * Eventro are for one-date events only (the API's rule).
+ *
+ * Schedule (optional step, components/schedule-editor.tsx): items with a time, optional end, title, stage, people, a
+ * note and a kind; DATES/DAYS items pick their date or day. "Let ticket holders book a place" makes an item a bookable
+ * session with a number of places, optionally only for some ticket types. Sent as `schedule` with the event (date refs:
+ * `dateRef`, an index into `dates`; ticket types: indexes into `ticketTypes`), checked before anything is created.
  */
 import { useQueryClient } from '@tanstack/react-query';
 import { Image } from 'expo-image';
@@ -42,6 +47,7 @@ import { DonationFields } from '@/components/donation-fields';
 import { ChoiceRow, ChoiceTile, GradientButton, Section } from '@/components/form-ui';
 import { Label, OrgScreen, WebButton } from '@/components/org-ui';
 import { StockPicker } from '@/components/stock-picker';
+import { ScheduleEditor, scheduleBody, scheduleErrors, type ItemDraft, type ScheduleDate } from '@/components/schedule-editor';
 import { PricingMode, PwywFields, TierExtras, TierPresets, type Pricing } from '@/components/tier-editor';
 import { placeErrors, VenueFields, type VenuePlace } from '@/components/venue-fields';
 import { Button, Chip, EmptyState, Field, Notice, TextArea, Txt } from '@/components/ui';
@@ -70,9 +76,9 @@ import type { Category } from '@/lib/types';
 import { shortDay, type DateMode } from '@/lib/dates';
 import { colors, font, radius, space, touch } from '@/theme';
 
-const STEPS = ['Basics', 'When and where', 'Tickets', 'Cover photo', 'Review'];
+const STEPS = ['Basics', 'When and where', 'Tickets', 'Schedule', 'Cover photo', 'Review'];
 /** Short names for the Next button ("Next: Tickets"). */
-const SHORT = ['Basics', 'When & where', 'Tickets', 'Cover', 'Review'];
+const SHORT = ['Basics', 'When & where', 'Tickets', 'Schedule', 'Cover', 'Review'];
 const CATEGORIES = Object.keys(CATEGORY_NAME) as Category[];
 
 /**
@@ -132,6 +138,8 @@ type Draft = {
   donations: DonationDraft;
   /** the most live comps (a whole number; empty: no limit) */
   compLimit: string;
+  /** the schedule (optional) */
+  schedule: ItemDraft[];
   cover: string;
 };
 
@@ -165,8 +173,12 @@ const EMPTY: Draft = {
   tiers: [{ key: 't0', name: 'General admission', price: '', qty: '', perks: [], badge: '', style: null, pricing: 'FIXED', pwyw: NO_PWYW, perDate: false, byDate: {}, days: null }],
   donations: NO_DONATIONS,
   compLimit: '',
+  schedule: [],
   cover: '',
 };
+
+/** The dates schedule items can be on: the event's date (one date), or the date rows. */
+const scheduleDates = (d: Draft): ScheduleDate[] => (d.dateMode === 'SINGLE' ? [{ key: 'event', date: d.date, start: d.start }] : d.dates.map((x) => ({ key: x.key, date: x.date, start: x.start, label: x.label, cancelled: x.cancelled })));
 
 function validate(step: number, d: Draft, today: string) {
   const e: Record<string, string> = {};
@@ -227,7 +239,8 @@ function validate(step: number, d: Draft, today: string) {
     const limit = d.compLimit.trim() ? Number(d.compLimit) : null;
     if (limit !== null && (!Number.isInteger(limit) || limit < 0)) e.compLimit = 'A whole number, or leave it empty for no limit.';
   }
-  if (step === 3 && !d.cover) e.cover = 'Pick a cover photo.';
+  if (step === 3) Object.assign(e, scheduleErrors(d.schedule, d.dateMode, scheduleDates(d)));
+  if (step === 4 && !d.cover) e.cover = 'Pick a cover photo.';
   return e;
 }
 
@@ -312,7 +325,7 @@ export default function CreateEvent() {
     haptic.select();
     setShow(false);
     // The cover starts as the category's first stock photo.
-    if (step === 2 && !d.cover && d.category) set('cover', defaultCover(CATEGORY_NAME[d.category]));
+    if (step === 3 && !d.cover && d.category) set('cover', defaultCover(CATEGORY_NAME[d.category]));
     setStep((s) => Math.min(STEPS.length - 1, s + 1));
   };
   const back = () => {
@@ -326,7 +339,7 @@ export default function CreateEvent() {
 
   const save = async (submit: boolean) => {
     if (!org) return;
-    for (let s = 0; s < 4; s++) {
+    for (let s = 0; s < 5; s++) {
       const e = validate(s, d, today);
       if (Object.keys(e).length) {
         setStep(s);
@@ -398,6 +411,18 @@ export default function CreateEvent() {
             })),
             ...(d.donations.on ? donationBody(d.donations) : {}),
             ...(d.compLimit.trim() ? { compLimit: Number(d.compLimit) } : {}),
+            // The schedule: dates as indexes into `dates`, ticket types as indexes into `ticketTypes`.
+            ...(d.schedule.length
+              ? {
+                  schedule: scheduleBody(d.schedule, d.dateMode, scheduleDates(d), {
+                    dateRef: (key) => ({ dateRef: sent.findIndex((x) => x.key === key) }),
+                    tierRef: (key) => {
+                      const n = d.tiers.findIndex((t) => t.key === key);
+                      return n < 0 ? null : String(n);
+                    },
+                  }),
+                }
+              : {}),
           },
         });
         id = ev.id;
@@ -416,6 +441,8 @@ export default function CreateEvent() {
     } catch (e) {
       haptic.error();
       setError(id ? `Saved as a draft, but it wasn’t submitted: ${errorText(e)} You can submit it from the event’s page.` : errorText(e));
+      // A schedule item the API refused ("Item 3 (Lunch) has to be between …"): back to the schedule, where it shows.
+      if (!id && /^(Item \d+|Up to \d+ items|A schedule)/.test(errorText(e))) setStep(3);
     } finally {
       setBusy('');
     }
@@ -800,6 +827,23 @@ export default function CreateEvent() {
 
       {step === 3 ? (
         <>
+          <Section
+            icon="clock"
+            title="Schedule"
+            sub={`Optional. What happens when: sets, talks, workshops, breaks. Fans see it on the event page${d.dateMode === 'SINGLE' && d.date ? `, ${dateLabel(d.date)}` : ''}.`}>
+            <ScheduleEditor mode={d.dateMode} list={d.schedule} onChange={(list) => set('schedule', list)} dates={scheduleDates(d)} tiers={d.tiers.map((t) => ({ key: t.key, name: t.name }))} errors={errors} />
+          </Section>
+          {error ? <Notice icon="alert">{error}</Notice> : null}
+          {!d.schedule.length ? (
+            <Txt variant="small" color={colors.dim}>
+              No schedule? Skip this step. You can add one later in Edit.
+            </Txt>
+          ) : null}
+        </>
+      ) : null}
+
+      {step === 4 ? (
+        <>
           <CardPreview {...preview} />
           {errors.cover ? (
             <Txt variant="small" color={colors.accentHi}>
@@ -825,7 +869,7 @@ export default function CreateEvent() {
         </>
       ) : null}
 
-      {step === 4 ? (
+      {step === 5 ? (
         <>
           <CardPreview {...preview} />
           <View style={styles.card}>
@@ -868,6 +912,13 @@ export default function CreateEvent() {
               return <ReviewLine key={t.key} icon="ticket" text={`${t.name.trim()} · ${price} · ${qty}${days}${extras ? ` · ${extras}` : ''}`} onEdit={() => setStep(2)} />;
             })}
             {d.donations.on ? <ReviewLine icon="heart" text={`Donations to ${d.donations.cause.trim()}`} onEdit={() => setStep(2)} /> : null}
+            {d.schedule.length ? (
+              <ReviewLine
+                icon="clock"
+                text={`Schedule: ${d.schedule.length} ${d.schedule.length === 1 ? 'item' : 'items'}${d.schedule.some((i) => i.bookable) ? `, ${d.schedule.filter((i) => i.bookable).length} bookable` : ''}`}
+                onEdit={() => setStep(3)}
+              />
+            ) : null}
             {d.compLimit.trim() ? <ReviewLine icon="gift" text={`Up to ${Number(d.compLimit).toLocaleString('en-US')} ${Number(d.compLimit) === 1 ? 'comp' : 'comps'} at once`} onEdit={() => setStep(2)} /> : null}
           </View>
           {d.format === 'book' && d.booking ? (
@@ -979,7 +1030,7 @@ function Mini({ label, onPress, disabled, rotate, icon = 'chevronDown' }: { labe
   );
 }
 
-function ReviewLine({ icon, text, onEdit }: { icon: 'tag' | 'calendar' | 'pin' | 'stream' | 'ticket' | 'heart' | 'gift'; text: string; onEdit: () => void }) {
+function ReviewLine({ icon, text, onEdit }: { icon: 'tag' | 'calendar' | 'pin' | 'stream' | 'ticket' | 'heart' | 'gift' | 'clock'; text: string; onEdit: () => void }) {
   return (
     <Pressable accessibilityRole="button" accessibilityLabel={`${text}. Edit`} onPress={onEdit} style={({ pressed }) => [styles.line, pressed && { opacity: 0.7 }]}>
       <Icon name={icon} size={17} color={colors.muted} />

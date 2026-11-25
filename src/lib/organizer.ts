@@ -15,6 +15,7 @@ import type { EventBooking } from './bookings';
 import type { Attendee, Category, GuestList, MyOrg } from './types';
 import type { DateMode, EventDate } from './dates';
 import { colors } from '@/theme';
+import type { SessionStat } from './schedule';
 import type { TierLook } from './tiers';
 
 /* ---------- roles ---------- */
@@ -162,6 +163,8 @@ export type EventStats = {
   donations?: { orders: number; cents: number; refundedCents: number; cause: string | null };
   comps?: { issued: number; claimed: number; checkedIn: number; revoked: number; limit: number | null };
   guestList?: { entries: number; expected: number; arrived: number };
+  /** bookable sessions on the schedule (lib/schedule.ts), by time; [] (or left out by older APIs) without */
+  sessions?: SessionStat[];
 };
 
 /* ---------- donations ---------- */

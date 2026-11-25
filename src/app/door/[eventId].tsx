@@ -21,6 +21,11 @@
  * or offline the same rule on this phone's clock. Scans, manual check-ins, undo and offline sync carry that
  * `eventDateId`; a ticket for another date, or a pass not valid that day, fills the screen in violet: "Wrong date",
  * with the ticket's own date ("This ticket is for Sat, Dec 13") or its days ("Valid Sat 12, Sun 13").
+ *
+ * Sessions (lib/schedule.ts): an event with bookable sessions gets a "Sessions" tab: pick the session (those on the
+ * door's date), then scan tickets at its entrance: POST …/schedule/:itemId/check-in answers Admit (booked), Already
+ * in, Not booked, Wrong date or Not valid, in the same full-screen style. It needs signal (nothing is saved for
+ * offline), and it doesn't check anyone in at the event door. `?session=<itemId>` opens it on that session.
  */
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { router, useLocalSearchParams } from 'expo-router';
@@ -71,13 +76,17 @@ import {
   type Verdict,
 } from '@/lib/door';
 import { dateLine, shortDay, type DateMode, type EventDate } from '@/lib/dates';
-import { localStamp, num, when } from '@/lib/format';
+import { isPast, localStamp, num, when } from '@/lib/format';
 import { haptic } from '@/lib/haptics';
 import { useGuestList } from '@/lib/organizer';
+import { checkInSession, sessionVerdict, timeRange, undoBooking, useOrgSchedule } from '@/lib/schedule';
 import { useDoorEvents } from '@/lib/queries';
 import { useConfirm } from '@/components/confirm';
 import type { Attendee, CheckInAnswer, GuestCheckIn, GuestEntry, GuestList } from '@/lib/types';
 import { colors, font, gutter, radius, space } from '@/theme';
+
+/** A session has ended (venue wall clock, read on this phone's clock). */
+const isPastWall = (iso: string) => isPast(iso, 0);
 
 type EventInfo = { id: string; orgId: string; title: string; startsAt: string; status: string; timezone?: string | null; dateMode?: DateMode; dates?: EventDate[] };
 
@@ -95,7 +104,7 @@ export default function Door() {
     void confirm({ title, message, confirmLabel, destructive: true }).then((yes) => {
       if (yes) go();
     });
-  const { eventId = '' } = useLocalSearchParams<{ eventId: string }>();
+  const { eventId = '', session: sessionParam } = useLocalSearchParams<{ eventId: string; session?: string }>();
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
   const { user } = useAuth();
@@ -120,7 +129,10 @@ export default function Door() {
   const [lookup, setLookup] = useState('');
   const busyRef = useRef(false);
   const qc = useQueryClient();
-  const [tab, setTab] = useState<'scan' | 'guests'>('scan');
+  const [tab, setTab] = useState<'scan' | 'guests' | 'sessions'>(sessionParam ? 'sessions' : 'scan');
+  /** Sessions: the session being checked, and the last one let in (for Undo) */
+  const [sessionId, setSessionId] = useState<string | null>(sessionParam ?? null);
+  const [lastSession, setLastSession] = useState<{ itemId: string; reservationId: string; name: string } | null>(null);
   const [guestText, setGuestText] = useState('');
   const [guestQ, setGuestQ] = useState('');
   const [guestBusy, setGuestBusy] = useState<string | null>(null);
@@ -184,6 +196,22 @@ export default function Door() {
     doorDateRef.current = doorDateId;
   }, [doorDateId]);
   const doorDate = doorDates.find((d) => d.id === doorDateId) ?? null;
+  // Bookable sessions (online only): those on the door's date, plus the one a link asked for.
+  const schedule = useOrgSchedule(eventId, online, online && tab === 'sessions' ? 15_000 : false);
+  const bookable = (schedule.data?.items ?? []).filter((i) => i.bookable);
+  const doorSessions = bookable.filter((i) => !doorDateId || !i.eventDateId || i.eventDateId === doorDateId || i.id === sessionId);
+  const session = doorSessions.find((i) => i.id === sessionId) ?? doorSessions.find((i) => !isPastWall(i.endsAt ?? i.startsAt)) ?? doorSessions[0] ?? null;
+  // A link to a session on another date (multiple dates): the door moves to that date, once.
+  const [linkDated, setLinkDated] = useState(false);
+  const linked = sessionParam ? bookable.find((i) => i.id === sessionParam) : undefined;
+  if (linked && !linkDated) {
+    setLinkDated(true);
+    if (linked.eventDateId && multi && linked.eventDateId !== doorDateId) setPickedDate(linked.eventDateId);
+  }
+  const sessionRef = useRef(session);
+  useEffect(() => {
+    sessionRef.current = session;
+  }, [session]);
   // The guest list: from the API while online (with this phone's unsynced check-ins on top), else the door pack's.
   const remoteGuests = useGuestList(online && tab === 'guests' ? eventId : undefined, guestQ);
   const useRemote = online && !!remoteGuests.data && !remoteGuests.error;
@@ -273,6 +301,48 @@ export default function Door() {
     },
     [autoOffline, checkOffline, deviceId, doorDateRef, eventId, mode, refreshCounts, setStore, show],
   );
+
+  /** Session check-in: online only; a scan or typed code for the session picked. */
+  const processSession = useCallback(
+    async (raw: string) => {
+      const value = raw.trim();
+      const s = sessionRef.current;
+      if (!value || busyRef.current || !s) return;
+      if (mode === 'offline' || autoOffline) {
+        show({ tone: 'invalid', title: 'No connection', detail: 'Session check-in needs signal. It doesn’t work offline.' });
+        return;
+      }
+      busyRef.current = true;
+      setBusy(true);
+      try {
+        const a = await checkInSession(eventId, s.id, value);
+        const v = sessionVerdict(a, s.title);
+        show(v);
+        if (a.result === 'ADMIT' && a.reservation && a.ticket) setLastSession({ itemId: s.id, reservationId: a.reservation.id, name: a.ticket.holderName });
+        void schedule.refetch();
+      } catch (e) {
+        show(isOffline(e) ? { tone: 'invalid', title: 'No connection', detail: 'Session check-in needs signal. Try again when you’re back online.' } : { tone: 'invalid', title: 'Not valid', detail: errorText(e) });
+      } finally {
+        busyRef.current = false;
+        setBusy(false);
+      }
+    },
+    [autoOffline, eventId, mode, schedule, show],
+  );
+
+  const undoSession = async () => {
+    if (!lastSession) return;
+    setNote(null);
+    try {
+      await undoBooking(eventId, lastSession.itemId, lastSession.reservationId);
+      haptic.select();
+      setNote({ tone: 'plain', text: `Undone: ${lastSession.name} is no longer checked in to the session.` });
+      setLastSession(null);
+      void schedule.refetch();
+    } catch (e) {
+      setNote({ tone: 'accent', text: `Couldn’t undo. ${errorText(e)}` });
+    }
+  };
 
   const undo = async () => {
     if (!lastAdmit) return;
@@ -535,6 +605,9 @@ export default function Door() {
             onChange={(id) => {
               setPickedDate(id);
               setLastAdmit(null);
+              // Sessions: that date's sessions (the next one on it is picked)
+              setSessionId(null);
+              setLastSession(null);
             }}
             note={(d) => {
               const c = live?.dates?.find((x) => x.id === d.id)?.checkedIn;
@@ -549,18 +622,31 @@ export default function Door() {
           value={tab}
           onChange={setTab}
           options={[
-            { id: 'scan', label: 'Scan tickets' },
+            { id: 'scan', label: bookable.length || sessionParam ? 'Tickets' : 'Scan tickets' },
             { id: 'guests', label: 'Guest list' },
+            ...(bookable.length || sessionParam ? [{ id: 'sessions' as const, label: 'Sessions' }] : []),
           ]}
         />
 
         <View style={styles.counterRow}>
           <View style={{ flex: 1 }}>
             <Txt variant="priceLg" accessibilityLiveRegion="polite">
-              {tab === 'guests' ? (guestSum ? `${num(guestSum.arrived)} of ${num(guestSum.expected)}` : '—') : counter ? (counter.of !== null ? `${counter.n} of ${counter.of}` : num(counter.n)) : '—'}
+              {tab === 'sessions'
+                ? session && online
+                  ? `${num(session.checkedIn)} of ${num(session.reserved)}`
+                  : '—'
+                : tab === 'guests'
+                  ? guestSum
+                    ? `${num(guestSum.arrived)} of ${num(guestSum.expected)}`
+                    : '—'
+                  : counter
+                    ? counter.of !== null
+                      ? `${counter.n} of ${counter.of}`
+                      : num(counter.n)
+                    : '—'}
             </Txt>
-            <Txt variant="small" color={colors.muted}>
-              {tab === 'guests' ? `guests here${guestSum ? ` · ${num(guestSum.entries)} on the list` : ''}` : doorDate ? `checked in · ${shortDay(doorDate.startsAt)}` : 'checked in'}
+            <Txt variant="small" color={colors.muted} numberOfLines={1}>
+              {tab === 'sessions' ? 'checked in' : tab === 'guests' ? `guests here${guestSum ? ` · ${num(guestSum.entries)} on the list` : ''}` : doorDate ? `checked in · ${shortDay(doorDate.startsAt)}` : 'checked in'}
             </Txt>
           </View>
           <View style={{ flexDirection: 'row', gap: space.sm }}>
@@ -606,6 +692,119 @@ export default function Door() {
               <Txt variant="small" color={colors.dim}>
                 Showing 60 of {num(guests.length)}. Search to find someone.
               </Txt>
+            ) : null}
+          </View>
+        ) : null}
+
+        {tab === 'sessions' ? (
+          <View style={{ gap: space.md }}>
+            {!online ? (
+              <Notice tone="warning" icon="offline" title="Session check-in needs signal" action={mode === 'offline' ? 'Go online' : 'Try again'} onAction={() => {
+                setMode('online');
+                setAutoOffline(false);
+              }}>
+                It isn’t saved for offline. Check people in at the event door offline, and at sessions once you’re back online.
+              </Notice>
+            ) : schedule.error ? (
+              <Notice tone="warning" icon="alert" action="Try again" onAction={() => void schedule.refetch()}>
+                {errorText(schedule.error)}
+              </Notice>
+            ) : schedule.isPending ? (
+              <Txt variant="small" color={colors.dim}>
+                Loading the sessions…
+              </Txt>
+            ) : !doorSessions.length ? (
+              <Txt variant="small" color={colors.dim}>
+                {doorDate ? `No bookable sessions on ${shortDay(doorDate.startsAt)}.` : 'This event has no bookable sessions.'}
+              </Txt>
+            ) : (
+              <>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: space.sm }} accessibilityLabel="Session">
+                  {doorSessions.map((i) => (
+                    <Chip
+                      key={i.id}
+                      label={`${when(i.startsAt).time} · ${i.title}`}
+                      active={session?.id === i.id}
+                      onPress={() => {
+                        setSessionId(i.id);
+                        setLastSession(null);
+                      }}
+                    />
+                  ))}
+                </ScrollView>
+                {session ? (
+                  <Pressable
+                    accessibilityRole="link"
+                    accessibilityLabel={`${session.title}: see the bookings`}
+                    onPress={() => router.push({ pathname: '/organizer/events/[id]/sessions/[itemId]', params: { id: eventId, itemId: session.id } })}
+                    style={({ pressed }) => [styles.sessionHead, pressed && { opacity: 0.7 }]}>
+                    <View style={{ flex: 1, gap: 2 }}>
+                      <Txt variant="bodyStrong" numberOfLines={1}>
+                        {session.title}
+                      </Txt>
+                      <Txt variant="small" color={colors.muted} numberOfLines={1}>
+                        {[`${multi ? `${shortDay(session.startsAt)} · ` : ''}${timeRange(session.startsAt, session.endsAt)}`, session.stage, session.capacity !== null && session.reserved >= session.capacity ? 'Full' : null].filter(Boolean).join(' · ')}
+                      </Txt>
+                    </View>
+                    <Txt variant="smallStrong" color={colors.accent}>
+                      Bookings
+                    </Txt>
+                    <Icon name="chevronRight" size={15} color={colors.accent} />
+                  </Pressable>
+                ) : null}
+              </>
+            )}
+            {online && session ? (
+              <>
+                <View>
+                  <DoorCamera paused={!!verdict || busy} torch={torch} onCode={(d) => void processSession(d)} height={camH} />
+                  {HAS_CAMERA ? (
+                    <View style={styles.camTools}>
+                      <IconButton icon="flash" label={torch ? 'Turn the torch off' : 'Turn the torch on'} glass color={torch ? colors.warning : colors.text} onPress={() => setTorch((v) => !v)} />
+                      <IconButton icon="keyboard" label="Enter a code" glass onPress={() => setTyping((v) => !v)} />
+                    </View>
+                  ) : null}
+                </View>
+                {typing ? (
+                  <View style={{ gap: space.sm }}>
+                    <Field
+                      label="Enter code"
+                      value={code}
+                      onChangeText={setCode}
+                      placeholder="EVT-…  or the full QR code"
+                      autoCapitalize="characters"
+                      autoCorrect={false}
+                      returnKeyType="go"
+                      onSubmitEditing={() => {
+                        void processSession(code);
+                        setCode('');
+                      }}
+                      hint="The ticket number or the full code from the ticket."
+                    />
+                    <Button
+                      label="Check"
+                      icon="scan"
+                      loading={busy}
+                      disabled={!code.trim()}
+                      onPress={() => {
+                        void processSession(code);
+                        setCode('');
+                      }}
+                    />
+                  </View>
+                ) : null}
+                {lastSession ? (
+                  <Pressable accessibilityRole="button" onPress={() => void undoSession()} style={({ pressed }) => [styles.undo, pressed && { opacity: 0.7 }]}>
+                    <Icon name="undo" size={16} color={colors.muted} />
+                    <Txt variant="smallStrong" color={colors.muted} style={{ flex: 1 }} numberOfLines={1}>
+                      Undo last check-in · {lastSession.name}
+                    </Txt>
+                  </Pressable>
+                ) : null}
+                <Txt variant="tiny" color={colors.dim}>
+                  This checks people in to the session only, not at the event door.
+                </Txt>
+              </>
             ) : null}
           </View>
         ) : null}
@@ -664,7 +863,8 @@ export default function Door() {
 
         {note ? <Notice tone={note.tone}>{note.text}</Notice> : null}
 
-        {/* Offline */}
+        {/* Offline (not for sessions: they need signal) */}
+        {tab !== 'sessions' ? (
         <View style={styles.panel}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.md }}>
             <View style={styles.panelIcon}>
@@ -753,6 +953,7 @@ export default function Door() {
             </View>
           ) : null}
         </View>
+        ) : null}
 
         {/* Manual lookup */}
         {tab === 'scan' ? (
@@ -831,7 +1032,7 @@ function Result({ v, onDone }: { v: Verdict; onDone: () => void }) {
             {v.ticket.holderName}
           </Txt>
           <Txt variant="title" color="rgba(255,255,255,0.9)" style={{ textAlign: 'center' }}>
-            {v.ticket.ticketType} · {seatText(v.ticket)}
+            {v.line ?? `${v.ticket.ticketType} · ${seatText(v.ticket)}`}
           </Txt>
           {compLabel(v.ticket) ? (
             <View style={styles.compTag}>
@@ -949,6 +1150,7 @@ const styles = StyleSheet.create({
   panelIcon: { width: 38, height: 38, borderRadius: 11, backgroundColor: colors.surface2, alignItems: 'center', justifyContent: 'center' },
   queue: { flexDirection: 'row', alignItems: 'center', gap: space.sm, padding: space.md, borderRadius: radius.md, backgroundColor: colors.warningSoft },
   conflict: { gap: 2, padding: space.md, borderRadius: radius.md, borderWidth: 1, borderColor: 'rgba(245,165,36,0.35)', backgroundColor: colors.bg2 },
+  sessionHead: { flexDirection: 'row', alignItems: 'center', gap: space.sm, padding: space.md, borderRadius: radius.md, borderWidth: 1, borderColor: colors.line, backgroundColor: colors.surface },
   hit: { flexDirection: 'row', alignItems: 'center', gap: space.md, padding: space.md, borderRadius: radius.md, borderWidth: 1, borderColor: colors.line, backgroundColor: colors.surface },
   result: { alignItems: 'center', justifyContent: 'center', gap: space.lg, paddingHorizontal: gutter, zIndex: 10 },
   resultIcon: { width: 112, height: 112, borderRadius: 56, backgroundColor: 'rgba(255,255,255,0.18)', alignItems: 'center', justifyContent: 'center' },
