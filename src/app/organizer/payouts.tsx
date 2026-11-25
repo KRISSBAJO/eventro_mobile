@@ -2,8 +2,8 @@
  * Payouts, read-only (org admins): what's coming next, today's sales so far, the payout account and the last
  * 30 days (GET /organizer/orgs/:orgId/payouts). Setting up or changing the bank account happens only on the website
  * (Stripe Connect or Paystack): the app never asks for bank details. Donations fans added at checkout are paid out
- * with the tickets but shown as their own line (no Eventro fee on them); the organizer passes them to the cause.
- * A donation refunded after the organizer had been paid for its order is owed to Eventro (`donationOwedCents`).
+ * with the tickets but shown as their own line (no Omoshow fee on them); the organizer passes them to the cause.
+ * A donation refunded after the organizer had been paid for its order is owed to Omoshow (`donationOwedCents`).
  */
 import { useLocalSearchParams } from 'expo-router';
 import { StyleSheet, View } from 'react-native';
@@ -41,7 +41,7 @@ export default function PayoutsScreen() {
       <>
         {!acct ? (
           <Notice tone="warning" icon="cash" title="Payouts aren’t set up">
-            {`Connect a bank account on the Eventro website to get paid in ${d.currency}. It goes through Stripe or Paystack; the app never asks for bank details.`}
+            {`Connect a bank account on the Omoshow website to get paid in ${d.currency}. It goes through Stripe or Paystack; the app never asks for bank details.`}
           </Notice>
         ) : d.holdUntil ? (
           <Notice tone="warning" icon="lock" title="Payouts are paused for 24 hours">
@@ -66,13 +66,13 @@ export default function PayoutsScreen() {
             <Label>Donations</Label>
             <Txt variant="title">{`${money(d.donationsCents ?? 0, d.currency, { decimals: true })} in the last 31 days`}</Txt>
             <Txt variant="small" color={colors.muted}>
-              {`${d.donationNote ?? DONATION_ON_BEHALF} They’re paid out with your ticket sales but kept separate here, and no Eventro fee is taken on them.`}
+              {`${d.donationNote ?? DONATION_ON_BEHALF} They’re paid out with your ticket sales but kept separate here, and no Omoshow fee is taken on them.`}
             </Txt>
           </View>
         ) : null}
         {d.donationOwedCents ? (
           <Txt variant="small" color={colors.dim}>
-            {`${money(d.donationOwedCents, d.currency, { decimals: true })} owed to Eventro for donations refunded after you’d been paid for those orders.`}
+            {`${money(d.donationOwedCents, d.currency, { decimals: true })} owed to Omoshow for donations refunded after you’d been paid for those orders.`}
           </Txt>
         ) : null}
         <View style={styles.card}>

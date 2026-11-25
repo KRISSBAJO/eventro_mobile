@@ -323,7 +323,7 @@ function Revealed({ gift, token, onStatus }: { gift: Gift; token: string; onStat
           <>
             <Button label="Sign in to add to your tickets" onPress={() => router.push({ pathname: '/sign-in', params: { then: `/gift/${token}` } })} />
             <Txt variant="small" color={colors.dim} style={{ textAlign: 'center' }}>
-              New to Eventro? You can create a free account on the next step. Any email works: the link is what counts.
+              New to Omoshow? You can create a free account on the next step. Any email works: the link is what counts.
             </Txt>
           </>
         )}

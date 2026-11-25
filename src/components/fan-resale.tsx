@@ -1,6 +1,6 @@
 /**
  * "Fan resale" on the event screen, as on the website (eventro components/fan-resale.tsx): tickets other fans are
- * selling through Eventro (GET /events/:slug/resale, cheapest first). Buy holds the listing for 10 minutes
+ * selling through Omoshow (GET /events/:slug/resale, cheapest first). Buy holds the listing for 10 minutes
  * (POST /resale/:id/hold, with the token when signed in; guests can buy too) and opens the resale checkout with the
  * hold in memory (lib/resale-hold.ts), never in the route. The event screen hides it when nothing is listed.
  *
@@ -30,10 +30,10 @@ import { Button, Notice, Txt } from './ui';
 
 /**
  * The fan resale promise. A sale voids the seller's ticket and gives the buyer a new one (checkout.service fulfil);
- * like every paid ticket it's covered by the Eventro Guarantee, which refunds it in full if it doesn't scan
+ * like every paid ticket it's covered by the Omoshow Guarantee, which refunds it in full if it doesn't scan
  * (guarantee.ts).
  */
-export const RESALE_PROMISE = 'Sold by fans through Eventro. You get a new ticket with its own QR code, covered by the Eventro Guarantee: if it doesn’t scan at the door, you get your money back, fees included.';
+export const RESALE_PROMISE = 'Sold by fans through Omoshow. You get a new ticket with its own QR code, covered by the Omoshow Guarantee: if it doesn’t scan at the door, you get your money back, fees included.';
 
 /** " Guarantee terms" as a link inside the promise's text (the website's /guarantee#terms). */
 export function GuaranteeTermsLink() {
@@ -183,7 +183,7 @@ export function FanResale({ slug, listings, refetch }: { slug: string; listings:
         <Icon name="shield" size={16} color={colors.accent} />
         <Txt variant="small" color={colors.muted} style={{ flex: 1 }}>
           {RESALE_PROMISE}
-          {cheapest && onWebsite(cheapest.currency) ? ' Card payments for resale finish on the Eventro website.' : ''}
+          {cheapest && onWebsite(cheapest.currency) ? ' Card payments for resale finish on the Omoshow website.' : ''}
           <GuaranteeTermsLink />
         </Txt>
       </View>

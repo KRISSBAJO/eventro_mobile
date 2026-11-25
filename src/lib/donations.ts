@@ -1,8 +1,8 @@
 /**
  * Charity donations at checkout. An organizer turns them on per event and names the cause; fans can add a donation to
- * any order (free tickets too). No Eventro fee is taken on a donation and ticket protection doesn't cover it. Eventro
+ * any order (free tickets too). No Omoshow fee is taken on a donation and ticket protection doesn't cover it. Omoshow
  * collects it with the order and pays it out to the organizer, separately from ticket sales; the organizer passes it
- * to the cause. The Eventro Guarantee never refunds a donation (a claim refunds the ticket only); a cancelled event
+ * to the cause. The Omoshow Guarantee never refunds a donation (a claim refunds the ticket only); a cancelled event
  * refunds the whole order, the donation included.
  */
 import { money } from './format';
@@ -17,7 +17,7 @@ export const DONATION_SUGGESTIONS_MAX = 4;
 /** Near the donation picker at checkout (the API's required wording). */
 export const DONATION_NO_REFUND = 'Donations go to the cause and aren’t refunded if a ticket doesn’t scan.';
 /** At checkout, in the organizer's settings and on payouts. */
-export const DONATION_ON_BEHALF = 'Eventro collects donations on the organizer’s behalf; the organizer is responsible for passing them to the cause.';
+export const DONATION_ON_BEHALF = 'Omoshow collects donations on the organizer’s behalf; the organizer is responsible for passing them to the cause.';
 
 export const donationLabel = (cause: string | null | undefined) => (cause ? `Donation to ${cause}` : 'Donation');
 

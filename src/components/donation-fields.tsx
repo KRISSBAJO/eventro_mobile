@@ -55,7 +55,7 @@ export function DonationFields({ value, onChange, currency, errors }: { value: D
           <View style={{ flexDirection: 'row', gap: space.sm, alignItems: 'flex-start' }}>
             <Icon name="shield" size={14} color={colors.dim} />
             <Txt variant="small" color={colors.dim} style={{ flex: 1 }}>
-              {`${DONATION_ON_BEHALF} No Eventro fee is taken on donations, and they’re paid out to you separately from ticket sales. They aren’t refunded if a ticket doesn’t scan; if the event is cancelled, they’re refunded with the order.`}
+              {`${DONATION_ON_BEHALF} No Omoshow fee is taken on donations, and they’re paid out to you separately from ticket sales. They aren’t refunded if a ticket doesn’t scan; if the event is cancelled, they’re refunded with the order.`}
             </Txt>
           </View>
         </>

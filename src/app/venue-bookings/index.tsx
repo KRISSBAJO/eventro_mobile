@@ -38,7 +38,7 @@ export default function VenueInboxScreen() {
       ) : q.error ? (
         <ErrorState message={errorText(q.error)} onRetry={() => void q.refetch()} />
       ) : !q.data?.venues.length ? (
-        <EmptyState icon="building" title="You don’t manage a venue" body="Own or run a venue? List it on Eventro. Once Eventro approves you, booking requests show up here." action="List your venue" onAction={() => router.push('/my-venues/add')} />
+        <EmptyState icon="building" title="You don’t manage a venue" body="Own or run a venue? List it on Omoshow. Once Omoshow approves you, booking requests show up here." action="List your venue" onAction={() => router.push('/my-venues/add')} />
       ) : (
         <>
           <TileRow>
@@ -71,7 +71,7 @@ export default function VenueInboxScreen() {
             <Row icon="sliders" label="Listing, hours and blocked time" detail="My venues" onPress={() => router.push('/my-venues')} />
           </Group>
           <Txt variant="small" color={colors.dim}>
-            Times are each venue’s local time. Payment is arranged directly with the organizer, outside Eventro.
+            Times are each venue’s local time. Payment is arranged directly with the organizer, outside Omoshow.
           </Txt>
         </>
       )}

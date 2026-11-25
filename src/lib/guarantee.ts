@@ -1,5 +1,5 @@
 /**
- * The Eventro Guarantee (the scan guarantee): if a ticket doesn't scan at the door, its holder gets that ticket's
+ * The Omoshow Guarantee (the scan guarantee): if a ticket doesn't scan at the door, its holder gets that ticket's
  * money back, all-in (its share of what was paid for the order, fees included), to the original payment method.
  *
  * It covers every ticket from a paid order, fan resale tickets and tickets transferred or gifted on included. A
@@ -10,7 +10,7 @@
  *
  * Claims go to POST /tickets/:id/guarantee-claims, one per ticket by its current holder, from 3 hours before the event
  * starts until 48 hours after it ends. The server declines a claim at once when the door's scan log shows the ticket
- * was scanned in; everything else is reviewed by the Eventro team within 24 hours. Nothing is approved automatically.
+ * was scanned in; everything else is reviewed by the Omoshow team within 24 hours. Nothing is approved automatically.
  *
  * No signal at the door: a claim that can't reach the API is saved on this phone (the encrypted vault, per account)
  * and <GuaranteeSync /> sends it when the app comes back to the foreground, when the wallet reaches the API again,
@@ -43,7 +43,7 @@ export const DETAILS_MAX = 1000;
 /* ---------- copy ---------- */
 
 /** The guarantee's one name, everywhere (resale tickets too). */
-export const GUARANTEE_NAME = 'Eventro Guarantee';
+export const GUARANTEE_NAME = 'Omoshow Guarantee';
 /** The badge on a covered ticket. */
 export const COVERED_LABEL = `Covered by the ${GUARANTEE_NAME}`;
 /** The muted note on a free ticket ($0 pay what you want too), where the guarantee would otherwise show. */
@@ -113,8 +113,8 @@ export function claimBlocker(t: Ticket, now: number): string | null {
   if (!g) return 'We couldn’t check this ticket’s cover. Refresh your tickets and try again.';
   if (g.claim) return 'There’s already a claim for this ticket.';
   if (t.event.status === 'CANCELLED') return 'This event was cancelled, so the ticket is refunded in full with the event.';
-  if (!g.covered && g.notCovered === 'FREE') return 'This ticket was free, so there’s nothing to refund. The Eventro Guarantee covers paid tickets.';
-  if (!g.covered && g.notCovered === 'COMP') return 'This is a complimentary ticket from the organizer, so there’s nothing to refund. The Eventro Guarantee covers paid tickets.';
+  if (!g.covered && g.notCovered === 'FREE') return 'This ticket was free, so there’s nothing to refund. The Omoshow Guarantee covers paid tickets.';
+  if (!g.covered && g.notCovered === 'COMP') return 'This is a complimentary ticket from the organizer, so there’s nothing to refund. The Omoshow Guarantee covers paid tickets.';
   if (!g.covered || t.order.status === 'REFUNDED' || t.order.status === 'CANCELLED') return 'This order was cancelled or refunded.';
   if (t.status === 'VOID') return 'This ticket no longer works.';
   if (t.status === 'LISTED') return 'This ticket is listed for resale. Remove the listing to claim on it.';
@@ -236,7 +236,7 @@ export function flushClaims(userId: string, changed?: () => void) {
         const status = e instanceof ApiError ? e.status : 0;
         if (status === 0 || status === 401 || status === 429 || status >= 500) break;
         refused++;
-        const message = e instanceof Error && e.message ? e.message : 'Eventro couldn’t accept this claim.';
+        const message = e instanceof Error && e.message ? e.message : 'Omoshow couldn’t accept this claim.';
         update(userId, (s) => ({ queue: s.queue.filter((x) => x.ticketId !== q.ticketId), outcomes: [{ ticketId: q.ticketId, at: new Date().toISOString(), kind: 'refused', message, status }, ...s.outcomes.filter((o) => o.ticketId !== q.ticketId)] }));
       }
     }

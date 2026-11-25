@@ -1,7 +1,7 @@
 /**
  * My venues: the venues this person manages (GET /me/venues → `managed`), each opening its own page for the listing,
  * hours, blocked-out time and details; booking requests across them (the inbox, app/venue-bookings); requests to
- * manage a venue still with Eventro, or declined; and adding or claiming another venue. Approved-claim
+ * manage a venue still with Omoshow, or declined; and adding or claiming another venue. Approved-claim
  * notifications (/venues/manage) open this screen.
  */
 import { router } from 'expo-router';
@@ -69,7 +69,7 @@ export default function MyVenues() {
               </View>
             </>
           ) : !requests.length ? (
-            <EmptyState icon="building" title="No venues yet" body="Own or run a venue? List it on Eventro and organizers can request it for their events." action="List your venue" onAction={() => router.push('/my-venues/add')} />
+            <EmptyState icon="building" title="No venues yet" body="Own or run a venue? List it on Omoshow and organizers can request it for their events." action="List your venue" onAction={() => router.push('/my-venues/add')} />
           ) : null}
 
           {requests.length ? (
@@ -88,7 +88,7 @@ export default function MyVenues() {
 
           {managed.length || requests.length ? <Button label="Add or claim another venue" icon="plus" variant="ghost" size="md" onPress={() => router.push('/my-venues/add')} /> : null}
           <Txt variant="small" color={colors.dim}>
-            Payment for a booking is arranged directly between you and the organizer, outside Eventro.
+            Payment for a booking is arranged directly between you and the organizer, outside Omoshow.
           </Txt>
         </>
       )}

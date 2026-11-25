@@ -1,5 +1,5 @@
 /**
- * Client for the Eventro API (the eventro-be repo).
+ * Client for the Omoshow API (the eventro-be repo).
  *
  * EXPO_PUBLIC_API_URL sets the base URL (see .env.example). On a phone it must be the computer's LAN address,
  * e.g. http://192.168.1.20:4000/api/v1, because 127.0.0.1 on the phone is the phone itself.
@@ -184,7 +184,7 @@ async function send<T>(path: string, opts: Opts, bearer: string | null): Promise
     });
   } catch (e) {
     if (opts.signal?.aborted) throw e;
-    throw new ApiError('We can’t reach Eventro right now. Check your connection and try again.', 0);
+    throw new ApiError('We can’t reach Omoshow right now. Check your connection and try again.', 0);
   } finally {
     clearTimeout(timer);
     opts.signal?.removeEventListener('abort', abort);
@@ -211,7 +211,7 @@ function toError(status: number, data: unknown) {
   const m = nested ? nested.message : (raw as string | string[] | undefined);
   const details = (nested?.errors ?? body?.errors ?? []).filter((d): d is string => typeof d === 'string');
   const fallback =
-    status === 429 ? 'Too many tries. Wait a minute and try again.' : status >= 500 ? 'Eventro had a problem. Please try again in a moment.' : `Something went wrong (${status}).`;
+    status === 429 ? 'Too many tries. Wait a minute and try again.' : status >= 500 ? 'Omoshow had a problem. Please try again in a moment.' : `Something went wrong (${status}).`;
   // Validation errors list every problem: the first one reads best (fix it, and the next shows up).
   const base = Array.isArray(m) ? (m[0] ? sentence(m[0]) : fallback) : m ? sentence(m) : fallback;
   // Some answers repeat the message as the first of their `errors`.

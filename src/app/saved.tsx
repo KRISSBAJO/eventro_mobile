@@ -44,7 +44,7 @@ export default function Saved() {
               </Notice>
             ) : saved.items.length ? (
               <Txt variant="small" color={colors.muted}>
-                {saved.items.length} saved · the same list as on the Eventro website
+                {saved.items.length} saved · the same list as on the Omoshow website
               </Txt>
             ) : null}
           </View>

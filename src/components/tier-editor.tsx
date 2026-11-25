@@ -55,7 +55,7 @@ export function PricingMode({ value, onChange }: { value: Pricing; onChange: (v:
 
 /**
  * A pay-what-you-want tier's amounts. `errors` uses the keys of lib/pwyw.ts pwywErrors (`${errorKey}-min` and so on).
- * Amounts are base amounts in the event's currency; with "Fans pay it" Eventro's fee is added on top of what fans pick.
+ * Amounts are base amounts in the event's currency; with "Fans pay it" Omoshow's fee is added on top of what fans pick.
  */
 export function PwywFields({
   value,
@@ -110,7 +110,7 @@ export function PwywFields({
         </Txt>
       ) : null}
       <Txt variant="tiny" color={colors.dim}>
-        {`${PROMO_PWYW_NOTE} A ticket bought for more than ${currencySymbol(currency)}0 is covered by the Eventro Guarantee; one taken for free isn’t.`}
+        {`${PROMO_PWYW_NOTE} A ticket bought for more than ${currencySymbol(currency)}0 is covered by the Omoshow Guarantee; one taken for free isn’t.`}
       </Txt>
     </View>
   );

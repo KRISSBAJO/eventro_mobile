@@ -55,7 +55,7 @@ export default function Team() {
       await api(base, { body: { email: e, role } });
       haptic.success();
       setEmail('');
-      setMessage({ ok: true, text: `Invited ${e} as ${ROLE_NAME[role].toLowerCase()}. They join when they sign in to Eventro with that email.` });
+      setMessage({ ok: true, text: `Invited ${e} as ${ROLE_NAME[role].toLowerCase()}. They join when they sign in to Omoshow with that email.` });
       await reload();
     } catch (err) {
       haptic.error();

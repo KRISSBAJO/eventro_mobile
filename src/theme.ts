@@ -1,5 +1,5 @@
 /**
- * Eventro design tokens: colours, radii, spacing and type, in one place.
+ * Omoshow design tokens: colours, radii, spacing and type, in one place.
  *
  * Colours mirror the website's theme (eventro/app/tailwind.css). Fonts match the website too:
  * Archivo for headings, prices and big numbers, Inter for UI and body text, Reddit Mono for eyebrows, codes and labels.
@@ -59,7 +59,7 @@ const DARK = {
 export type Palette = { [K in keyof typeof DARK]: string };
 
 /**
- * Light: Eventro red (deepened to #D63A2B so text and white-on-red buttons pass contrast on light backgrounds) on
+ * Light: Omoshow red (deepened to #D63A2B so text and white-on-red buttons pass contrast on light backgrounds) on
  * warm cream, with white cards. Photos keep their dark fade and white text (fade, glass, onImage), so event imagery
  * reads the same in both themes.
  */

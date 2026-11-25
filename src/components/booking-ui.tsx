@@ -100,7 +100,7 @@ export function TermsCard({ listing, compact }: { listing: VenueListing; compact
         </View>
       ) : null}
       <Txt variant="tiny" color={colors.dim}>
-        {listing.instantBook ? 'Free times are confirmed at once.' : 'The venue confirms or declines within 48 hours; the time is held for you meanwhile.'} Payment is arranged directly with the venue, outside Eventro.
+        {listing.instantBook ? 'Free times are confirmed at once.' : 'The venue confirms or declines within 48 hours; the time is held for you meanwhile.'} Payment is arranged directly with the venue, outside Omoshow.
       </Txt>
     </View>
   );
@@ -418,11 +418,11 @@ export function BookingRequestForm({
 
       {est ? (
         <Notice tone="plain" icon="cash" title={`About ${money(est.cents, listing.currency)} for ${est.unit}`}>
-          The listing price, shown only. You pay the venue directly, the way you agree with them; Eventro doesn’t take this payment.
+          The listing price, shown only. You pay the venue directly, the way you agree with them; Omoshow doesn’t take this payment.
         </Notice>
       ) : listing.priceMode === 'QUOTE' ? (
         <Notice tone="plain" icon="cash" title="The venue quotes the price">
-          You pay them directly, outside Eventro.
+          You pay them directly, outside Omoshow.
         </Notice>
       ) : null}
       {error ? <Notice icon="alert">{error}</Notice> : null}
@@ -433,7 +433,7 @@ export function BookingRequestForm({
 
 /* ---------- finding a venue ---------- */
 
-/** Search the venues taking bookings on Eventro; tap one to pick it. */
+/** Search the venues taking bookings on Omoshow; tap one to pick it. */
 export function VenueSearch({ date, guests, onPick }: { date?: string; guests?: number; onPick: (r: ListingResult) => void }) {
   const [q, setQ] = useState('');
   const [city, setCity] = useState('');
@@ -470,7 +470,7 @@ export function VenueSearch({ date, guests, onPick }: { date?: string; guests?: 
           {errorText(res.error)}
         </Notice>
       ) : !res.data?.length ? (
-        <EmptyState compact icon="building" title="No venues found" body={date ? 'None of the venues on Eventro are free that day with this search. Try another date or city.' : 'Try another name or city.'} />
+        <EmptyState compact icon="building" title="No venues found" body={date ? 'None of the venues on Omoshow are free that day with this search. Try another date or city.' : 'Try another name or city.'} />
       ) : (
         res.data.map((r) => (
           <Pressable

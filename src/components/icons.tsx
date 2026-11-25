@@ -1,5 +1,5 @@
 /** Line icons in the website's style (24-unit grid, 2px round strokes), drawn with react-native-svg. */
-import Svg, { Path } from 'react-native-svg';
+import Svg, { Circle, Path } from 'react-native-svg';
 import { colors } from '@/theme';
 
 const PATHS = {
@@ -89,12 +89,12 @@ export function Icon({ name, size = 22, color = colors.text, strokeWidth = 2, fi
   );
 }
 
-/** The Eventro ticket mark from the website's logo. */
+/** The Omoshow "Ticket O" mark, as on the website's logo. */
 export function LogoMark({ size = 28 }: { size?: number }) {
   return (
     <Svg width={size} height={size} viewBox="0 0 32 32">
       <Path fill={colors.accent} d="M5 8a3 3 0 0 1 3-3h16a3 3 0 0 1 3 3v4.5a3.5 3.5 0 0 0 0 7V24a3 3 0 0 1-3 3H8a3 3 0 0 1-3-3v-4.5a3.5 3.5 0 0 0 0-7z" />
-      <Path fill={colors.bg} d="M11.5 11h9v2.4h-6.4v1.4h5.4v2h-5.4v1.4h6.4V21h-9z" />
+      <Circle cx={16} cy={16} r={5.2} fill="none" stroke={colors.bg} strokeWidth={3} />
     </Svg>
   );
 }

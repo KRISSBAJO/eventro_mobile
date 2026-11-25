@@ -1,6 +1,6 @@
 /**
  * A venue (GET /venues/:slug): where it is, Open in Maps, what it's like, what's on there next and, when it's listed
- * for hire on Eventro (`listing`), its terms and "Book this venue" (app/book-venue/[slug].tsx). At the bottom, for
+ * for hire on Omoshow (`listing`), its terms and "Book this venue" (app/book-venue/[slug].tsx). At the bottom, for
  * the people who run it: "Work here? Claim this page" (app/my-venues/add.tsx), or where their request stands.
  */
 import { useQuery } from '@tanstack/react-query';
@@ -111,7 +111,7 @@ export default function VenueScreen() {
             <View style={styles.stats}>
               {v.capacity ? <Stat label="Capacity" value={num(v.capacity)} /> : null}
               {v.layout ? <Stat label="Sections" value={String(v.layout.sections)} /> : null}
-              {v.eventsHosted ? <Stat label="Events on Eventro" value={num(v.eventsHosted)} /> : null}
+              {v.eventsHosted ? <Stat label="Events on Omoshow" value={num(v.eventsHosted)} /> : null}
             </View>
           ) : null}
 
@@ -176,15 +176,15 @@ function ClaimCard({ venue: v, signedIn, loaded, manages, request }: { venue: Ve
           <Txt variant="eyebrow" color={colors.accent}>
             For venues
           </Txt>
-          <Txt variant="title">{manages ? `You manage ${v.name}` : pending ? 'Your request is with Eventro' : v.managed ? `Part of the team at ${v.name}?` : 'Work here? Claim this page'}</Txt>
+          <Txt variant="title">{manages ? `You manage ${v.name}` : pending ? 'Your request is with Omoshow' : v.managed ? `Part of the team at ${v.name}?` : 'Work here? Claim this page'}</Txt>
           <Txt variant="small" color={colors.muted}>
             {manages
               ? 'Its listing, price, opening hours, blocked-out time and details are in My venues.'
               : pending
-                ? 'Eventro checks every request by hand, usually within a day. We’ll email you and send a notification.'
+                ? 'Omoshow checks every request by hand, usually within a day. We’ll email you and send a notification.'
                 : declined
                   ? `Your last request wasn’t approved${request?.note ? `: “${request.note}”` : '.'} You can ask again with something we can check.`
-                  : 'Keep its details and photo up to date, and let organizers book it on Eventro.'}
+                  : 'Keep its details and photo up to date, and let organizers book it on Omoshow.'}
           </Txt>
         </View>
       </View>

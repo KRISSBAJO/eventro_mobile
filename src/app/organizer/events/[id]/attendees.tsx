@@ -8,7 +8,7 @@
  * "Tickets | Donations" switch shows them: buyer, amount, what's been refunded, the cause they gave to and a resale
  * badge. Org admins (`canRefund`) can refund what's left of a donation (POST …/orders/:orderId/refund-donation, with
  * an optional reason): it goes back to the buyer's card and the tickets are kept. When the organizer had already been
- * paid for that order, the amount is recorded as owed to Eventro (`donationOwedCents`), and the screen says so.
+ * paid for that order, the amount is recorded as owed to Omoshow (`donationOwedCents`), and the screen says so.
  *
  * Multiple dates: date chips filter the list (`?date=`; also opened from the dashboard's "By date"): a run's tickets
  * for that date, or a multi-day event's passes valid that day, where "Checked in" means entered that day. Check-ins
@@ -271,7 +271,7 @@ function Donations({ eventId, data, currency }: { eventId: string; data: EventDo
       });
       haptic.success();
       const cur = r.currency || d.currency || currency;
-      const owed = r.donationOwedCents > 0 ? ` You’d already been paid for this order, so ${cash(r.donationOwedCents, cur)} is recorded as owed to Eventro.` : '';
+      const owed = r.donationOwedCents > 0 ? ` You’d already been paid for this order, so ${cash(r.donationOwedCents, cur)} is recorded as owed to Omoshow.` : '';
       setMessage({ ok: true, text: `Refunded ${cash(r.refundedNowCents, cur)} to ${d.buyerName}. We’ve emailed them.${owed}` });
       setOpen(null);
       setReason('');

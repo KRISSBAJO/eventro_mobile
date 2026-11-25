@@ -1,6 +1,6 @@
 /**
  * Pieces the venue owner screens share: who you are at the venue (role, message, website), a venue as a row, and a
- * request waiting for Eventro (or declined, with Eventro's note).
+ * request waiting for Omoshow (or declined, with Omoshow's note).
  */
 import { Image } from 'expo-image';
 import { router, type Href } from 'expo-router';
@@ -35,7 +35,7 @@ export function claimErrors(c: ClaimInput, withWebsite: boolean) {
   return e;
 }
 
-/** Your role at the venue, and how Eventro can check it. `website`: also ask for the venue's website. */
+/** Your role at the venue, and how Omoshow can check it. `website`: also ask for the venue's website. */
 export function ClaimFields({ value: c, onChange, errors, venueName, website = true }: { value: ClaimInput; onChange: (patch: Partial<ClaimInput>) => void; errors: Record<string, string | undefined>; venueName: string; website?: boolean }) {
   return (
     <>
@@ -46,7 +46,7 @@ export function ClaimFields({ value: c, onChange, errors, venueName, website = t
           ))}
         </ChoiceRow>
       </Section>
-      <Section icon="shield" title="How we can check it" sub="Eventro checks every request by hand, usually within a day.">
+      <Section icon="shield" title="How we can check it" sub="Omoshow checks every request by hand, usually within a day.">
         <TextArea
           label="Who you are"
           value={c.message}
@@ -148,10 +148,10 @@ export function VenueRow({
 export const placeLine = (v: { address?: string | null; city: string; country?: string | null }) =>
   [v.address, cityOnly(v.city)].filter(Boolean).join(', ') + (v.country ? ` · ${countryName(v.country)}` : '');
 
-/* ---------- a request waiting for Eventro ---------- */
+/* ---------- a request waiting for Omoshow ---------- */
 
 /**
- * A request to manage a venue: waiting (usually within a day) or declined with Eventro's note. A new venue an
+ * A request to manage a venue: waiting (usually within a day) or declined with Omoshow's note. A new venue an
  * owner added is hidden until approved, so it never links to its public page; `onOpen` is for claims of visible
  * venues, `onRetry` for declined ones.
  */
@@ -180,11 +180,11 @@ export function RequestCard({ r, onOpen, onRetry }: { r: VenueRequest; onOpen?: 
       <Txt variant="small" color={colors.muted}>
         {waiting
           ? r.newVenue
-            ? `Eventro is checking it, usually within a day. ${r.venue.name} isn’t shown on Eventro until it’s approved; we’ll email you and send a notification then.`
-            : 'Eventro is checking it, usually within a day. We’ll email you and send a notification when you can manage the venue.'
+            ? `Omoshow is checking it, usually within a day. ${r.venue.name} isn’t shown on Omoshow until it’s approved; we’ll email you and send a notification then.`
+            : 'Omoshow is checking it, usually within a day. We’ll email you and send a notification when you can manage the venue.'
           : r.note
-            ? `Eventro’s note: “${r.note}”`
-            : 'Eventro couldn’t confirm you work there. You can ask again with something we can check.'}
+            ? `Omoshow’s note: “${r.note}”`
+            : 'Omoshow couldn’t confirm you work there. You can ask again with something we can check.'}
       </Txt>
       {(waiting && linkable && onOpen) || (!waiting && onRetry) ? (
         <View style={{ flexDirection: 'row', gap: space.md }}>

@@ -6,7 +6,7 @@ import { ownTimes } from './dates';
 import { isPast, money, when } from './format';
 import type { MyListing, Ticket } from './types';
 
-/** Eventro's share of each resale, per mille, unless the API says otherwise (GET /me/tickets → resaleFeePermille). */
+/** Omoshow's share of each resale, per mille, unless the API says otherwise (GET /me/tickets → resaleFeePermille). */
 export const RESALE_FEE_PERMILLE = 50;
 export const permille = (cents: number, pm: number) => Math.round((cents * pm) / 1000);
 export const fmt = (cents: number, currency: string) => money(cents, currency, { decimals: true });

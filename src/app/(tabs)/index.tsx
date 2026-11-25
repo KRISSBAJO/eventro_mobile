@@ -386,12 +386,12 @@ export default function Discover() {
   );
 }
 
-/** The Eventro Guarantee in one line and two ticks; the tap opens the full terms (comps, donations, timing). */
+/** The Omoshow Guarantee in one line and two ticks; the tap opens the full terms (comps, donations, timing). */
 function GuaranteeCard() {
   return (
     <Pressable
       accessibilityRole="link"
-      accessibilityLabel="Eventro Guarantee: ticket doesn’t scan? Money back, fees included. Full refund if the event is cancelled. Opens the full terms."
+      accessibilityLabel="Omoshow Guarantee: ticket doesn’t scan? Money back, fees included. Full refund if the event is cancelled. Opens the full terms."
       onPress={openGuaranteeTerms}
       style={({ pressed }) => [styles.promise, pressed && { opacity: 0.85 }]}>
       <View style={styles.promiseTop}>
@@ -400,7 +400,7 @@ function GuaranteeCard() {
         </View>
         <View style={{ flex: 1, gap: 2 }}>
           <Txt variant="eyebrow" color={colors.accent}>
-            Eventro Guarantee
+            Omoshow Guarantee
           </Txt>
           <Txt variant="title">Doesn’t scan? Money back.</Txt>
         </View>

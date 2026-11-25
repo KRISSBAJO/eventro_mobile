@@ -35,8 +35,8 @@ export const projectId = (): string | null =>
 
 /** Why this build can't get push notifications, if it can't. */
 export function pushBlocker(): string | null {
-  if (Platform.OS === 'web') return 'Notifications work in the Eventro phone app.';
-  if (Platform.OS === 'android' && isRunningInExpoGo()) return 'Expo Go on Android can’t receive push notifications. Install a development build of Eventro to get them.';
+  if (Platform.OS === 'web') return 'Notifications work in the Omoshow phone app.';
+  if (Platform.OS === 'android' && isRunningInExpoGo()) return 'Expo Go on Android can’t receive push notifications. Install a development build of Omoshow to get them.';
   if (!Device.isDevice) return 'Push notifications need a real phone, not a simulator.';
   if (!projectId()) return 'This build isn’t linked to an Expo (EAS) project yet, so it can’t get a push token. Run `eas init` to add the project id.';
   return null;
@@ -61,7 +61,7 @@ export const savedPushToken = () => readJson<string>(TOKEN_KEY);
  * it. Returns why not when it can't.
  */
 export async function enablePush(ask: boolean): Promise<{ ok: true; token: string } | { ok: false; reason: string; permission?: PushPermission }> {
-  if (Platform.OS === 'web') return { ok: false, reason: 'Notifications work in the Eventro phone app.', permission: 'unsupported' };
+  if (Platform.OS === 'web') return { ok: false, reason: 'Notifications work in the Omoshow phone app.', permission: 'unsupported' };
   try {
     const N = await lib();
     // Android 13+ only shows the permission prompt once a channel exists.
@@ -74,7 +74,7 @@ export async function enablePush(ask: boolean): Promise<{ ok: true; token: strin
       perm = r.granted || r.ios?.status === N.IosAuthorizationStatus.PROVISIONAL ? 'granted' : r.canAskAgain ? 'undetermined' : 'denied';
     }
     if (perm !== 'granted') {
-      return { ok: false, permission: perm, reason: perm === 'denied' ? 'Notifications are off for Eventro. Turn them on in your phone’s Settings.' : 'Allow notifications to get reminders and ticket updates.' };
+      return { ok: false, permission: perm, reason: perm === 'denied' ? 'Notifications are off for Omoshow. Turn them on in your phone’s Settings.' : 'Allow notifications to get reminders and ticket updates.' };
     }
     const blocker = pushBlocker();
     if (blocker) return { ok: false, reason: blocker, permission: perm };

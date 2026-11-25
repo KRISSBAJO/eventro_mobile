@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "Eventro",
+    "name": "Omoshow",
     "slug": "eventro",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -26,7 +26,7 @@
     "web": {
       "output": "single",
       "favicon": "./assets/images/favicon.png",
-      "name": "Eventro",
+      "name": "Omoshow",
       "backgroundColor": "#0f0a0b",
       "themeColor": "#0f0a0b"
     },
@@ -44,7 +44,7 @@
       [
         "expo-location",
         {
-          "locationWhenInUsePermission": "Eventro uses your location only when you ask, to show the events closest to you."
+          "locationWhenInUsePermission": "Omoshow uses your location only when you ask, to show the events closest to you."
         }
       ],
       "expo-font",
@@ -59,7 +59,7 @@
       [
         "expo-camera",
         {
-          "cameraPermission": "Eventro uses the camera to scan ticket QR codes at the door.",
+          "cameraPermission": "Omoshow uses the camera to scan ticket QR codes at the door.",
           "microphonePermission": false,
           "recordAudioAndroid": false
         }
@@ -67,8 +67,8 @@
       [
         "expo-image-picker",
         {
-          "photosPermission": "Eventro opens your photos only when you choose one, to upload it as your event’s cover photo.",
-          "cameraPermission": "Eventro uses the camera to scan ticket QR codes at the door.",
+          "photosPermission": "Omoshow opens your photos only when you choose one, to upload it as your event’s cover photo.",
+          "cameraPermission": "Omoshow uses the camera to scan ticket QR codes at the door.",
           "microphonePermission": false
         }
       ]

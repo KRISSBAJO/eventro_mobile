@@ -155,7 +155,7 @@ function DetailsForm({ venue }: { venue: ManagedVenue }) {
         <Field label="Street address" maxLength={200} {...input('address')} />
         <Field label="Postal code (optional)" maxLength={20} autoCapitalize="characters" {...input('postalCode')} />
         <Txt variant="small" color={colors.dim}>
-          The name, city and country are checked by Eventro: contact support to change them.
+          The name, city and country are checked by Omoshow: contact support to change them.
         </Txt>
       </Section>
 

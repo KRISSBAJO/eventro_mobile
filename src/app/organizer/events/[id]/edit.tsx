@@ -623,7 +623,7 @@ function Editor({ e, admin, schedule0 }: { e: OrgEventDetail; admin: boolean; sc
       <View style={styles.card}>
         <Label>Tickets</Label>
         <Txt variant="small" color={colors.dim}>
-          Fixed prices are what fans pay, all-in; pay-what-you-want amounts are your price, before {e.feeMode === 'BUYER' ? 'Eventro’s fee is added' : 'Eventro’s fee comes out'}. The order here is the order fans see, top tier first.
+          Fixed prices are what fans pay, all-in; pay-what-you-want amounts are your price, before {e.feeMode === 'BUYER' ? 'Omoshow’s fee is added' : 'Omoshow’s fee comes out'}. The order here is the order fans see, top tier first.
           {e.seatMap ? ' Quantities for ticket types on the seat map come from the map.' : ''}
         </Txt>
         {errors.tiers ? (

@@ -51,8 +51,8 @@ export async function pickPhoto(cfg: MediaConfig): Promise<PickedPhoto> {
     const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!perm.granted) {
       throw perm.canAskAgain
-        ? new PickError('Eventro needs access to your photos to upload a cover. Try again and choose Allow.', 'permission')
-        : new PickError('Photo access is turned off for Eventro. Turn it on in Settings, then try again.', 'blocked');
+        ? new PickError('Omoshow needs access to your photos to upload a cover. Try again and choose Allow.', 'permission')
+        : new PickError('Photo access is turned off for Omoshow. Turn it on in Settings, then try again.', 'blocked');
     }
   }
   const r = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], allowsEditing: true, aspect: [16, 9], quality: 0.85, exif: false });

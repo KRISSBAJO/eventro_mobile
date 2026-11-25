@@ -411,7 +411,7 @@ export default function Door() {
     }
   };
 
-  /** One fewer here: this phone's unsynced check-in first (it never reached Eventro), else POST …/undo online. */
+  /** One fewer here: this phone's unsynced check-in first (it never reached Omoshow), else POST …/undo online. */
   const undoGuest = async (g: GuestEntry) => {
     if (guestBusy) return;
     setGuestNote(null);
@@ -437,7 +437,7 @@ export default function Door() {
       setGuestNote({ tone: 'plain', text: `Undone: ${r.entry.name}, ${hereText(r.entry).toLowerCase()}.` });
     } catch (e) {
       haptic.error();
-      setGuestNote({ tone: 'accent', text: isOffline(e) ? 'No connection: undo needs one for check-ins Eventro already has.' : `Couldn’t undo. ${errorText(e)}` });
+      setGuestNote({ tone: 'accent', text: isOffline(e) ? 'No connection: undo needs one for check-ins Omoshow already has.' : `Couldn’t undo. ${errorText(e)}` });
     } finally {
       setGuestBusy(null);
     }
@@ -523,7 +523,7 @@ export default function Door() {
       await dropDoor(eventId);
       router.back();
     };
-    if (pending) confirmAsk('Check-ins haven’t synced', `${pending} check-in${pending === 1 ? '' : 's'} on this phone ${pending === 1 ? 'hasn’t' : 'haven’t'} reached Eventro yet. Leave anyway and lose ${pending === 1 ? 'it' : 'them'}?`, 'Leave and delete', () => void go());
+    if (pending) confirmAsk('Check-ins haven’t synced', `${pending} check-in${pending === 1 ? '' : 's'} on this phone ${pending === 1 ? 'hasn’t' : 'haven’t'} reached Omoshow yet. Leave anyway and lose ${pending === 1 ? 'it' : 'them'}?`, 'Leave and delete', () => void go());
     else confirmAsk('Leave this event?', 'The offline guest list is deleted from this phone.', 'Leave', () => void go());
   };
 

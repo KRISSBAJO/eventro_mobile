@@ -6,7 +6,7 @@
  *   GET /organizer/orgs/:orgId/events         events with ticket types and 60 days of daily sales (all roles)
  *   GET /organizer/orgs/:orgId/orders/recent  the last 8 paid orders (admins and managers)
  *   GET /organizer/orgs/:orgId/payouts        payout balance and account (admins)
- * Venue bookings made on Eventro are listed in organizer/bookings.
+ * Venue bookings made on Omoshow are listed in organizer/bookings.
  */
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Image } from 'expo-image';
@@ -71,7 +71,7 @@ export default function OrganizerHome() {
       ) : !current ? (
         <EmptyState
           icon="ticket"
-          title="Sell tickets on Eventro"
+          title="Sell tickets on Omoshow"
           body="Set up an organizer profile to create events, sell tickets and scan them at the door. If an organizer added you to their team, sign in with the email they invited."
           action="Set up a profile"
           onAction={() => router.replace('/organizer/start')}
@@ -161,7 +161,7 @@ function Dashboard({ org }: { org: MyOrg }) {
       </TileRow>
       {admin && payouts.data && !payouts.data.payoutMethod ? (
         <Notice tone="warning" icon="cash" title="Payouts aren’t set up" action="Set up payouts on the web" onAction={() => openWeb(webPaths.payouts)}>
-          Connect a bank account on the Eventro website to get paid. The app never asks for bank details.
+          Connect a bank account on the Omoshow website to get paid. The app never asks for bank details.
         </Notice>
       ) : null}
 
@@ -224,7 +224,7 @@ function Dashboard({ org }: { org: MyOrg }) {
       ) : null}
 
       <Group>
-        <Row icon="building" label="Venue bookings" detail="Book on Eventro" onPress={() => router.push({ pathname: '/organizer/bookings', params: { orgId } })} />
+        <Row icon="building" label="Venue bookings" detail="Book on Omoshow" onPress={() => router.push({ pathname: '/organizer/bookings', params: { orgId } })} />
         <Divider style={{ marginLeft: 62 }} />
         <Row icon="users" label="Team" detail={admin ? 'Invite and roles' : 'View'} onPress={() => router.push({ pathname: '/organizer/team', params: { orgId } })} />
         {admin ? (

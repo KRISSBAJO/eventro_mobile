@@ -7,7 +7,7 @@
  * every ticket holder will be emailed. Online, cancelled and ended events can't move; the API also refuses events
  * with seats already sold on their seat map, and that message is shown as it comes.
  *
- * An event held at a venue booked on Eventro (a pending or confirmed booking) can't move until the booking is
+ * An event held at a venue booked on Omoshow (a pending or confirmed booking) can't move until the booking is
  * cancelled or let go of (DELETE /organizer/events/:id/venue-booking); the API answers 409 VENUE_BOOKED otherwise.
  * A booking that fell through is let go of by the move itself.
  */
@@ -90,7 +90,7 @@ function Mover({ e }: { e: OrgEventDetail }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [moved, setMoved] = useState<Moved | null>(null);
-  /** Held at a venue booked on Eventro (until let go of here). */
+  /** Held at a venue booked on Omoshow (until let go of here). */
   const [booked, setBooked] = useState(() => isLiveBooking(e.venueBooking?.status));
   const [letting, setLetting] = useState(false);
   const [now] = useState(() => Date.now());
@@ -230,7 +230,7 @@ function Mover({ e }: { e: OrgEventDetail }) {
         </Notice>
       ) : booked ? (
         <>
-          <Notice tone="warning" icon="building" title="Booked on Eventro">
+          <Notice tone="warning" icon="building" title="Booked on Omoshow">
             {`This event is held at ${e.venue?.name ?? 'its venue'} through booking ${e.venueBooking?.code ?? ''}. To move it, cancel the booking, or let go of it here if you’re not using it.`}
           </Notice>
           {e.venueBooking ? <Button label="Open the booking" variant="ghost" size="md" onPress={() => router.push({ pathname: '/organizer/bookings/[id]', params: { id: e.venueBooking!.id } })} /> : null}

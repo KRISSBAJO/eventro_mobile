@@ -88,7 +88,7 @@ export const placeShort = (p: Place | null) => {
 export async function preciseLocation(): Promise<{ lat: number; lng: number }> {
   const perm = await Location.requestForegroundPermissionsAsync().catch(() => null);
   if (!perm || perm.status !== 'granted') {
-    throw new Error(perm?.canAskAgain === false ? 'Location is off for Eventro. Turn it on in Settings, or pick a city instead.' : 'Location wasn’t shared. You can pick a city instead.');
+    throw new Error(perm?.canAskAgain === false ? 'Location is off for Omoshow. Turn it on in Settings, or pick a city instead.' : 'Location wasn’t shared. You can pick a city instead.');
   }
   const last = await Location.getLastKnownPositionAsync({ maxAge: 10 * 60_000 }).catch(() => null);
   const pos = last ?? (await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced }).catch(() => null));

@@ -1,6 +1,6 @@
 /**
  * Account → Notifications: turn push on for this phone (asks for permission here, never at launch), and choose
- * what Eventro sends (GET/PATCH /me/notify-prefs; they apply to every phone on the account).
+ * what Omoshow sends (GET/PATCH /me/notify-prefs; they apply to every phone on the account).
  */
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { router } from 'expo-router';

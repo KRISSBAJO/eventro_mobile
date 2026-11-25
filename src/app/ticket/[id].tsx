@@ -5,7 +5,7 @@
  * The code is made on the phone from the ticket's QR seed (door-code.ts: HMAC-SHA256, a new code every 15 seconds),
  * so it works with no signal at all. Without a seed (an older saved copy) it falls back to GET /tickets/:id/qr.
  * The screen stays awake while the code shows. A comp (a complimentary ticket from the organizer) says so, and has
- * no Eventro Guarantee claim: nothing was paid for it.
+ * no Omoshow Guarantee claim: nothing was paid for it.
  *
  * Sessions (lib/schedule.ts): when the event has bookable sessions, "Sessions" under the ticket lists what it has
  * booked and what it can book (GET /tickets/:id/sessions), with Book a place / Cancel, and a plain reason when it can't
@@ -416,7 +416,7 @@ function SessionsBox({ t, offline }: { t: Ticket; offline: boolean }) {
 }
 
 /**
- * The Eventro Guarantee under a ticket: its claim's status when there is one (or one waiting on this phone),
+ * The Omoshow Guarantee under a ticket: its claim's status when there is one (or one waiting on this phone),
  * otherwise, for a covered ticket, what's covered and, inside the claim window, the way to claim. A free ticket gets a
  * small note instead: there's nothing to refund.
  */

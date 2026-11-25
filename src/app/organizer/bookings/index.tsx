@@ -31,7 +31,7 @@ export default function OrgBookings() {
       ) : orgs.isPending ? (
         <Skeleton height={86} radius={radius.card} />
       ) : !current ? (
-        <EmptyState icon="building" title="No organizer profile" body="Set up an organizer profile to book venues on Eventro." action="Set up a profile" onAction={() => router.replace('/organizer/start')} />
+        <EmptyState icon="building" title="No organizer profile" body="Set up an organizer profile to book venues on Omoshow." action="Set up a profile" onAction={() => router.replace('/organizer/start')} />
       ) : (
         <>
           {list.length > 1 ? (
@@ -58,13 +58,13 @@ export default function OrgBookings() {
               compact
               icon="building"
               title={status ? 'Nothing here' : 'No venue bookings yet'}
-              body="Book a venue from its page on Eventro, or choose “Book a venue on Eventro” when you create an event."
+              body="Book a venue from its page on Omoshow, or choose “Book a venue on Omoshow” when you create an event."
             />
           ) : (
             q.data.map((b) => <BookingRow key={b.id} b={b} side="ORGANIZER" onPress={() => router.push({ pathname: '/organizer/bookings/[id]', params: { id: b.id } })} />)
           )}
           <Txt variant="small" color={colors.dim}>
-            Venue prices are shown only. You pay the venue directly; Eventro doesn’t take this payment.
+            Venue prices are shown only. You pay the venue directly; Omoshow doesn’t take this payment.
           </Txt>
         </>
       )}

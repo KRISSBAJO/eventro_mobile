@@ -63,7 +63,7 @@ export default function Devices() {
   const confirm = (s: DeviceSession) => {
     const name = s.deviceName || 'this device';
     const isMe = s.current || s.id === mine;
-    const text = isMe ? 'Sign out of Eventro on this phone?' : `Sign out ${name}? It will need the password to sign in again.`;
+    const text = isMe ? 'Sign out of Omoshow on this phone?' : `Sign out ${name}? It will need the password to sign in again.`;
     void ask({ title: isMe ? 'Sign out?' : 'Sign out that device?', message: text, confirmLabel: 'Sign out', destructive: true }).then((yes) => {
       if (yes) void revoke(s);
     });
@@ -92,7 +92,7 @@ export default function Devices() {
           Signed-in devices
         </Txt>
       </View>
-      <Txt color={colors.muted}>Phones signed in to your account with the Eventro app. Don’t recognise one? Sign it out, then change your password.</Txt>
+      <Txt color={colors.muted}>Phones signed in to your account with the Omoshow app. Don’t recognise one? Sign it out, then change your password.</Txt>
 
       {!user ? (
         <EmptyState icon="lock" title="Sign in to see your devices" action="Sign in" onAction={() => router.push('/sign-in')} />

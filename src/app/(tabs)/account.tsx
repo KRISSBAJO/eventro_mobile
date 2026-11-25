@@ -1,6 +1,6 @@
 /**
  * Account: who you are, notifications, sales, signed-in devices, organizer tools, venues (My venues and booking
- * requests for venue managers, "Own or run a venue?" for everyone else, and requests waiting for Eventro's
+ * requests for venue managers, "Own or run a venue?" for everyone else, and requests waiting for Omoshow's
  * approval), sign out, help and legal pages.
  */
 import Constants from 'expo-constants';
@@ -37,7 +37,7 @@ export default function Account() {
   const venues = useMyVenues(user?.id);
   const managed = venues.data?.managed ?? [];
   const waiting = managed.reduce((n, m) => n + m.pendingBookings, 0);
-  // Waiting for Eventro, or declined (with Eventro's note) and not since approved.
+  // Waiting for Omoshow, or declined (with Omoshow's note) and not since approved.
   const managedIds = new Set(managed.map((m) => m.venue.id));
   const requests = (venues.data?.requests ?? []).filter((r) => (r.status === 'PENDING' || r.status === 'REJECTED') && !managedIds.has(r.venue.id));
   const { place } = usePlace();
@@ -53,7 +53,7 @@ export default function Account() {
     const claims = pendingClaims();
     const warn =
       (pending ? ` ${pending} door check-in${pending === 1 ? '' : 's'} on this phone ${pending === 1 ? 'hasn’t' : 'haven’t'} synced yet and will be lost.` : '') +
-      (claims ? ` ${claims === 1 ? 'An Eventro Guarantee claim' : `${claims} Eventro Guarantee claims`} saved on this phone ${claims === 1 ? 'hasn’t' : 'haven’t'} been sent yet and will be lost.` : '');
+      (claims ? ` ${claims === 1 ? 'An Omoshow Guarantee claim' : `${claims} Omoshow Guarantee claims`} saved on this phone ${claims === 1 ? 'hasn’t' : 'haven’t'} been sent yet and will be lost.` : '');
     const yes = await ask({ title: 'Sign out?', message: `Your tickets stay in your account. Sign in again to see them here.${warn}`, confirmLabel: 'Sign out', destructive: true });
     if (!yes) return;
     haptic.firm();
@@ -187,7 +187,7 @@ export default function Account() {
         </View>
       ) : null}
 
-      {/* Requests to manage a venue that Eventro hasn't approved (yet), or declined. */}
+      {/* Requests to manage a venue that Omoshow hasn't approved (yet), or declined. */}
       {user
         ? requests.map((r) => (
             <RequestCard
@@ -202,7 +202,7 @@ export default function Account() {
       <View style={styles.group}>
         <Row icon="help" label="Help centre" onPress={() => openWeb('/help')} />
         <Divider style={{ marginLeft: 62 }} />
-        <Row icon="shield" label="Eventro Guarantee" onPress={() => openWeb('/guarantee')} />
+        <Row icon="shield" label="Omoshow Guarantee" onPress={() => openWeb('/guarantee')} />
         <Divider style={{ marginLeft: 62 }} />
         <Row icon="file" label="Terms of use" onPress={() => openWeb('/legal/terms')} />
         <Divider style={{ marginLeft: 62 }} />
@@ -217,7 +217,7 @@ export default function Account() {
 
       <View style={{ alignItems: 'center', gap: 4 }}>
         <Txt variant="mono" color={colors.dim}>
-          Eventro {Constants.expoConfig?.version ?? '1.0.0'}
+          Omoshow {Constants.expoConfig?.version ?? '1.0.0'}
         </Txt>
         {health.data?.payments === 'mock' ? (
           <Txt variant="tiny" color={colors.dim}>

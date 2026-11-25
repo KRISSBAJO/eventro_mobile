@@ -25,7 +25,7 @@ export function DoorCamera({ paused, torch, onCode, height }: { paused: boolean;
           Scan tickets with the camera
         </Txt>
         <Txt variant="small" color={colors.muted} style={{ textAlign: 'center' }}>
-          {permission.canAskAgain ? 'Eventro uses the camera only to read ticket QR codes at the door.' : 'Camera access is off for Eventro. Turn it on in Settings, or enter codes by hand below.'}
+          {permission.canAskAgain ? 'Omoshow uses the camera only to read ticket QR codes at the door.' : 'Camera access is off for Omoshow. Turn it on in Settings, or enter codes by hand below.'}
         </Txt>
         {permission.canAskAgain ? <Button label="Allow camera" size="md" onPress={() => void request()} /> : <Button label="Open Settings" size="md" variant="ghost" onPress={() => Linking.openSettings().catch(() => undefined)} />}
       </View>

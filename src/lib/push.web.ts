@@ -1,7 +1,7 @@
 /** Browser version of push.ts: the web preview gets no push notifications (the API only sends to Expo tokens). */
 export type PushPermission = 'granted' | 'denied' | 'undetermined' | 'unsupported';
 
-const WHY = 'Notifications work in the Eventro phone app.';
+const WHY = 'Notifications work in the Omoshow phone app.';
 
 export const projectId = (): string | null => null;
 export const pushBlocker = (): string | null => WHY;

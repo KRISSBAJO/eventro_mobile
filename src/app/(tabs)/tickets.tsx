@@ -172,7 +172,7 @@ export default function Tickets() {
             <ErrorState message={errorText(saved.error)} onRetry={() => void saved.refetch()} />
           ) : saved.items.length ? (
             <View>
-              <ListNote>{`${saved.items.length} saved · the same list as on the Eventro website`}</ListNote>
+              <ListNote>{`${saved.items.length} saved · the same list as on the Omoshow website`}</ListNote>
               <View style={{ marginTop: space.md }}>
                 {saved.items.map((e, i) => (
                   <FadeIn key={e.slug} delay={i * 40}>
@@ -533,7 +533,7 @@ function GroupCard({ g }: { g: TicketGroup }) {
                   </Txt>
                 </View>
               ) : null}
-              {/* The Eventro Guarantee: covered paid tickets (or the claim's status), or a note on free ones. A refunded or cancelled one already says so above. */}
+              {/* The Omoshow Guarantee: covered paid tickets (or the claim's status), or a note on free ones. A refunded or cancelled one already says so above. */}
               {tk.guarantee && s.key !== 'refunded' && s.key !== 'cancelled' && (tk.guarantee.covered || tk.guarantee.claim) ? (
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
                   <Icon name="shield" size={12} color={tk.guarantee.claim ? colors.warning : colors.dim} />

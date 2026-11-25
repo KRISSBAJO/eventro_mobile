@@ -49,7 +49,7 @@ export default function BookVenue() {
   if (!v.listing) {
     return (
       <OrgScreen title={v.name} eyebrow="Book this venue" fallback={back}>
-        <EmptyState icon="building" title="Not taking bookings" body={`${v.name} isn’t taking bookings on Eventro right now.`} />
+        <EmptyState icon="building" title="Not taking bookings" body={`${v.name} isn’t taking bookings on Omoshow right now.`} />
       </OrgScreen>
     );
   }

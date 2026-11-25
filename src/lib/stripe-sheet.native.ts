@@ -25,7 +25,7 @@ export async function payWithStripeSheet(clientSecret: string): Promise<'paid' |
   await ready;
   const init = await initPaymentSheet({
     paymentIntentClientSecret: clientSecret,
-    merchantDisplayName: 'Eventro',
+    merchantDisplayName: 'Omoshow',
     returnURL: Linking.createURL('stripe-redirect'),
     style: 'alwaysDark',
     appearance: {

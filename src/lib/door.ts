@@ -17,7 +17,7 @@
  * applies each opId once (sending one again is a harmless replay). Each answer carries the entry as the API now has
  * it, which replaces the phone's copy; check-ins refused because everyone was already in (another scanner got there
  * first) or the entry was removed become conflicts. Offline "−" can only take back this phone's check-ins that haven't
- * been sent yet (and aren't being sent right now); arrivals Eventro already has need a connection to undo.
+ * been sent yet (and aren't being sent right now); arrivals Omoshow already has need a connection to undo.
  *
  * Multiple dates (lib/dates.ts): the door works on one date at a time (`dateId`: the API's current date, or the one
  * picked). Online scans, manual check-ins and synced scans carry `eventDateId`. Offline, a run's ticket (DATES) is
@@ -207,15 +207,15 @@ export function verifyOffline(s: DoorStore, raw: string, now = Date.now(), manua
   if (!pack) return { verdict: { tone: 'invalid', title: 'Not valid', detail: 'Download the door list to check tickets offline.', offline: true } };
   const p = parseCode(raw);
   const id = (p ? p.ticketId : raw.trim()).toUpperCase();
-  if (!p && !manual) return { verdict: { tone: 'invalid', title: 'Not valid', detail: 'Not a valid Eventro code.', offline: true } };
+  if (!p && !manual) return { verdict: { tone: 'invalid', title: 'Not valid', detail: 'Not a valid Omoshow code.', offline: true } };
   const t = pack.tickets.find((x) => x.id === id);
-  if (!t) return { verdict: { tone: 'invalid', title: 'Not valid', detail: p ? 'Not a valid Eventro code.' : 'Ticket not found for this event.', offline: true } };
+  if (!t) return { verdict: { tone: 'invalid', title: 'Not valid', detail: p ? 'Not a valid Omoshow code.' : 'Ticket not found for this event.', offline: true } };
   const dated = (pack.dateMode === 'DATES' || pack.dateMode === 'DAYS') && !!dateId;
   const view = (x: DoorPackTicket) => viewOf(x, pack.dates);
   if (p) {
     const c = checkCode(p, t.seed, now);
     // A code made from an older seed (before a transfer) or for another ticket fails the signature.
-    if (c === 'bad-signature') return { verdict: { tone: 'invalid', title: 'Not valid', ticket: view(t), detail: 'Not a valid Eventro code. If the ticket changed hands, ask them to refresh their app.', offline: true } };
+    if (c === 'bad-signature') return { verdict: { tone: 'invalid', title: 'Not valid', ticket: view(t), detail: 'Not a valid Omoshow code. If the ticket changed hands, ask them to refresh their app.', offline: true } };
     if (c === 'expired') return { verdict: { tone: 'invalid', title: 'Code expired', ticket: view(t), detail: 'This code has expired. Ask them to reopen the ticket. (Screenshots won’t scan.)', offline: true } };
   }
   if (dated) {

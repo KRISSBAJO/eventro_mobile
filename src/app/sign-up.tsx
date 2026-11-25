@@ -84,7 +84,7 @@ export default function SignUp() {
       />
       <Button label="Create account" loading={busy} onPress={submit} style={{ marginTop: space.sm }} />
       <Txt variant="small" color={colors.dim} style={{ textAlign: 'center' }}>
-        By creating an account you agree to Eventro’s{' '}
+        By creating an account you agree to Omoshow’s{' '}
         <Txt variant="small" color={colors.muted} onPress={() => Linking.openURL(`${WEB_URL}/legal/terms`)} accessibilityRole="link">
           Terms
         </Txt>{' '}

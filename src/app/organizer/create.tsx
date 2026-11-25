@@ -3,7 +3,7 @@
  * POST /organizer/orgs/:orgId/events (the website's body); "Submit for review" also calls POST …/events/:id/submit.
  *
  * As on the website: times are the venue's wall-clock time stored as UTC; ticket prices are the organizer's price
- * and the fee mode decides who pays Eventro's fee; the cover is a photo uploaded from the phone (expo-image-picker,
+ * and the fee mode decides who pays Omoshow's fee; the cover is a photo uploaded from the phone (expo-image-picker,
  * then the website's upload endpoints and PUT …/events/:id/media, which makes it the cover) or one of the free stock
  * photos; online events need their stream link; seat maps are designed on the website after saving. The venue fields
  * are shared with Change venue (components/venue-fields.tsx).
@@ -14,7 +14,7 @@
  * an optional maximum: lib/pwyw.ts). Donations (optional, lib/donations.ts) let fans add a donation to a named cause
  * at checkout. An optional comp limit (`compLimit`, sent only when set) caps the complimentary tickets live at once.
  *
- * "Book a venue on Eventro" sits next to the organizer's own venue: search the venues taking bookings, request a
+ * "Book a venue on Omoshow" sits next to the organizer's own venue: search the venues taking bookings, request a
  * time there (POST …/venue-bookings, held for 48 hours), and the event is saved with `venueBookingId`, in the
  * venue's zone. It waits for the venue to confirm before it can be submitted (instant-book venues confirm at once),
  * and its times have to sit inside the booking (doors included). "Your bookings" lists the organization's pending
@@ -25,7 +25,7 @@
  * run of performances: each ticket type is sold per date, with the same quantity on every date unless "Set per date"
  * (`capacityByDate`). Multi-day (DAYS) is a festival or conference: each ticket type says which days it's valid on
  * (`validDates`). Both send `dateMode` and `dates`; date refs are indexes into `dates` as sent. Venue bookings on
- * Eventro are for one-date events only (the API's rule).
+ * Omoshow are for one-date events only (the API's rule).
  *
  * Schedule (optional step, components/schedule-editor.tsx): items with a time, optional end, title, stage, people, a
  * note and a kind; DATES/DAYS items pick their date or day. "Let ticket holders book a place" makes an item a bookable
@@ -113,9 +113,9 @@ type Draft = {
   start: string;
   doors: string;
   end: string;
-  /** their own venue, a venue booked on Eventro, or online */
+  /** their own venue, a venue booked on Omoshow, or online */
   format: 'venue' | 'book' | 'online';
-  /** "Book a venue on Eventro": the venue picked, and the booking requested there */
+  /** "Book a venue on Omoshow": the venue picked, and the booking requested there */
   pick: ListingResult | null;
   booking: Booking | null;
   /** the booking was requested in this flow (so "another time" withdraws it), not one the org already had */
@@ -197,7 +197,7 @@ function validate(step: number, d: Draft, today: string) {
       if (d.doors && d.start && d.doors > d.start) e.doors = 'Doors usually open before the start time.';
     }
     if (d.format === 'book' && d.dateMode !== 'SINGLE') {
-      e.booking = 'Venue bookings on Eventro are for one-date events for now. Use your own venue, or switch to One date.';
+      e.booking = 'Venue bookings on Omoshow are for one-date events for now. Use your own venue, or switch to One date.';
     } else if (d.format === 'venue') {
       Object.assign(e, placeErrors(d));
     } else if (d.format === 'book') {
@@ -300,7 +300,7 @@ export default function CreateEvent() {
   /** Held at a booked venue that hasn't confirmed yet: it can be saved, not submitted. */
   const waiting = d.format === 'book' && !!d.booking && d.booking.status !== 'CONFIRMED';
 
-  // "Book a venue on Eventro": picking a venue also sets the currency until the organizer picks one.
+  // "Book a venue on Omoshow": picking a venue also sets the currency until the organizer picks one.
   const pickVenue = (r: ListingResult | null) =>
     setD((p) => ({ ...p, pick: r, booking: null, ...(r?.venue.country && !p.currencyChosen ? { currency: currencyForCountry(r.venue.country) } : {}) }));
   /** Another time: the request already made is withdrawn, so the venue isn't left holding it. */
@@ -604,17 +604,17 @@ export default function CreateEvent() {
             )}
           </Section>
 
-          <Section icon="pin" title="Where is it happening?" sub="At your own venue, a venue you hire on Eventro, or online.">
+          <Section icon="pin" title="Where is it happening?" sub="At your own venue, a venue you hire on Omoshow, or online.">
             <ChoiceRow>
               <ChoiceTile icon="pin" label="My venue" sub="Your own place" on={d.format === 'venue'} onPress={() => set('format', 'venue')} />
-              <ChoiceTile icon="building" label="Book one" sub={d.dateMode === 'SINGLE' ? 'Hire on Eventro' : 'One date only'} on={d.format === 'book'} onPress={() => set('format', 'book')} />
+              <ChoiceTile icon="building" label="Book one" sub={d.dateMode === 'SINGLE' ? 'Hire on Omoshow' : 'One date only'} on={d.format === 'book'} onPress={() => set('format', 'book')} />
               <ChoiceTile icon="stream" label="Online" sub="Live stream" on={d.format === 'online'} onPress={() => set('format', 'online')} />
             </ChoiceRow>
           {d.format === 'venue' ? (
             <VenueFields value={d} onChange={patchPlace} errors={errors} />
           ) : d.format === 'book' && d.dateMode !== 'SINGLE' ? (
             <Notice tone="warning" icon="calendar" title="One date only">
-              Venue bookings on Eventro are for one-date events for now. Use your own venue for a run of dates or a multi-day event, or switch to One date.
+              Venue bookings on Omoshow are for one-date events for now. Use your own venue for a run of dates or a multi-day event, or switch to One date.
             </Notice>
           ) : d.format === 'book' ? (
             <View style={{ gap: space.lg }}>
@@ -670,7 +670,7 @@ export default function CreateEvent() {
                     <View style={{ gap: space.sm }}>
                       <Label>Your bookings</Label>
                       <Txt variant="small" color={colors.muted}>
-                        Already booked a venue on Eventro? Use it for this event; its date and times fill in.
+                        Already booked a venue on Omoshow? Use it for this event; its date and times fill in.
                       </Txt>
                       {usable.map((b) => (
                         <BookingRow key={b.id} b={b} side="ORGANIZER" code onPress={() => setD((p) => withBooking(p, b, false))} />
@@ -792,7 +792,7 @@ export default function CreateEvent() {
           )}
           </Section>
 
-          <Section icon="receipt" title="Eventro’s 3.5% fee" sub={d.feeMode === 'BUYER' ? 'Added to your price, so you get your price in full.' : 'Fans pay your price; the fee comes out of it.'}>
+          <Section icon="receipt" title="Omoshow’s 3.5% fee" sub={d.feeMode === 'BUYER' ? 'Added to your price, so you get your price in full.' : 'Fans pay your price; the fee comes out of it.'}>
             <View style={styles.wrap}>
               <Chip label="Fans pay it" active={d.feeMode === 'BUYER'} onPress={() => set('feeMode', 'BUYER')} />
               <Chip label="I absorb it" active={d.feeMode === 'ORGANIZER'} onPress={() => set('feeMode', 'ORGANIZER')} />
@@ -896,7 +896,7 @@ export default function CreateEvent() {
                 d.format === 'online'
                   ? 'Online event'
                   : d.format === 'book' && d.booking
-                    ? `${d.booking.venue.name}, ${d.booking.venue.city} · booked on Eventro (${d.booking.status === 'CONFIRMED' ? 'confirmed' : 'waiting for the venue'})`
+                    ? `${d.booking.venue.name}, ${d.booking.venue.city} · booked on Omoshow (${d.booking.status === 'CONFIRMED' ? 'confirmed' : 'waiting for the venue'})`
                     : [d.venue, d.address, d.city, d.region, d.postalCode, d.country ? countryName(d.country) : ''].filter((x) => x.trim()).join(', ')
               }
               onEdit={() => setStep(1)}
@@ -938,7 +938,7 @@ export default function CreateEvent() {
             </View>
           ) : null}
           <Txt variant="small" color={colors.dim}>
-            Eventro reviews every event before it goes on sale, usually within a day. You can keep editing while it’s in review.
+            Omoshow reviews every event before it goes on sale, usually within a day. You can keep editing while it’s in review.
           </Txt>
           {waiting ? (
             <Notice tone="warning" icon="clock" title="Waiting for the venue">

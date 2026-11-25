@@ -141,7 +141,7 @@ function Receipt({ o }: { o: Order }) {
 
       {comp ? (
         <Notice tone="plain" icon="gift" title={o.compGroup ? `Complimentary ticket · ${o.compGroup}` : 'Complimentary ticket'}>
-          The organizer gave you this ticket, so nothing was paid and there’s nothing to refund. It isn’t covered by the Eventro Guarantee.
+          The organizer gave you this ticket, so nothing was paid and there’s nothing to refund. It isn’t covered by the Omoshow Guarantee.
         </Notice>
       ) : null}
 

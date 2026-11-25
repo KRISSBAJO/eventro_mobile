@@ -5,7 +5,7 @@
  * review here. Ticket sales, donations, comps and guest-list arrivals are reported separately: sales and revenue
  * never include comps or donations.
  *
- * An event held at a venue booked on Eventro (`venueBooking`) shows the booking's status; it can't be submitted
+ * An event held at a venue booked on Omoshow (`venueBooking`) shows the booking's status; it can't be submitted
  * until the venue confirms (the API answers 409 VENUE_BOOKING_PENDING), and a booking that fell through
  * (VENUE_BOOKING_UNAVAILABLE) needs another venue, or the venue kept without the booking. Drafts held in person can
  * use one of the organization's venue bookings (organizer/events/[id]/booking.tsx), switch to another, or drop it
@@ -130,7 +130,7 @@ export default function EventDashboard() {
       held && vb?.status !== 'PENDING'
         ? {
             title: 'Keep the venue without the booking?',
-            message: `The event stays at ${venueName}, no longer tied to booking ${vb?.code ?? ''} on Eventro. Only do this if you’ve arranged the venue another way.`,
+            message: `The event stays at ${venueName}, no longer tied to booking ${vb?.code ?? ''} on Omoshow. Only do this if you’ve arranged the venue another way.`,
             confirmLabel: 'Keep the venue',
           }
         : {
@@ -182,7 +182,7 @@ export default function EventDashboard() {
     setError('');
     const yes = await confirm({
       title: 'Submit for review?',
-      message: 'Eventro checks every event before it goes on sale, usually within a day. You can keep editing while it’s in review.',
+      message: 'Omoshow checks every event before it goes on sale, usually within a day. You can keep editing while it’s in review.',
       confirmLabel: 'Submit for review',
     });
     if (!yes) return;
@@ -202,7 +202,7 @@ export default function EventDashboard() {
 
   const share = () => {
     const url = publicLink(e);
-    const text = e.status === 'PUBLISHED' ? `${e.title} on Eventro` : `Preview of ${e.title} on Eventro (not on sale yet)`;
+    const text = e.status === 'PUBLISHED' ? `${e.title} on Omoshow` : `Preview of ${e.title} on Omoshow (not on sale yet)`;
     Share.share(Platform.OS === 'ios' ? { message: text, url } : { message: `${text}: ${url}` }).catch(() => undefined);
   };
 
@@ -234,11 +234,11 @@ export default function EventDashboard() {
 
       {e.status === 'REJECTED' ? (
         <Notice tone="warning" icon="alert" title="Changes needed">
-          {e.reviewNote || 'Eventro couldn’t approve this event yet. Edit it and submit it again.'}
+          {e.reviewNote || 'Omoshow couldn’t approve this event yet. Edit it and submit it again.'}
         </Notice>
       ) : e.status === 'IN_REVIEW' ? (
         <Notice tone="plain" icon="clock" title="In review">
-          Eventro is checking this event. It goes on sale once it’s approved.
+          Omoshow is checking this event. It goes on sale once it’s approved.
         </Notice>
       ) : e.status === 'DRAFT' ? (
         <Notice tone="plain" icon="file" title="Draft">
@@ -252,7 +252,7 @@ export default function EventDashboard() {
       {vb && !cancelled ? (
         <View style={[styles.card, held && { borderColor: vb.status === 'PENDING' ? 'rgba(245,165,36,0.35)' : colors.accentLine }]}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.sm }}>
-            <Label>Venue booked on Eventro</Label>
+            <Label>Venue booked on Omoshow</Label>
             <View style={{ flex: 1 }} />
             <BookingBadge status={vb.status} />
           </View>
@@ -266,7 +266,7 @@ export default function EventDashboard() {
             {vb.status === 'PENDING'
               ? `Waiting for ${venueName} to confirm (they have until ${localMoment(vb.holdUntil)}). The event stays on hold: you can submit it for review once they confirm.`
               : vb.status === 'CONFIRMED'
-                ? `Confirmed${vb.quotedCents !== null && vb.currency ? ` at ${money(vb.quotedCents, vb.currency)}` : ''}. You pay the venue directly; Eventro doesn’t take this payment.`
+                ? `Confirmed${vb.quotedCents !== null && vb.currency ? ` at ${money(vb.quotedCents, vb.currency)}` : ''}. You pay the venue directly; Omoshow doesn’t take this payment.`
                 : vb.status === 'CANCELLED'
                   ? `${venueName} booking ${vb.code} was cancelled${vb.cancelReason ? `: “${vb.cancelReason}”` : '.'} ${e.status === 'PUBLISHED' ? 'The event is still on sale here: move it to another venue, or talk to the venue, and tell your ticket holders.' : 'Pick another venue or time before you submit.'}`
                   : `Booking ${vb.code} ${vb.status === 'DECLINED' ? `was declined${vb.declineReason ? `: “${vb.declineReason}”` : '.'}` : 'expired: the venue didn’t answer in time.'} Pick another venue or time before you submit.`}
@@ -290,7 +290,7 @@ export default function EventDashboard() {
               <Icon name="building" size={18} color={colors.accent} />
             </View>
             <View style={{ flex: 1, gap: 2 }}>
-              <Txt variant="bodyStrong">Booked a venue on Eventro?</Txt>
+              <Txt variant="bodyStrong">Booked a venue on Omoshow?</Txt>
               <Txt variant="small" color={colors.muted}>
                 Use one of your venue bookings for this event. Its times, doors included, have to fit inside the booking.
               </Txt>
@@ -325,7 +325,7 @@ export default function EventDashboard() {
             <StatTile label="Sold" value={num(s.sold)} sub={`of ${num(s.capacity)}`} />
             <StatTile label="Checked in" value={num(s.checkedIn)} sub={s.sold ? `${Math.round((s.checkedIn / s.sold) * 100)}% of sold` : 'No tickets yet'} tone={s.checkedIn ? 'success' : undefined} />
           </TileRow>
-          <StatTile label="Revenue" value={money(s.grossCents, e.currency)} sub={`Ticket sales. You get ${money(s.netCents, e.currency)} after Eventro’s fee`} />
+          <StatTile label="Revenue" value={money(s.grossCents, e.currency)} sub={`Ticket sales. You get ${money(s.netCents, e.currency)} after Omoshow’s fee`} />
           {s.donations && (s.donations.orders > 0 || e.donationsEnabled) ? (
             <StatTile
               label="Donations"
@@ -511,7 +511,7 @@ function GuaranteeRefundsCard({ r }: { r: GuaranteeRefunds }) {
           </Txt>
           {r.owedCents > 0 ? (
             <Txt variant="small" color={colors.warning}>
-              {`${m(r.owedCents)} owed to Eventro: you’d already been paid for these orders.`}
+              {`${m(r.owedCents)} owed to Omoshow: you’d already been paid for these orders.`}
             </Txt>
           ) : null}
           {r.items.map((x) => {
@@ -524,7 +524,7 @@ function GuaranteeRefundsCard({ r }: { r: GuaranteeRefunds }) {
                     {seat ? `${x.ticketType} · ${seat}` : x.ticketType}
                   </Txt>
                   <Txt variant="tiny" color={colors.dim}>
-                    {`${at ? localMoment(at) : ''}${x.refundStatus === 'REFUNDED' ? '' : `${at ? ' · ' : ''}${x.refundStatus === 'FAILED' ? 'Refund failed; Eventro is on it' : 'Refund in progress'}`}`}
+                    {`${at ? localMoment(at) : ''}${x.refundStatus === 'REFUNDED' ? '' : `${at ? ' · ' : ''}${x.refundStatus === 'FAILED' ? 'Refund failed; Omoshow is on it' : 'Refund in progress'}`}`}
                   </Txt>
                 </View>
                 <View style={{ alignItems: 'flex-end', gap: 2 }}>

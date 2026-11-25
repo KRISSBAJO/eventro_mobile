@@ -6,5 +6,5 @@ export const stripeSheetAvailable = false;
 
 export async function payWithStripeSheet(clientSecret: string): Promise<'paid' | 'cancelled'> {
   void clientSecret;
-  throw new Error('Card payments open on the Eventro website from the browser version of the app.');
+  throw new Error('Card payments open on the Omoshow website from the browser version of the app.');
 }

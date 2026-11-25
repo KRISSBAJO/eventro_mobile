@@ -1,5 +1,5 @@
 /**
- * One venue this person manages: how it shows on Eventro, taking bookings on or off (PUT /me/venues/:id/listing
+ * One venue this person manages: how it shows on Omoshow, taking bookings on or off (PUT /me/venues/:id/listing
  * { active }), and the way to its listing and price, opening hours, blocked-out time, details and booking requests.
  */
 import { useQueryClient } from '@tanstack/react-query';
@@ -85,7 +85,7 @@ export default function ManageVenue() {
             <Icon name="sparkle" size={18} color={colors.accent} />
           </View>
           <View style={{ flex: 1, gap: 2 }}>
-            <Txt variant="bodyStrong">Take bookings on Eventro</Txt>
+            <Txt variant="bodyStrong">Take bookings on Omoshow</Txt>
             <Txt variant="small" color={colors.muted}>
               Set your price, terms and hours, then switch bookings on.
             </Txt>
@@ -102,8 +102,8 @@ export default function ManageVenue() {
         />
       ) : null}
       {l?.hidden ? (
-        <Notice tone="warning" icon="lock" title="Hidden on Eventro">
-          This venue is hidden on Eventro, so it can’t take bookings. Contact Eventro support.
+        <Notice tone="warning" icon="lock" title="Hidden on Omoshow">
+          This venue is hidden on Omoshow, so it can’t take bookings. Contact Omoshow support.
         </Notice>
       ) : null}
       {note ? (

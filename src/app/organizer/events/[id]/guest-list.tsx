@@ -7,7 +7,7 @@
  *   DELETE /organizer/events/:id/guest-list/:entryId     remove
  *
  * Guests are checked in at the door (Scan tickets → Guest list), online or offline. Door staff can see the list here
- * but not change it. Guest-list entries aren't tickets: they aren't sales and aren't covered by the Eventro Guarantee.
+ * but not change it. Guest-list entries aren't tickets: they aren't sales and aren't covered by the Omoshow Guarantee.
  */
 import { useQueryClient } from '@tanstack/react-query';
 import { router, useLocalSearchParams } from 'expo-router';
@@ -116,7 +116,7 @@ export default function GuestListScreen() {
   return (
     <OrgScreen title="Guest list" eyebrow={ev.data?.title} onRefresh={() => list.refetch()}>
       <Txt variant="small" color={colors.muted}>
-        People you let in by name, no ticket needed. The door finds them under Scan tickets → Guest list, even offline. Guest-list entries aren’t sales and aren’t covered by the Eventro Guarantee.
+        People you let in by name, no ticket needed. The door finds them under Scan tickets → Guest list, even offline. Guest-list entries aren’t sales and aren’t covered by the Omoshow Guarantee.
       </Txt>
       {message ? (
         <Notice tone={message.ok ? 'success' : 'warning'} icon={message.ok ? 'check' : 'alert'}>

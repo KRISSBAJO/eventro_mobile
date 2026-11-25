@@ -1,7 +1,7 @@
-# Eventro mobile
+# Omoshow mobile
 
-The Eventro fan app: discover events near you, buy tickets and show them at the door. Expo SDK 58, Expo Router,
-TypeScript. It talks to the Eventro API ([eventro-be](https://github.com/KRISSBAJO/eventro_be)).
+The Omoshow fan app: discover events near you, buy tickets and show them at the door. Expo SDK 58, Expo Router,
+TypeScript. It talks to the Omoshow API ([eventro-be](https://github.com/KRISSBAJO/eventro_be)).
 
 ## Run it
 

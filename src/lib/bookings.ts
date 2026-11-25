@@ -1,11 +1,11 @@
 /**
- * Hiring a venue on Eventro (the API's src/venues/venue-bookings.ts): the shapes, data hooks and the small labels the
+ * Hiring a venue on Omoshow (the API's src/venues/venue-bookings.ts): the shapes, data hooks and the small labels the
  * booking screens share.
  *
  * Venue managers (an approved claim on the venue) list it with terms and weekly hours; organizers (org admins and
  * managers) request a time, which is held for 48 hours while the venue confirms or declines. Listings with instant
  * booking confirm free times at once. Booking times are the venue's wall-clock time stored as UTC, like event times.
- * Payment happens outside Eventro for now: the price is only shown.
+ * Payment happens outside Omoshow for now: the price is only shown.
  *
  *   GET  /venue-listings?q&city&country&guests&date       bookable venues
  *   GET  /venues/:slug/availability?from&to               busy times (no names), opening hours, earliest start
@@ -147,12 +147,12 @@ export type ManagedVenue = {
 export type ClaimRole = 'owner' | 'manager' | 'staff';
 export type ClaimStatus = 'PENDING' | 'REJECTED' | 'REVOKED';
 
-/** A request to manage a venue (claiming one on Eventro, or adding a new one) that isn't approved (yet). */
+/** A request to manage a venue (claiming one on Omoshow, or adding a new one) that isn't approved (yet). */
 export type VenueRequest = {
   id: string;
   status: ClaimStatus;
   role: ClaimRole | string;
-  /** Eventro's note when it was declined */
+  /** Omoshow's note when it was declined */
   note: string | null;
   createdAt: string;
   decidedAt: string | null;

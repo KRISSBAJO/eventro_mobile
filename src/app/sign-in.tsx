@@ -78,7 +78,7 @@ export default function SignIn() {
       <Button label="Sign in" loading={busy} onPress={submit} style={{ marginTop: space.sm }} />
       <View style={{ flexDirection: 'row', justifyContent: 'center', gap: 6, marginTop: space.sm }}>
         <Txt variant="small" color={colors.muted}>
-          New to Eventro?
+          New to Omoshow?
         </Txt>
         <Pressable accessibilityRole="link" hitSlop={8} onPress={() => router.replace({ pathname: '/sign-up', params: { email, then: params.then } })}>
           <Txt variant="smallStrong" color={colors.accent}>

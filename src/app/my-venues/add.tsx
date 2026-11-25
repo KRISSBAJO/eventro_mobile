@@ -1,8 +1,8 @@
 /**
- * Getting a venue onto Eventro, for whoever owns or runs one: what it brings (bookings from organizers, your price,
+ * Getting a venue onto Omoshow, for whoever owns or runs one: what it brings (bookings from organizers, your price,
  * hours and blocked-out time, 48 hours to confirm, payment arranged directly), then find the venue (GET /venues?q=)
- * and claim it (POST /venues/:slug/claims), or add one that isn't on Eventro (POST /me/venues; it stays hidden until
- * Eventro approves). A 409 VENUE_EXISTS offers claiming that one instead. Then: waiting for approval.
+ * and claim it (POST /venues/:slug/claims), or add one that isn't on Omoshow (POST /me/venues; it stays hidden until
+ * Omoshow approves). A 409 VENUE_EXISTS offers claiming that one instead. Then: waiting for approval.
  *
  * `?slug=` (a venue page's "Claim this page") goes straight to claiming that venue. Declined-claim notifications
  * (/venues/list) open this screen.
@@ -38,7 +38,7 @@ const BENEFITS: { icon: IconName; title: string; body: string }[] = [
   { icon: 'cash', title: 'Set your price', body: 'Per hour, per day, or ask for a quote and price each request yourself.' },
   { icon: 'clock', title: 'Your hours, your rules', body: 'Weekly opening hours, notice, setup and cleanup time, and blocked-out dates nobody can request.' },
   { icon: 'check', title: 'You decide', body: 'Confirm or decline each request within 48 hours, or turn on instant booking for free times.' },
-  { icon: 'receipt', title: 'Paid directly', body: 'Payment is arranged directly between you and the organizer, outside Eventro.' },
+  { icon: 'receipt', title: 'Paid directly', body: 'Payment is arranged directly between you and the organizer, outside Omoshow.' },
 ];
 
 export default function ListVenue() {
@@ -81,7 +81,7 @@ export default function ListVenue() {
           compact
           icon="lock"
           title="Sign in to start"
-          body="Venue managers have an Eventro account, so organizers and our team know who they’re talking to."
+          body="Venue managers have an Omoshow account, so organizers and our team know who they’re talking to."
           action="Sign in"
           onAction={() => router.push({ pathname: '/sign-in', params: { then: params.slug ? `/venues/${params.slug}` : '/venues/list' } })}
         />
@@ -130,11 +130,11 @@ export default function ListVenue() {
             Waiting for approval
           </Txt>
           <Txt color={colors.muted} style={{ textAlign: 'center' }}>
-            Eventro checks every request by hand, usually within a day. We’ll email you and send a notification as soon as you can manage {done.name}.
+            Omoshow checks every request by hand, usually within a day. We’ll email you and send a notification as soon as you can manage {done.name}.
           </Txt>
           {done.newVenue ? (
             <Txt variant="small" color={colors.dim} style={{ textAlign: 'center' }}>
-              Until then, {done.name} isn’t shown on Eventro.
+              Until then, {done.name} isn’t shown on Omoshow.
             </Txt>
           ) : null}
         </View>
@@ -188,7 +188,7 @@ export default function ListVenue() {
             </View>
           )
         }>
-        <VenueRow name={claiming.name} sub={placeLine(claiming)} badges={claiming.managed ? <Badge label="Has a manager on Eventro" /> : undefined} />
+        <VenueRow name={claiming.name} sub={placeLine(claiming)} badges={claiming.managed ? <Badge label="Has a manager on Omoshow" /> : undefined} />
         {manages ? (
           <Notice tone="success" icon="check" title="You manage this venue" action="Open My venues" onAction={() => router.replace('/my-venues')}>
             Its listing, hours and blocked-out time are in My venues.
@@ -198,8 +198,8 @@ export default function ListVenue() {
         ) : (
           <>
             {claiming.managed ? (
-              <Notice tone="plain" icon="users" title="Already managed on Eventro">
-                {`${claiming.name} has a manager on Eventro. You can still ask to join them; our team checks it the same way.`}
+              <Notice tone="plain" icon="users" title="Already managed on Omoshow">
+                {`${claiming.name} has a manager on Omoshow. You can still ask to join them; our team checks it the same way.`}
               </Notice>
             ) : null}
             <ClaimFields value={claim} onChange={(p) => setClaim((c) => ({ ...c, ...p }))} errors={errors} venueName={claiming.name} />
@@ -266,7 +266,7 @@ export default function ListVenue() {
         <RequestCard key={r.id} r={r} onOpen={() => router.push({ pathname: '/venue/[slug]', params: { slug: r.venue.slug } })} />
       ))}
       <Section icon="sparkle" title="How it works">
-        {['Find your venue on Eventro, or add it', 'Tell us who you are there', 'Eventro checks, usually within a day', 'Set your price and hours, and take bookings'].map((t, i) => (
+        {['Find your venue on Omoshow, or add it', 'Tell us who you are there', 'Omoshow checks, usually within a day', 'Set your price and hours, and take bookings'].map((t, i) => (
           <View key={t} style={styles.bullet}>
             <View style={styles.stepNum}>
               <Txt variant="tiny" color={colors.accent}>
@@ -280,7 +280,7 @@ export default function ListVenue() {
         ))}
       </Section>
       <Txt variant="small" color={colors.dim}>
-        Free to list. Eventro only shows your price; you and the organizer agree on payment yourselves.
+        Free to list. Omoshow only shows your price; you and the organizer agree on payment yourselves.
       </Txt>
     </OrgScreen>
   );
@@ -291,7 +291,7 @@ function Intro() {
   return (
     <View style={{ gap: space.lg }}>
       <View style={{ gap: space.sm }}>
-        <Txt variant="h1">Get your venue booked on Eventro</Txt>
+        <Txt variant="h1">Get your venue booked on Omoshow</Txt>
         <Txt color={colors.muted}>Own or run a venue? List it, and organizers can request it for their events.</Txt>
       </View>
       <View style={styles.benefits}>
@@ -339,7 +339,7 @@ function FindVenue({
   const short = term.length < 2;
   return (
     <>
-      <Section icon="search" title="Is it on Eventro already?" sub="Many venues are, from events held there. Search by name, street or city.">
+      <Section icon="search" title="Is it on Omoshow already?" sub="Many venues are, from events held there. Search by name, street or city.">
         <Field label="Venue" placeholder="e.g. Eko Convention Centre" value={query} onChangeText={onQuery} autoCorrect={false} autoFocus returnKeyType="search" />
       </Section>
       {short ? (
@@ -356,7 +356,7 @@ function FindVenue({
           {errorText(res.error)}
         </Notice>
       ) : !res.data?.length ? (
-        <EmptyState compact icon="building" title="No venue found" body={`Nothing on Eventro matches “${term}”. Add it below.`} />
+        <EmptyState compact icon="building" title="No venue found" body={`Nothing on Omoshow matches “${term}”. Add it below.`} />
       ) : (
         <View style={{ gap: space.sm }}>
           {res.data.map((v) => {
@@ -385,9 +385,9 @@ function FindVenue({
       )}
       <View style={styles.addCard}>
         <View style={{ gap: 2 }}>
-          <Txt variant="bodyStrong">Not on Eventro yet?</Txt>
+          <Txt variant="bodyStrong">Not on Omoshow yet?</Txt>
           <Txt variant="small" color={colors.muted}>
-            Add your venue. It’s shown on Eventro once our team has checked it.
+            Add your venue. It’s shown on Omoshow once our team has checked it.
           </Txt>
         </View>
         <Button label="Add your venue" icon="plus" variant="ghost" size="md" onPress={onAdd} />
@@ -561,7 +561,7 @@ function NewVenue({
 
       {exists ? (
         <View style={styles.exists}>
-          <Txt variant="bodyStrong">{exists.name} is on Eventro already</Txt>
+          <Txt variant="bodyStrong">{exists.name} is on Omoshow already</Txt>
           <Txt variant="small" color={colors.muted}>
             {placeLine(exists)}. If that’s your venue, claim it instead: your role and message come with you.
           </Txt>
@@ -571,7 +571,7 @@ function NewVenue({
       {error ? <Notice icon="alert">{error}</Notice> : null}
       {tried && problems.length && !error ? <Notice icon="alert">{problems[0]}</Notice> : null}
       <Txt variant="small" color={colors.dim}>
-        New venues stay hidden until Eventro approves your request, usually within a day.
+        New venues stay hidden until Omoshow approves your request, usually within a day.
       </Txt>
 
       <OptionSheet<string>

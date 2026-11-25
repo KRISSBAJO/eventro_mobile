@@ -155,7 +155,7 @@ export type EventDetail = {
   ticketTypes: TicketType[];
   media: MediaItem[];
   seatMap: { sections: MapSection[] } | null;
-  /** who pays Eventro's fee, and how much it is (older APIs leave them out) */
+  /** who pays Omoshow's fee, and how much it is (older APIs leave them out) */
   feeMode?: FeeMode;
   feePermille?: number;
   donations?: Donations | null;
@@ -238,11 +238,11 @@ export type Quote = {
   protectionCents: number;
   /** donation included */
   totalCents: number;
-  /** the donation added to the total (no Eventro fee, no protection on it) */
+  /** the donation added to the total (no Omoshow fee, no protection on it) */
   donationCents?: number;
   /** totalCents − donationCents */
   ticketTotalCents?: number;
-  /** Eventro's fee included in the tickets (0 when the organizer absorbs it) */
+  /** Omoshow's fee included in the tickets (0 when the organizer absorbs it) */
   feeCents?: number;
   /** pay what you want: the base amount per ticket, or null */
   amountCents?: number | null;
@@ -352,7 +352,7 @@ export type VenuePage = {
   eventsHosted: number;
   layout: { sections: number; places: number } | null;
   events: { slug: string; title: string; subtitle: string; startsAt: string; imageUrl: string | null; category: Category; currency: string; fromCents: number; nextDate?: { id: string; startsAt: string } | null }[];
-  /** Terms for hiring the venue on Eventro; null when it isn't taking bookings (see lib/bookings.ts) */
+  /** Terms for hiring the venue on Omoshow; null when it isn't taking bookings (see lib/bookings.ts) */
   listing?: VenueListing | null;
 };
 
@@ -419,7 +419,7 @@ export type Ticket = Dated & {
     dates?: EventDate[];
   };
   /**
-   * The Eventro Guarantee (the scan guarantee): always set by the API, covered or not. Missing (or null) only in
+   * The Omoshow Guarantee (the scan guarantee): always set by the API, covered or not. Missing (or null) only in
    * saved copies from older app versions, where nothing is known about it. VOID tickets come back only when they
    * have a claim or their event was cancelled, so a refunded ticket still shows its decision.
    */
@@ -428,12 +428,12 @@ export type Ticket = Dated & {
   sessions?: BookedSession[];
 };
 
-/* ---------- the Eventro Guarantee (the scan guarantee) ---------- */
+/* ---------- the Omoshow Guarantee (the scan guarantee) ---------- */
 
 export type GuaranteeReason = 'DID_NOT_SCAN' | 'TURNED_AWAY' | 'OTHER';
 
-/** Who pays an approved claim: Eventro (fan resale tickets) or the organizer (every other paid ticket). Not for fans. */
-export type GuaranteePayer = 'EVENTRO' | 'ORGANIZER';
+/** Who pays an approved claim: Omoshow (fan resale tickets) or the organizer (every other paid ticket). Not for fans. */
+export type GuaranteePayer = 'OMOSHOW' | 'ORGANIZER';
 
 /** A guarantee claim (POST/GET /tickets/:id/guarantee-claims, and on each covered ticket in GET /me/tickets). */
 export type GuaranteeClaim = {
@@ -461,7 +461,7 @@ export type GuaranteeClaim = {
 };
 
 /**
- * A ticket's Eventro Guarantee (GET /me/tickets, and GET /tickets/:id/guarantee-claims): covered when it's from a
+ * A ticket's Omoshow Guarantee (GET /me/tickets, and GET /tickets/:id/guarantee-claims): covered when it's from a
  * paid order (pay what you want above $0 included); free tickets ($0 pay what you want too: FREE), comps (COMP) and
  * refunded orders aren't. The claim window is real instants.
  */

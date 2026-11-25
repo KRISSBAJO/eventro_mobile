@@ -4,7 +4,7 @@
  * (lib/resale-hold.ts), never the route; the event's details from GET /events/:slug.
  *
  * One seat from a fan: no promo codes, protection or gifting. When the event takes donations (GET /events/:slug
- * `donations`), the same optional "Add a donation to {cause}" as the normal checkout (lib/donations.ts): no Eventro fee,
+ * `donations`), the same optional "Add a donation to {cause}" as the normal checkout (lib/donations.ts): no Omoshow fee,
  * the seller's payout is unchanged, and it's its own summary line; it's fixed once the order exists.
  * POST /resale/:id/orders { holdKey, email, name, donationCents } (the total is the price plus the donation), then
  * the same payment completion as the normal checkout (mock: POST /orders/:id/pay; Paystack's page then
@@ -160,7 +160,7 @@ export default function ResaleCheckout() {
       return;
     }
     if (cardOnWebsite) {
-      setPayError('Card payments for resale tickets aren’t available in the browser version of the app. Use the Eventro app on your phone, or the website.');
+      setPayError('Card payments for resale tickets aren’t available in the browser version of the app. Use the Omoshow app on your phone, or the website.');
       return;
     }
     if (donationErr) {
@@ -398,7 +398,7 @@ export default function ResaleCheckout() {
 
         {/* Donation (optional, when the event takes them) */}
         {dn && !order ? (
-          <Section icon="heart" title={`Add a donation to ${dn.cause}`} sub={`${dn.description ? `${dn.description} ` : ''}Optional. No Eventro fee is taken on it.`}>
+          <Section icon="heart" title={`Add a donation to ${dn.cause}`} sub={`${dn.description ? `${dn.description} ` : ''}Optional. No Omoshow fee is taken on it.`}>
             <AmountPicker label="Donation" chips={dn.suggestedCents} none="No donation" value={donation} onChange={setDonation} currency={currency} error={donationErr ?? undefined} />
             <Txt variant="tiny" color={colors.dim}>
               {`${DONATION_NO_REFUND} ${DONATION_ON_BEHALF}`}

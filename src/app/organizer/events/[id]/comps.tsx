@@ -106,7 +106,7 @@ export default function Comps() {
   return (
     <OrgScreen title="Comps" eyebrow={ev.data?.title} onRefresh={() => Promise.all([list.refetch(), ev.refetch()])}>
       <Txt variant="small" color={colors.muted}>
-        Complimentary tickets for press, artists, sponsors and crew. Each one is a real ticket: the person gets an email to claim it, then shows its QR code at the door. Comps aren’t sales and aren’t covered by the Eventro Guarantee.
+        Complimentary tickets for press, artists, sponsors and crew. Each one is a real ticket: the person gets an email to claim it, then shows its QR code at the door. Comps aren’t sales and aren’t covered by the Omoshow Guarantee.
       </Txt>
       {message ? (
         <Notice tone={message.ok ? 'success' : 'warning'} icon={message.ok ? 'check' : 'alert'}>

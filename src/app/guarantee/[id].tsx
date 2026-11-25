@@ -1,5 +1,5 @@
 /**
- * "Didn't scan? Get your money back": an Eventro Guarantee claim for one ticket (POST /tickets/:id/guarantee-claims).
+ * "Didn't scan? Get your money back": an Omoshow Guarantee claim for one ticket (POST /tickets/:id/guarantee-claims).
  * It refunds that ticket only, all-in (its share of the order, fees included; for pay what you want, what was paid for
  * it); other tickets on the order keep working, and a donation on the order isn't part of it. Free tickets ($0 pay what
  * you want too) and comps aren't covered.
@@ -7,7 +7,7 @@
  * Opened from the wallet ticket. The ticket comes from the saved wallet, so the screen works with no signal at the
  * door: a claim that can't reach the API is saved on this phone and sent when it can (guarantee.ts), and the server
  * still makes every check when it arrives. After sending, the same screen shows the decision: the server declines
- * scanned-in tickets at once; anything else is reviewed by the Eventro team within 24 hours.
+ * scanned-in tickets at once; anything else is reviewed by the Omoshow team within 24 hours.
  */
 import { router, useLocalSearchParams } from 'expo-router';
 import { useEffect, useState } from 'react';
@@ -156,7 +156,7 @@ export default function GuaranteeClaimScreen() {
     return (
       <AuthShell title="Claim saved" icon="shield" subtitle={subtitle}>
         <Notice tone="warning" icon="offline" title="Saved — we’ll send it as soon as you’re back online">
-          {`Saved on this phone ${stamp(queued.queuedAt)}. Stay signed in: it goes up by itself when there’s a connection. Eventro checks the claim when it arrives${t.guarantee ? `, so it has to reach us before the window closes on ${stamp(t.guarantee.closesAt)}` : ''}.`}
+          {`Saved on this phone ${stamp(queued.queuedAt)}. Stay signed in: it goes up by itself when there’s a connection. Omoshow checks the claim when it arrives${t.guarantee ? `, so it has to reach us before the window closes on ${stamp(t.guarantee.closesAt)}` : ''}.`}
         </Notice>
         <Section icon="file" title="Your claim">
           <View style={{ gap: space.sm }}>
@@ -258,8 +258,8 @@ export default function GuaranteeClaimScreen() {
     <AuthShell title={TITLE} icon="shield" subtitle={subtitle}>
       <Txt color={colors.muted}>
         {passDays.length > 1
-          ? `This pass is covered by the Eventro Guarantee. If it didn’t scan on one of its days, you can claim that day’s share${refund ? `: ${refund}` : ''}, fees included. It goes back to the payment method that paid for the order, and the pass keeps working on its other days. One claim per pass.`
-          : `This ticket is covered by the Eventro Guarantee. If it didn’t scan at the door, you can claim a refund for this ticket only${refund ? `: ${refund}, its full share of what was paid, fees included` : ', its full share of what was paid, fees included'}. It goes back to the payment method that paid for the order.${t.order.quantity > 1 ? ' Your other tickets on this order aren’t affected.' : ''}`}
+          ? `This pass is covered by the Omoshow Guarantee. If it didn’t scan on one of its days, you can claim that day’s share${refund ? `: ${refund}` : ''}, fees included. It goes back to the payment method that paid for the order, and the pass keeps working on its other days. One claim per pass.`
+          : `This ticket is covered by the Omoshow Guarantee. If it didn’t scan at the door, you can claim a refund for this ticket only${refund ? `: ${refund}, its full share of what was paid, fees included` : ', its full share of what was paid, fees included'}. It goes back to the payment method that paid for the order.${t.order.quantity > 1 ? ' Your other tickets on this order aren’t affected.' : ''}`}
       </Txt>
       <Txt variant="small" color={colors.dim}>
         {DONATION_NOT_COVERED}
@@ -319,7 +319,7 @@ export default function GuaranteeClaimScreen() {
           {t.status === 'CHECKED_IN' && passDays.length ? (
             <Step text="If your pass was scanned in on the day you pick, the claim is declined automatically. Entries on other days don’t count." />
           ) : t.status === 'CHECKED_IN' ? (
-            <Step text={`This ticket was scanned in${t.checkedInAt ? ` at ${stamp(t.checkedInAt)}` : ''}, so the claim will be declined automatically. If you were turned away anyway, say so above; Eventro can overturn the decision.`} />
+            <Step text={`This ticket was scanned in${t.checkedInAt ? ` at ${stamp(t.checkedInAt)}` : ''}, so the claim will be declined automatically. If you were turned away anyway, say so above; Omoshow can overturn the decision.`} />
           ) : null}
           <Step text={HOW_DECIDED} />
           <Step text={`Refunds: ${REFUND_TIMING.charAt(0).toLowerCase()}${REFUND_TIMING.slice(1)}`} />
@@ -352,7 +352,7 @@ function TermsLink() {
     <Txt variant="small" color={colors.dim} style={{ textAlign: 'center' }}>
       Read the{' '}
       <Txt variant="smallStrong" color={colors.accent} accessibilityRole="link" onPress={openGuaranteeTerms}>
-        Eventro Guarantee terms
+        Omoshow Guarantee terms
       </Txt>
       .
     </Txt>

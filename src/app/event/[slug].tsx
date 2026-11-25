@@ -103,7 +103,7 @@ export default function EventScreen() {
 function share(e: EventDetail) {
   haptic.tap();
   const url = `${WEB_URL}/events/${e.slug}`;
-  Share.share(Platform.OS === 'ios' ? { message: `${e.title} on Eventro`, url } : { message: `${e.title} on Eventro: ${url}` }).catch(() => undefined);
+  Share.share(Platform.OS === 'ios' ? { message: `${e.title} on Omoshow`, url } : { message: `${e.title} on Omoshow: ${url}` }).catch(() => undefined);
 }
 
 function EventBody({ e, topBar, refetch, jumpToResale, dateParam }: { e: EventDetail; topBar: ReactNode; refetch: () => void; jumpToResale: boolean; dateParam?: string }) {
@@ -380,7 +380,7 @@ function EventBody({ e, topBar, refetch, jumpToResale, dateParam }: { e: EventDe
                   </Txt>
                 ) : null}
                 <Txt variant="tiny" color={colors.dim}>
-                  {`${PROMO_PWYW_NOTE}${amount === 0 ? ' A ticket taken for free isn’t covered by the Eventro Guarantee.' : ''}`}
+                  {`${PROMO_PWYW_NOTE}${amount === 0 ? ' A ticket taken for free isn’t covered by the Omoshow Guarantee.' : ''}`}
                 </Txt>
               </View>
             ) : null}
@@ -405,9 +405,9 @@ function EventBody({ e, topBar, refetch, jumpToResale, dateParam }: { e: EventDe
             {!cancelled && !ended ? <PriceAlert slug={e.slug} /> : null}
             <View style={styles.trust}>
               {[
-                // The Eventro Guarantee covers paid tickets only: free ones have nothing to refund.
+                // The Omoshow Guarantee covers paid tickets only: free ones have nothing to refund.
                 // A pay-what-you-want ticket that can be free is only covered when it's paid for ("from" is 0 then).
-                allTypes.every((t) => t.priceCents <= 0 && !isPwyw(t)) ? null : allTypes.some((t) => t.priceCents <= 0) ? 'Paid tickets covered by the Eventro Guarantee' : 'Covered by the Eventro Guarantee',
+                allTypes.every((t) => t.priceCents <= 0 && !isPwyw(t)) ? null : allTypes.some((t) => t.priceCents <= 0) ? 'Paid tickets covered by the Omoshow Guarantee' : 'Covered by the Omoshow Guarantee',
                 'Instant mobile delivery',
                 seatMap ? 'Pick your exact seats, or let us find the best together' : 'Prices include all fees',
                 e.donations ? `Add an optional donation to ${e.donations.cause} at checkout` : null,

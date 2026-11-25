@@ -1,9 +1,9 @@
 /**
- * Venue owners and managers on Eventro: getting a venue onto Eventro and running its listing from the app.
+ * Venue owners and managers on Omoshow: getting a venue onto Omoshow and running its listing from the app.
  *
  *   GET    /venues?q=                         find a venue to claim (2+ characters; up to 20, `managed` = has a manager)
- *   POST   /venues/:slug/claims               ask to manage a venue that's on Eventro { role, message, website? }
- *   POST   /me/venues                         add one that isn't (hidden until Eventro approves; 409 VENUE_EXISTS)
+ *   POST   /venues/:slug/claims               ask to manage a venue that's on Omoshow { role, message, website? }
+ *   POST   /me/venues                         add one that isn't (hidden until Omoshow approves; 409 VENUE_EXISTS)
  *   GET    /me/venues                         managed venues and requests (lib/bookings.ts useMyVenues)
  *   PATCH  /me/venues/:id                     the venue's details
  *   GET    /me/venues/:id/listing             terms for hire, weekly hours (PUT saves; missing fields keep their value)
@@ -59,7 +59,7 @@ export type OwnerListing = {
 
 export type Blackout = { id: string; startsAt: string; endsAt: string; note: string | null };
 
-/** 409 VENUE_EXISTS from POST /me/venues: the venue that's on Eventro already. */
+/** 409 VENUE_EXISTS from POST /me/venues: the venue that's on Omoshow already. */
 export type ExistingVenue = { slug: string; name: string; city: string; address: string };
 
 /* ---------- hooks ---------- */
@@ -91,7 +91,7 @@ export function useBlackouts(venueId: string | undefined, from: string, to: stri
   });
 }
 
-/** Venues on Eventro matching the search (nothing under 2 characters). */
+/** Venues on Omoshow matching the search (nothing under 2 characters). */
 export function useVenueMatches(q: string) {
   const term = q.trim();
   return useQuery({

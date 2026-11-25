@@ -1,13 +1,13 @@
 /**
  * Pay what you want (PWYW): the fan picks the price of each ticket, between the organizer's minimum and maximum.
  *
- * Every amount here is a BASE amount, like an organizer's fixed price: in BUYER fee mode the fan pays Eventro's fee on
+ * Every amount here is a BASE amount, like an organizer's fixed price: in BUYER fee mode the fan pays Omoshow's fee on
  * top (all-in = amount + fee), in ORGANIZER mode the fan pays just the amount and the fee comes out of it. The fan's
  * amount goes on POST /holds as `amountCents` (everyone in the order pays the same amount per ticket), and can be
  * changed at checkout (`amountCents` on /quote and /orders); the API checks it again each time.
  *
  * Promo codes don't apply to PWYW tickets (the fan already chose the price). A PWYW ticket bought for more than $0 is
- * covered by the Eventro Guarantee like any paid ticket; a $0 one is a free ticket and isn't.
+ * covered by the Omoshow Guarantee like any paid ticket; a $0 one is a free ticket and isn't.
  */
 import { money } from './format';
 import { moneyInput, parseMoney, type OrgTicketType } from './organizer';
@@ -48,12 +48,12 @@ export function amountProblem(cents: number | null, p: Pwyw, currency: string): 
 /** "From $5.18" for a PWYW tier's price slot, or "Any amount" when it can be free. */
 export const fromLabel = (p: Pwyw, currency: string) => (p.minCents > 0 ? `From ${money(allInOf(p.minCents, p.feePermille), currency)}` : 'Any amount');
 
-/** The all-in line under the fan's amount: "$10 + $0.35 Eventro fee = $10.35 per ticket", or just the amount. */
+/** The all-in line under the fan's amount: "$10 + $0.35 Omoshow fee = $10.35 per ticket", or just the amount. */
 export function allInLine(base: number, p: Pwyw, currency: string) {
   const all = allInOf(base, p.feePermille);
   if (base <= 0) return 'Free: nothing to pay for this ticket.';
   if (all === base) return `${money(base, currency, { decimals: base % 100 !== 0 })} per ticket, all-in.`;
-  return `${money(base, currency, { decimals: base % 100 !== 0 })} + ${money(all - base, currency, { decimals: true })} Eventro fee = ${money(all, currency, { decimals: true })} per ticket, all-in.`;
+  return `${money(base, currency, { decimals: base % 100 !== 0 })} + ${money(all - base, currency, { decimals: true })} Omoshow fee = ${money(all, currency, { decimals: true })} per ticket, all-in.`;
 }
 
 /* ---------- the organizer's side ---------- */
@@ -109,6 +109,6 @@ export function pwywSummary(d: PwywDraft, feeMode: FeeMode, feePermille: number,
   const fee = feeMode === 'BUYER' ? feePermille : 0;
   const range = max !== null ? `${money(min, currency)} to ${money(max, currency)}` : min > 0 ? `${money(min, currency)} or more` : 'any amount, free included';
   const start = suggested !== null ? ` Suggested: ${money(suggested, currency)}${fee ? ` (fans pay ${money(allInOf(suggested, fee), currency)} all-in)` : ''}.` : '';
-  const who = fee ? ' Eventro’s fee is added on top of what they pick.' : ' The fee comes out of what they pick.';
+  const who = fee ? ' Omoshow’s fee is added on top of what they pick.' : ' The fee comes out of what they pick.';
   return `Fans choose ${range}.${start}${who}`;
 }

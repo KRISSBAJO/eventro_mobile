@@ -91,7 +91,7 @@ export default function SalesPayouts() {
             ))}
           </View>
           <Txt variant="small" color={colors.dim}>
-            A seller’s payout becomes available a day after the event starts, so every buyer is protected, and then the Eventro team sends it. Eventro keeps 5% of each sale; some organizers take a share too.
+            A seller’s payout becomes available a day after the event starts, so every buyer is protected, and then the Omoshow team sends it. Omoshow keeps 5% of each sale; some organizers take a share too.
           </Txt>
         </>
       )}

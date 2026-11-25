@@ -44,7 +44,7 @@ export default function StartSelling() {
   return (
     <OrgScreen title="Sell tickets" fallback="/account" footer={user ? <Button label="Create profile" loading={busy} onPress={() => void create()} /> : undefined}>
       {!user ? (
-        <EmptyState icon="lock" title="Sign in first" body="Your organizer profile belongs to your Eventro account." action="Sign in" onAction={() => router.push('/sign-in')} />
+        <EmptyState icon="lock" title="Sign in first" body="Your organizer profile belongs to your Omoshow account." action="Sign in" onAction={() => router.push('/sign-in')} />
       ) : (
         <View style={{ gap: space.lg }}>
           <Txt color={colors.muted}>
@@ -52,7 +52,7 @@ export default function StartSelling() {
           </Txt>
           <Field label="Organizer name" placeholder="e.g. Lagos Live" value={name} onChangeText={setName} maxLength={80} autoCapitalize="words" returnKeyType="done" onSubmitEditing={() => void create()} error={error} />
           <Notice tone="plain" icon="ticket" title="What happens next">
-            You create your first event here: details, date and place, tickets and a cover photo. Save it as a draft, then submit it for review. Eventro checks every event before it goes on sale.
+            You create your first event here: details, date and place, tickets and a cover photo. Save it as a draft, then submit it for review. Omoshow checks every event before it goes on sale.
           </Notice>
         </View>
       )}

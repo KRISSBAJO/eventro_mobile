@@ -93,7 +93,7 @@ export type OrgEvent = {
   online: boolean;
   imageUrl: string | null;
   hasSeatMap: boolean;
-  /** a venue booked on Eventro for this event, or null */
+  /** a venue booked on Omoshow for this event, or null */
   venueBooking?: EventBooking | null;
   ticketTypes: OrgTicketType[];
   sold: number;
@@ -136,7 +136,7 @@ export type OrgEventDetail = DonationSettings & {
   ticketTypes: OrgTicketType[];
   media: { id: string; kind: 'image' | 'video' }[];
   previewToken?: string | null;
-  /** The venue booked on Eventro for this event: it can't be submitted for review until this is CONFIRMED */
+  /** The venue booked on Omoshow for this event: it can't be submitted for review until this is CONFIRMED */
   venueBooking?: EventBooking | null;
   /** most live comps the event allows (null: no limit) */
   compLimit?: number | null;
@@ -192,7 +192,7 @@ export type DonationOrder = {
  */
 export type EventDonations = { cause: string | null; canRefund: boolean; summary: { orders: number; cents: number; refundedCents: number }; items: DonationOrder[] };
 
-/** POST /organizer/events/:id/orders/:orderId/refund-donation. `donationOwedCents` > 0: already paid out, owed to Eventro. */
+/** POST /organizer/events/:id/orders/:orderId/refund-donation. `donationOwedCents` > 0: already paid out, owed to Omoshow. */
 export type DonationRefund = {
   id: string;
   status: string;
@@ -264,7 +264,7 @@ export type Payouts = {
   nextPayoutDonationCents?: number;
   donationsCents?: number;
   donationNote?: string;
-  /** all-time donation refunds made after the organizer had been paid for the order: owed to Eventro (0 normally) */
+  /** all-time donation refunds made after the organizer had been paid for the order: owed to Omoshow (0 normally) */
   donationOwedCents?: number;
 };
 
@@ -278,11 +278,11 @@ export type PriceDrops = {
 };
 
 /**
- * GET /organizer/events/:id/guarantee-refunds (org admins and managers; door staff get 403): approved Eventro
+ * GET /organizer/events/:id/guarantee-refunds (org admins and managers; door staff get 403): approved Omoshow
  * Guarantee claims on the event that come out of the organizer's payout. `count` and the totals cover refunded claims;
  * `items` also holds approved ones whose refund is still PENDING or FAILED. `amountCents` went back to the fan;
- * `organizerCents` came out of the payout (less: Eventro returns its own fee and ticket protection);
- * `organizerOwedCents` is owed to Eventro when the order had already been paid out.
+ * `organizerCents` came out of the payout (less: Omoshow returns its own fee and ticket protection);
+ * `organizerOwedCents` is owed to Omoshow when the order had already been paid out.
  */
 export type GuaranteeRefunds = {
   currency: string;

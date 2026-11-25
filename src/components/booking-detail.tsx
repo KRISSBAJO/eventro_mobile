@@ -118,7 +118,7 @@ function Detail({ b, side, refresh, fallback }: { b: BookingDetail; side: Side; 
         <Line
           label="Price"
           value={b.quotedCents !== null ? money(b.quotedCents, cur) : 'Quoted by the venue'}
-          sub="Shown only: paid directly to the venue, outside Eventro."
+          sub="Shown only: paid directly to the venue, outside Omoshow."
         />
         {venueSide ? (
           <>
@@ -189,7 +189,7 @@ function Detail({ b, side, refresh, fallback }: { b: BookingDetail; side: Side; 
                 keyboardType="decimal-pad"
                 value={price}
                 onChangeText={(v) => setPrice(v.replace(/[^\d.]/g, ''))}
-                hint="Shown to the organizer. They pay you directly; Eventro doesn’t take this payment."
+                hint="Shown to the organizer. They pay you directly; Omoshow doesn’t take this payment."
               />
               <Field label="Note to the organizer (optional)" placeholder="Load-in, contacts, deposit details…" value={text} onChangeText={setText} multiline maxLength={2000} inputStyle={styles.multi} />
               <Txt variant="small" color={colors.dim}>
@@ -258,7 +258,7 @@ function StatusNotice({ b, side }: { b: BookingDetail; side: Side }) {
   if (b.status === 'CONFIRMED') {
     return (
       <Notice tone="success" icon="check" title="Confirmed">
-        {venueSide ? 'This time is booked. Talk to the organizer here about load-in and payment.' : `${b.venue.name} confirmed. Pay them directly, the way you agree; Eventro doesn’t take this payment.`}
+        {venueSide ? 'This time is booked. Talk to the organizer here about load-in and payment.' : `${b.venue.name} confirmed. Pay them directly, the way you agree; Omoshow doesn’t take this payment.`}
       </Notice>
     );
   }

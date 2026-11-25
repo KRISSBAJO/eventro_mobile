@@ -181,7 +181,7 @@ function ListingForm({ venue, saved }: { venue: ManagedVenue; saved: OwnerListin
         </View>
       }>
       <ToggleCard
-        label={f.active ? 'Taking bookings on Eventro' : 'Not taking bookings'}
+        label={f.active ? 'Taking bookings on Omoshow' : 'Not taking bookings'}
         sub={f.active ? 'Organizers can find it under “Book a venue” and request times.' : 'Switch on to show your price and “Book this venue” on its page.'}
         value={f.active}
         disabled={saved.hidden && !f.active}
@@ -189,11 +189,11 @@ function ListingForm({ venue, saved }: { venue: ManagedVenue; saved: OwnerListin
       />
       {saved.hidden ? (
         <Notice tone="warning" icon="lock">
-          This venue is hidden on Eventro, so it can’t take bookings. Contact Eventro support.
+          This venue is hidden on Omoshow, so it can’t take bookings. Contact Omoshow support.
         </Notice>
       ) : null}
 
-      <Section icon="cash" title="Price" sub="Shown on the venue’s page. Eventro doesn’t take this payment: you agree on it with the organizer.">
+      <Section icon="cash" title="Price" sub="Shown on the venue’s page. Omoshow doesn’t take this payment: you agree on it with the organizer.">
         <ChoiceRow>
           {MODES.map((x) => (
             <ChoiceTile key={x.id} icon={x.icon} label={x.label} sub={x.sub} on={f.priceMode === x.id} onPress={() => set({ priceMode: x.id })} />

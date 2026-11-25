@@ -108,7 +108,7 @@ export type TierLookDef = {
   inkSoft: string;
   /** a 1px border (General only, so the dark ticket shows on dark screens) */
   border?: string;
-  /** Eventro orange edge line (General) */
+  /** Omoshow orange edge line (General) */
   edge?: string;
   /** the glyph that marks the tier */
   glyph: 'leaf' | 'ticket' | 'crown' | 'star' | 'diamond' | 'table';

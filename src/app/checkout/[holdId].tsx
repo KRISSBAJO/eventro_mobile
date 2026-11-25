@@ -465,7 +465,7 @@ export default function Checkout() {
             ) : null}
             {amount === 0 ? (
               <Txt variant="tiny" color={colors.dim}>
-                A ticket taken for free isn’t covered by the Eventro Guarantee: there’s nothing to refund.
+                A ticket taken for free isn’t covered by the Omoshow Guarantee: there’s nothing to refund.
               </Txt>
             ) : null}
           </Card>
@@ -501,7 +501,7 @@ export default function Checkout() {
         {!order ? <GiftOption gift={gift} patch={patchGift} errors={giftErr} show={submitted} eventStart={eventStart} now={now} /> : null}
         {provider === 'stripe' && !stripeSheetAvailable && gift.on ? (
           <Notice tone="warning" icon="gift">
-            Card payments finish on the Eventro website: turn on “This is a gift” there too.
+            Card payments finish on the Omoshow website: turn on “This is a gift” there too.
           </Notice>
         ) : null}
 
@@ -515,7 +515,7 @@ export default function Checkout() {
               <View style={{ flex: 1, gap: 2 }}>
                 <Txt variant="bodyStrong">Add a donation to {dn.cause}</Txt>
                 <Txt variant="small" color={colors.muted}>
-                  {dn.description ? `${dn.description} ` : ''}Optional. No Eventro fee is taken on it.
+                  {dn.description ? `${dn.description} ` : ''}Optional. No Omoshow fee is taken on it.
                 </Txt>
               </View>
             </View>
@@ -599,7 +599,7 @@ export default function Checkout() {
           </Txt>
           <TierChip tier={h.ticketType} label={`${h.quantity} × ${h.ticketType.name}`} size="md" />
           <Line label={pw ? `${h.quantity} × ${h.ticketType.name} at ${money(totals?.unitCents ?? unit, currency)}` : `${h.quantity} × ${h.ticketType.name}`} value={money(totals?.subtotalCents ?? unit * h.quantity, currency)} />
-          {pw && totals?.feeCents ? <Line label="Eventro fee, included above" value={money(totals.feeCents, currency, { decimals: true })} /> : null}
+          {pw && totals?.feeCents ? <Line label="Omoshow fee, included above" value={money(totals.feeCents, currency, { decimals: true })} /> : null}
           {totals?.protectionCents ? <Line label="Ticket protection" value={money(totals.protectionCents, currency)} /> : null}
           {totals?.discountCents ? <Line label={`Promo ${totals.promo?.code ?? ''}`} value={`−${money(totals.discountCents, currency)}`} accent /> : null}
           {donated ? <Line label={donationLabel(dn?.cause)} value={money(donated, currency, { decimals: donated % 100 !== 0 })} /> : null}
@@ -629,7 +629,7 @@ export default function Checkout() {
           </Notice>
         ) : provider === 'stripe' && !stripeSheetAvailable ? (
           <Notice tone="plain" icon="card" title="Pay on eventro">
-            Card payments open the secure Eventro checkout in your browser. Come back here when you’ve paid.
+            Card payments open the secure Omoshow checkout in your browser. Come back here when you’ve paid.
           </Notice>
         ) : null}
       </ScrollView>

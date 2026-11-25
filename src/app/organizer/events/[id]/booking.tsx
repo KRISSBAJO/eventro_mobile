@@ -64,7 +64,7 @@ export default function UseBooking() {
         <EmptyState
           icon="lock"
           title={!editor ? 'Admins and managers only' : e.online ? 'This is an online event' : 'Only for drafts'}
-          body={!editor ? 'Ask an admin of your team to make you a manager.' : e.online ? 'Venue bookings are for events held at a venue.' : 'A venue booking can be added while the event is a draft, or after Eventro asked for changes.'}
+          body={!editor ? 'Ask an admin of your team to make you a manager.' : e.online ? 'Venue bookings are for events held at a venue.' : 'A venue booking can be added while the event is a draft, or after Omoshow asked for changes.'}
         />
       </OrgScreen>
     );
@@ -147,14 +147,14 @@ export default function UseBooking() {
       </View>
 
       {find ? (
-        <Section icon="search" title="Book a venue" sub="Venues taking bookings on Eventro. Request a time, then come back and use the booking here.">
+        <Section icon="search" title="Book a venue" sub="Venues taking bookings on Omoshow. Request a time, then come back and use the booking here.">
           <VenueSearch date={e.startsAt.slice(0, 10)} onPick={(r) => router.push({ pathname: '/book-venue/[slug]', params: { slug: r.venue.slug } })} />
         </Section>
       ) : (
         <Button label="Find a venue to book" icon="search" variant="ghost" size="md" onPress={() => setFind(true)} />
       )}
       <Txt variant="small" color={colors.dim}>
-        Payment for the venue is arranged directly with them, outside Eventro. Removing a booking from the event keeps the booking itself.
+        Payment for the venue is arranged directly with them, outside Omoshow. Removing a booking from the event keeps the booking itself.
       </Txt>
     </OrgScreen>
   );
