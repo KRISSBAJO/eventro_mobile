@@ -46,7 +46,7 @@ export class PickError extends Error {
 export type PickedPhoto = { uri: string; file?: Blob | null; fileName: string; mimeType: string; size: number };
 
 /** Asks for photo access when needed, opens the picker, and checks the photo against the API's limits. */
-export async function pickPhoto(cfg: MediaConfig): Promise<PickedPhoto> {
+export async function pickPhoto(cfg: MediaConfig, aspect: [number, number] = [16, 9]): Promise<PickedPhoto> {
   if (Platform.OS !== 'web') {
     const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!perm.granted) {
@@ -55,7 +55,7 @@ export async function pickPhoto(cfg: MediaConfig): Promise<PickedPhoto> {
         : new PickError('Photo access is turned off for Omoshow. Turn it on in Settings, then try again.', 'blocked');
     }
   }
-  const r = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], allowsEditing: true, aspect: [16, 9], quality: 0.85, exif: false });
+  const r = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], allowsEditing: true, aspect, quality: 0.85, exif: false });
   if (r.canceled || !r.assets?.length) throw new PickError('No photo picked.', 'cancelled');
   const a = r.assets[0];
   const fromName = (a.fileName ?? a.uri.split('?')[0]).split('.').pop()?.toLowerCase() ?? '';

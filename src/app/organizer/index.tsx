@@ -232,7 +232,9 @@ function Dashboard({ org }: { org: MyOrg }) {
             <Divider style={{ marginLeft: 62 }} />
             <Row icon="cash" label="Payouts" onPress={() => router.push({ pathname: '/organizer/payouts', params: { orgId } })} />
             <Divider style={{ marginLeft: 62 }} />
-            <Row icon="external" label="Branding and settings" detail="Website" onPress={() => openWeb(webPaths.settings)} />
+            <Row icon="sparkle" label="Logo and banner" detail="How fans see you" onPress={() => router.push({ pathname: '/organizer/brand', params: { orgId } })} />
+            <Divider style={{ marginLeft: 62 }} />
+            <Row icon="external" label="More settings" detail="Website" onPress={() => openWeb(webPaths.settings)} />
           </>
         ) : null}
       </Group>

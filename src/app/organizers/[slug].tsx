@@ -47,21 +47,27 @@ export default function OrganizerScreen() {
     );
   }
 
-  const cover = o.events.find((e) => e.imageUrl)?.imageUrl;
+  // Their banner when they set one (sharp); else their next event's cover, blurred behind the page.
+  const banner = o.coverUrl && o.coverUrl !== o.events.find((e) => e.imageUrl)?.imageUrl ? o.coverUrl : null;
+  const cover = banner ?? o.events.find((e) => e.imageUrl)?.imageUrl;
   const stats = [`${num(o.followers)} ${o.followers === 1 ? 'follower' : 'followers'}`, `${num(o.eventsHosted)} ${o.eventsHosted === 1 ? 'event' : 'events'} on Omoshow`].join(' · ');
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.bg }}>
       <ScrollView contentContainerStyle={{ paddingBottom: insets.bottom + space.huge }}>
         <View style={{ height: HERO, backgroundColor: colors.surface }}>
-          {cover ? <Image source={{ uri: cover }} style={StyleSheet.absoluteFill} contentFit="cover" transition={200} blurRadius={18} /> : <LinearGradient colors={['rgba(255,77,61,0.28)', colors.bg]} style={StyleSheet.absoluteFill} />}
+          {cover ? <Image source={{ uri: cover }} style={StyleSheet.absoluteFill} contentFit="cover" transition={200} blurRadius={banner ? 0 : 18} /> : <LinearGradient colors={['rgba(255,77,61,0.28)', colors.bg]} style={StyleSheet.absoluteFill} />}
           <LinearGradient colors={['rgba(0,0,0,0.45)', colors.fade0, colors.bg]} locations={[0, 0.4, 1]} style={StyleSheet.absoluteFill} />
         </View>
         <FadeIn style={{ paddingHorizontal: gutter, marginTop: -64, gap: space.sm }}>
           <View style={styles.mark}>
-            <Txt variant="h2" style={{ letterSpacing: -0.5 }}>
-              {initials(o.name)}
-            </Txt>
+            {o.logoUrl ? (
+              <Image source={{ uri: o.logoUrl }} style={StyleSheet.absoluteFill} contentFit="cover" transition={200} />
+            ) : (
+              <Txt variant="h2" style={{ letterSpacing: -0.5 }}>
+                {initials(o.name)}
+              </Txt>
+            )}
           </View>
           <View style={{ flexDirection: 'row', gap: space.sm, marginTop: space.sm }}>
             <Badge label="Organizer" tone="glass" />
@@ -110,5 +116,5 @@ export default function OrganizerScreen() {
 }
 
 const styles = StyleSheet.create({
-  mark: { width: 72, height: 72, borderRadius: 22, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.line2 },
+  mark: { width: 72, height: 72, borderRadius: 22, overflow: 'hidden', alignItems: 'center', justifyContent: 'center', backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.line2 },
 });

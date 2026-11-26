@@ -157,7 +157,7 @@ export type EventDetail = {
   preview?: boolean;
   presentedBy: string;
   /** The organizer's page (GET /organizers/:slug); slug is null only on old organizers before pages existed */
-  organizer?: { slug: string | null; name: string; verified: boolean };
+  organizer?: { slug: string | null; name: string; verified: boolean; logoUrl?: string | null };
   venue: Venue | null;
   ticketTypes: TicketType[];
   media: MediaItem[];
@@ -613,7 +613,7 @@ export type Gift = Dated & {
 export type MemberRole = 'ADMIN' | 'MANAGER' | 'DOOR' | string;
 
 /** GET /organizer/orgs */
-export type MyOrg = { role: MemberRole; org: { id: string; name: string } };
+export type MyOrg = { role: MemberRole; org: { id: string; name: string; logoUrl?: string | null; coverUrl?: string | null } };
 
 /** GET /organizer/orgs/:orgId/door-events: 2 days back to 60 days ahead, soonest first */
 export type DoorEvent = {

@@ -325,7 +325,7 @@ function EventBody({ e, topBar, refetch, jumpToResale, dateParam }: { e: EventDe
                 style={({ pressed }) => [{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: space.md }, pressed && { opacity: 0.7 }]}
               >
                 <View style={styles.presenterMark}>
-                  <Txt variant="bodyStrong">{initials(e.organizer.name)}</Txt>
+                  {e.organizer.logoUrl ? <Image source={{ uri: e.organizer.logoUrl }} style={StyleSheet.absoluteFill} contentFit="cover" transition={200} /> : <Txt variant="bodyStrong">{initials(e.organizer.name)}</Txt>}
                 </View>
                 <View style={{ flex: 1 }}>
                   <Txt variant="tiny" color={colors.dim}>
@@ -781,7 +781,7 @@ function TierCard({ t, currency, on, disabled, onPress, days }: { t: TicketType;
 
 const styles = StyleSheet.create({
   presenter: { flexDirection: 'row', alignItems: 'center', gap: space.md, marginTop: space.lg, padding: space.md, borderRadius: radius.card, borderWidth: 1, borderColor: colors.line, backgroundColor: colors.surface },
-  presenterMark: { width: 44, height: 44, borderRadius: 14, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.bg2, borderWidth: 1, borderColor: colors.line2 },
+  presenterMark: { width: 44, height: 44, borderRadius: 14, overflow: 'hidden', alignItems: 'center', justifyContent: 'center', backgroundColor: colors.bg2, borderWidth: 1, borderColor: colors.line2 },
   topBar: { position: 'absolute', left: gutter - 4, right: gutter - 4, flexDirection: 'row', justifyContent: 'space-between' },
   topFill: { position: 'absolute', top: 0, left: 0, right: 0, alignItems: 'center', justifyContent: 'flex-end', paddingBottom: 18, backgroundColor: colors.bg2, borderBottomWidth: 1, borderBottomColor: colors.line },
   info: { gap: space.lg, padding: space.lg, borderRadius: radius.card, borderWidth: 1, borderColor: colors.line, backgroundColor: colors.surface },

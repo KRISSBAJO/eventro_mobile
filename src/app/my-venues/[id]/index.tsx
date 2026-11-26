@@ -12,7 +12,7 @@ import { ToggleCard } from '@/components/form-ui';
 import { Icon } from '@/components/icons';
 import { Group, OrgScreen } from '@/components/org-ui';
 import { managerGate, placeLine } from '@/components/venue-owner';
-import { Badge, Button, Divider, Notice, Row, Skeleton, Txt } from '@/components/ui';
+import { Button, Divider, Notice, Row, Skeleton, Txt } from '@/components/ui';
 import { api, errorText } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { minutesLabel, plural, priceLabel } from '@/lib/bookings';
@@ -62,13 +62,12 @@ export default function ManageVenue() {
         {v.imageUrl ? <Image source={{ uri: v.imageUrl }} style={StyleSheet.absoluteFill} contentFit="cover" transition={200} /> : <LinearGradient colors={['rgba(255,77,61,0.28)', colors.surface]} style={StyleSheet.absoluteFill} />}
         <LinearGradient colors={[colors.fade0, colors.fade]} locations={[0.3, 1]} style={StyleSheet.absoluteFill} />
         <View style={styles.heroText}>
-          <View style={{ flexDirection: 'row', gap: 6, flexWrap: 'wrap' }}>
-            <Badge label={CLAIM_ROLE_NAME[m.role] ?? m.role} tone="glass" />
-            {v.verified || v.verifiedAt ? <Badge label="Verified" tone="success" /> : null}
-            {l ? l.active ? <Badge label="Taking bookings" tone="success" /> : <Badge label="Bookings off" tone="warning" /> : null}
-          </View>
           <Txt variant="small" color={colors.onImageSoft} numberOfLines={2}>
             {placeLine(v)}
+          </Txt>
+          <Txt variant="tiny" color={colors.onImageSoft}>
+            {CLAIM_ROLE_NAME[m.role] ?? m.role}
+            {v.verified || v.verifiedAt ? ' · Verified' : ''}
           </Txt>
         </View>
       </View>
@@ -120,7 +119,7 @@ export default function ManageVenue() {
         <Divider style={{ marginLeft: 62 }} />
         <Row icon="calendar" label="Blocked-out time" onPress={() => open('blackouts')} />
         <Divider style={{ marginLeft: 62 }} />
-        <Row icon="building" label="Venue details" detail="About, contact, photo" onPress={() => open('details')} />
+        <Row icon="building" label="Venue details" detail="About, contact, photos" onPress={() => open('details')} />
       </Group>
       <Group>
         <Row icon="bell" label="Booking requests" detail={m.pendingBookings ? `${m.pendingBookings} waiting` : undefined} tone={m.pendingBookings ? 'accent' : undefined} onPress={() => router.push('/venue-bookings')} />

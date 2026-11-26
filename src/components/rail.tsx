@@ -6,7 +6,8 @@ import { LargeCardSkeleton, LargeEventCard } from './event-card';
 
 export const useCardWidth = () => {
   const { width } = useWindowDimensions();
-  return Math.round(Math.min(270, Math.max(210, width * 0.64)));
+  // About half the screen, so the next card peeks in clearly (≈210 px wide on a 390 px phone).
+  return Math.round(Math.min(240, Math.max(185, width * 0.54)));
 };
 
 export function Rail({ events, loading, distances }: { events: EventCard[]; loading?: boolean; distances?: Record<string, number | null> }) {

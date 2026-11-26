@@ -9,12 +9,12 @@ import type { EventCard } from './types';
 
 export type FollowKind = 'organizers' | 'venues';
 
-export type Followed = { slug: string; name: string; verified: boolean; upcoming: number; followedAt: string; city?: string; country?: string | null; imageUrl?: string | null };
+export type Followed = { slug: string; name: string; verified: boolean; upcoming: number; followedAt: string; city?: string; country?: string | null; imageUrl?: string | null; logoUrl?: string | null };
 export type FollowedEvent = EventCard & { via: { kind: 'organizer' | 'venue'; slug: string; name: string } };
 export type Following = { organizers: Followed[]; venues: Followed[]; events: FollowedEvent[] };
 
 /** GET /organizers/:slug */
-export type OrganizerPage = { slug: string; name: string; about: string | null; website: string | null; verified: boolean; since: string; followers: number; eventsHosted: number; events: EventCard[] };
+export type OrganizerPage = { slug: string; name: string; about: string | null; website: string | null; logoUrl?: string | null; coverUrl?: string | null; verified: boolean; since: string; followers: number; eventsHosted: number; events: EventCard[] };
 
 const KEY = ['me', 'following'] as const;
 
