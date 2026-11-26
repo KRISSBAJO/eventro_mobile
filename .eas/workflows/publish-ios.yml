@@ -1,0 +1,13 @@
+name: Publish iOS update
+on:
+  workflow_dispatch: {}
+jobs:
+  publish:
+    type: update
+    environment: production
+    params:
+      platform: ios
+      channel: production
+    hooks:
+      before_update:
+        - run: npx tsc --noEmit && npx eslint src
