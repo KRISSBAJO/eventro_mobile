@@ -6,7 +6,7 @@ import { LargeCardSkeleton, LargeEventCard } from './event-card';
 
 export const useCardWidth = () => {
   const { width } = useWindowDimensions();
-  return Math.round(Math.min(300, Math.max(230, width * 0.76)));
+  return Math.round(Math.min(270, Math.max(210, width * 0.64)));
 };
 
 export function Rail({ events, loading, distances }: { events: EventCard[]; loading?: boolean; distances?: Record<string, number | null> }) {
@@ -18,9 +18,9 @@ export function Rail({ events, loading, distances }: { events: EventCard[]; load
       data={data}
       keyExtractor={(e) => e.slug}
       showsHorizontalScrollIndicator={false}
-      snapToInterval={w + space.lg}
+      snapToInterval={w + space.md}
       decelerationRate="fast"
-      contentContainerStyle={{ paddingHorizontal: gutter, gap: space.lg }}
+      contentContainerStyle={{ paddingHorizontal: gutter, gap: space.md }}
       renderItem={({ item }) => <LargeEventCard e={item} width={w} distanceKm={distances?.[item.slug] ?? null} />}
       ListEmptyComponent={loading ? <SkeletonRow width={w} /> : undefined}
     />
@@ -29,7 +29,7 @@ export function Rail({ events, loading, distances }: { events: EventCard[]; load
 
 function SkeletonRow({ width }: { width: number }) {
   return (
-    <View style={{ flexDirection: 'row', gap: space.lg }}>
+    <View style={{ flexDirection: 'row', gap: space.md }}>
       <LargeCardSkeleton width={width} />
       <LargeCardSkeleton width={width} />
     </View>

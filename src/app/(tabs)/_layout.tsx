@@ -16,18 +16,12 @@ const TABS: { name: string; title: string; icon: IconName }[] = [
   { name: 'account', title: 'Account', icon: 'user' },
 ];
 
-/** Height of the floating bar itself (without the gap under it). */
-const BAR = 72;
-/** The raised Create button: a circle that sits above the bar's top edge. */
-const FAB = 56;
-/** Each tab's capsule (icon over label); the active one is tinted. */
-const TAB_W = 64;
-const TAB_H = 50;
+/** Height of the bar above the phone's home indicator. */
+const BAR = 58;
 
 /**
- * The raised "Create" button in the middle of the tab bar. It isn't a tab: it opens the organizer flow on top.
- * Organizers go straight to "Create an event"; fans with no organizer profile go to "Sell tickets" to make one;
- * signed-out visitors sign in first.
+ * "Create" in the middle of the tab bar. It isn't a tab: it opens the organizer flow on top. Organizers go straight to
+ * "Create an event"; fans with no organizer profile go to "Sell tickets" to make one; signed-out visitors sign in first.
  */
 function CreateButton() {
   const { user } = useAuth();
@@ -41,30 +35,23 @@ function CreateButton() {
     router.push('/organizer/create');
   };
   return (
-    <View style={styles.fabSlot}>
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel="Create an event"
-        onPress={open}
-        hitSlop={8}
-        style={({ pressed }) => [styles.fab, pressed && { transform: [{ scale: 0.94 }] }]}>
-        <Icon name="plus" size={26} color={colors.accentInk} />
-      </Pressable>
-      <Txt variant="smallStrong" color={colors.text} style={styles.fabLabel}>
-        Create
-      </Txt>
-    </View>
+    <Pressable accessibilityRole="button" accessibilityLabel="Create an event" onPress={open} style={({ pressed }) => [styles.item, pressed && { opacity: 0.6 }]}>
+      <View style={styles.tab}>
+        <View style={styles.plus}>
+          <Icon name="plus" size={16} color={colors.bg} strokeWidth={2.6} />
+        </View>
+        <Txt numberOfLines={1} style={styles.tabLabel} color={colors.muted}>
+          Create
+        </Txt>
+      </View>
+    </Pressable>
   );
 }
 
-/**
- * A floating tab bar: a rounded panel lifted off the bottom edge, in the card colour with a border and shadow,
- * so it reads as its own surface instead of melting into the page. Screens stop above it (sceneStyle padding).
- * In the middle, a raised red Create button that breaks out of the bar.
- */
+/** The tab bar: flat and quiet, in the page colour with a hairline on top; the active tab is drawn in the text colour. */
 export default function TabsLayout() {
   const insets = useSafeAreaInsets();
-  const gap = Math.max(insets.bottom, Platform.OS === 'web' ? 12 : 10);
+  const bottom = Math.max(insets.bottom, Platform.OS === 'web' ? 6 : 4);
   const tab = (t: (typeof TABS)[number]) => (
     <Tabs.Screen
       key={t.name}
@@ -72,11 +59,10 @@ export default function TabsLayout() {
       options={{
         title: t.title,
         tabBarAccessibilityLabel: `${t.title} tab`,
-        // Each tab draws its own capsule (icon and label together), so the active state has one clean, even shape.
         tabBarIcon: ({ focused }) => (
-          <View style={[styles.tab, focused && styles.tabOn]}>
-            <Icon name={t.icon} size={21} color={focused ? colors.accent : colors.muted} strokeWidth={focused ? 2.3 : 2} />
-            <Txt numberOfLines={1} style={styles.tabLabel} color={focused ? colors.text : colors.muted}>
+          <View style={styles.tab}>
+            <Icon name={t.icon} size={23} color={focused ? colors.text : colors.dim} strokeWidth={focused ? 2.4 : 1.9} />
+            <Txt numberOfLines={1} style={[styles.tabLabel, focused && styles.tabLabelOn]} color={focused ? colors.text : colors.dim}>
               {t.title}
             </Txt>
           </View>
@@ -90,35 +76,23 @@ export default function TabsLayout() {
       screenOptions={{
         headerShown: false,
         animation: 'fade',
-        sceneStyle: { backgroundColor: colors.bg, paddingBottom: BAR + gap + 6 },
+        sceneStyle: { backgroundColor: colors.bg },
         tabBarActiveTintColor: colors.text,
-        tabBarInactiveTintColor: colors.muted,
-        // Labels are drawn inside each tab's capsule (tabBarIcon), not by the bar.
+        tabBarInactiveTintColor: colors.dim,
+        // Labels are drawn under each icon (tabBarIcon), not by the bar.
         tabBarShowLabel: false,
-        tabBarIconStyle: { width: TAB_W, height: TAB_H },
+        tabBarIconStyle: { width: 72, height: 44 },
         tabBarStyle: {
-          position: 'absolute',
-          bottom: gap,
-          height: BAR,
-          paddingTop: 7,
-          paddingBottom: 9,
-          marginHorizontal: 14,
-          borderRadius: 26,
-          backgroundColor: colors.surface,
-          borderWidth: 1,
-          borderTopWidth: 1,
-          borderColor: colors.line2,
+          height: BAR + bottom,
+          paddingTop: 6,
+          paddingBottom: bottom,
+          backgroundColor: colors.bg,
+          borderTopWidth: StyleSheet.hairlineWidth,
           borderTopColor: colors.line2,
-          // The raised button pokes out above the bar.
-          overflow: 'visible',
-          // lift it off the page
-          shadowColor: '#000',
-          shadowOpacity: 0.55,
-          shadowRadius: 24,
-          shadowOffset: { width: 0, height: 12 },
-          elevation: 16,
+          elevation: 0,
+          shadowOpacity: 0,
         },
-        tabBarItemStyle: { minHeight: 48 },
+        tabBarItemStyle: { minHeight: 44 },
       }}>
       {TABS.slice(0, 2).map(tab)}
       <Tabs.Screen
@@ -135,27 +109,9 @@ export default function TabsLayout() {
 }
 
 const styles = StyleSheet.create({
-  tab: { width: TAB_W, height: TAB_H, borderRadius: 16, alignItems: 'center', justifyContent: 'center', gap: 3, borderWidth: 1, borderColor: 'transparent' },
-  tabOn: { backgroundColor: colors.accentSoft, borderColor: colors.accentLine },
-  tabLabel: { fontFamily: font.body.semibold, fontSize: 11, lineHeight: 14 },
-  fabSlot: { flex: 1, alignItems: 'center', justifyContent: 'flex-end', paddingBottom: 2 },
-  fab: {
-    position: 'absolute',
-    top: -30,
-    width: FAB,
-    height: FAB,
-    borderRadius: FAB / 2,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: colors.accent,
-    // A ring in the page colour cuts the circle out of the bar, so it reads as raised.
-    borderWidth: 5,
-    borderColor: colors.bg,
-    shadowColor: colors.accent,
-    shadowOpacity: 0.55,
-    shadowRadius: 14,
-    shadowOffset: { width: 0, height: 6 },
-    elevation: 12,
-  },
-  fabLabel: { fontSize: 11, lineHeight: 14 },
+  item: { flex: 1, alignItems: 'center', paddingTop: 4 },
+  tab: { width: 72, height: 44, alignItems: 'center', justifyContent: 'center', gap: 3 },
+  tabLabel: { fontFamily: font.body.medium, fontSize: 11, lineHeight: 14 },
+  tabLabelOn: { fontFamily: font.body.semibold },
+  plus: { width: 24, height: 24, borderRadius: 7, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.text },
 });

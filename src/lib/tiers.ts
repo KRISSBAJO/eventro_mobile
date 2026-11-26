@@ -125,7 +125,7 @@ export const TIER_LOOKS: Record<TierLook, TierLookDef> = {
   standard: {
     key: 'standard',
     name: 'General',
-    colors: ['#2a2024', '#140d0f'],
+    colors: ['#262628', '#111112'],
     ink: '#f7f2f2',
     inkSoft: 'rgba(247,242,242,0.72)',
     border: 'rgba(255,228,232,0.14)',

@@ -64,7 +64,7 @@ export default function VenueScreen() {
       <ScrollView contentContainerStyle={{ paddingBottom: insets.bottom + space.huge }}>
         <View style={{ height: HERO, backgroundColor: colors.surface }}>
           {v.imageUrl ? <Image source={{ uri: v.imageUrl }} style={StyleSheet.absoluteFill} contentFit="cover" transition={200} /> : <LinearGradient colors={['rgba(255,77,61,0.28)', colors.bg]} style={StyleSheet.absoluteFill} />}
-          <LinearGradient colors={['rgba(15,10,11,0.45)', colors.fade0, colors.bg]} locations={[0, 0.4, 1]} style={StyleSheet.absoluteFill} />
+          <LinearGradient colors={['rgba(0,0,0,0.45)', colors.fade0, colors.bg]} locations={[0, 0.4, 1]} style={StyleSheet.absoluteFill} />
         </View>
         <FadeIn style={{ paddingHorizontal: gutter, marginTop: -48, gap: space.sm }}>
           <View style={{ flexDirection: 'row', gap: space.sm, flexWrap: 'wrap' }}>

@@ -1,19 +1,19 @@
 /**
- * Event cards: a large image card for the Discover rails and a compact row for search results. Events with more than
- * one date show their next date and "+2 more dates" / "3 days" (lib/dates.ts cardWhen).
+ * Event cards, kept plain so the photo does the talking: a large card for the Discover rails (photo, then name, date,
+ * place and price) and a compact row for search results. Events with more than one date show their next date and
+ * "+2 more dates" / "3 days" (lib/dates.ts cardWhen).
  */
 import { Image } from 'expo-image';
-import { LinearGradient } from 'expo-linear-gradient';
 import { router } from 'expo-router';
 import { Pressable, StyleSheet, View } from 'react-native';
 import { cardWhen } from '@/lib/dates';
 import { haptic } from '@/lib/haptics';
-import { CATEGORY_NAME, cityOnly, distanceLabel, money, when } from '@/lib/format';
+import { cityOnly, distanceLabel, money, when } from '@/lib/format';
 import type { EventCard as Ev } from '@/lib/types';
 import { colors, radius, space } from '@/theme';
 import { HeartButton } from './heart';
 import { Icon } from './icons';
-import { Badge, Skeleton, Txt } from './ui';
+import { Skeleton, Txt } from './ui';
 
 const open = (slug: string) => {
   haptic.select();
@@ -37,75 +37,37 @@ function ResaleBadge({ glass }: { glass?: boolean }) {
   );
 }
 
-function DateTile({ iso }: { iso: string }) {
-  const d = when(iso);
-  return (
-    <View style={styles.dateTile}>
-      <Txt variant="eyebrow" color={colors.accent} style={{ fontSize: 10, lineHeight: 12 }}>
-        {d.month}
-      </Txt>
-      <Txt variant="h3" color={colors.onImage} style={{ lineHeight: 21 }}>
-        {d.day}
-      </Txt>
-    </View>
-  );
-}
-
-export function LargeEventCard({ e, width = 280, distanceKm }: { e: Ev; width?: number; distanceKm?: number | null }) {
+export function LargeEventCard({ e, width = 260, distanceKm }: { e: Ev; width?: number; distanceKm?: number | null }) {
   const cw = cardWhen(e);
   const d = when(cw.startsAt);
   return (
-    <Pressable
-      accessibilityRole="link"
-      accessibilityLabel={a11y(e)}
-      onPress={() => open(e.slug)}
-      style={({ pressed }) => [styles.largeCard, { width }, pressed && { transform: [{ scale: 0.98 }], borderColor: colors.line2 }]}>
+    <Pressable accessibilityRole="link" accessibilityLabel={a11y(e)} onPress={() => open(e.slug)} style={({ pressed }) => [{ width }, pressed && { opacity: 0.85 }]}>
       <View style={styles.largeMedia}>
         <Image source={e.imageUrl ? { uri: e.imageUrl } : null} style={StyleSheet.absoluteFill} contentFit="cover" transition={250} recyclingKey={e.slug} />
-        <LinearGradient colors={[colors.fade0, colors.fade]} locations={[0.45, 1]} style={StyleSheet.absoluteFill} />
-        <View style={styles.largeTop}>
-          <DateTile iso={cw.startsAt} />
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.sm }}>
-            <Badge label={CATEGORY_NAME[e.category] ?? e.category} tone="glass" />
-            <HeartButton card={e} glass size={34} />
-          </View>
-        </View>
-        <View style={styles.largeBottom}>
-          {hasResale(e) ? <ResaleBadge glass /> : null}
-          <Txt variant="h3" color={colors.onImage} numberOfLines={1}>
-            {e.title}
-          </Txt>
-          <Txt variant="small" color={colors.onImageSoft} numberOfLines={1}>
-            {e.subtitle}
-          </Txt>
+        <View style={styles.largeHeart}>
+          <HeartButton card={e} glass size={34} />
         </View>
       </View>
       <View style={styles.largeMeta}>
-        <View style={{ flex: 1, gap: 4 }}>
-          <Txt variant="smallStrong" numberOfLines={1}>
-            {d.short} · {d.time}
-            {cw.more ? (
-              <Txt variant="small" color={colors.muted}>
-                {` · ${cw.more}`}
-              </Txt>
-            ) : null}
-          </Txt>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-            <Icon name={e.venue ? 'pin' : 'stream'} size={13} color={colors.dim} />
-            <Txt variant="small" color={colors.muted} numberOfLines={1} style={{ flex: 1 }}>
-              {distanceKm != null ? `${distanceLabel(distanceKm)} · ` : ''}
-              {where(e)}
+        <Txt variant="title" numberOfLines={1}>
+          {e.title}
+        </Txt>
+        <Txt variant="small" color={colors.muted} numberOfLines={1}>
+          {d.short} · {d.time}
+          {cw.more ? ` · ${cw.more}` : ''}
+        </Txt>
+        <Txt variant="small" color={colors.muted} numberOfLines={1}>
+          {distanceKm != null ? `${distanceLabel(distanceKm)} · ` : ''}
+          {where(e)}
+        </Txt>
+        <Txt variant="smallStrong" style={{ marginTop: 2 }}>
+          {e.fromCents === 0 ? 'Free' : `From ${money(e.fromCents, e.currency)}`}
+          {hasResale(e) ? (
+            <Txt variant="small" color={colors.muted}>
+              {'  ·  Resale'}
             </Txt>
-          </View>
-        </View>
-        <View style={{ alignItems: 'flex-end' }}>
-          <Txt variant="eyebrow" color={colors.dim} style={{ fontSize: 10, lineHeight: 12 }}>
-            From
-          </Txt>
-          <Txt variant="price" color={colors.accent}>
-            {money(e.fromCents, e.currency)}
-          </Txt>
-        </View>
+          ) : null}
+        </Txt>
       </View>
     </Pressable>
   );
@@ -120,12 +82,12 @@ export function CompactEventCard({ e }: { e: Ev }) {
         <Image source={e.imageUrl ? { uri: e.imageUrl } : null} style={StyleSheet.absoluteFill} contentFit="cover" transition={200} recyclingKey={e.slug} />
       </View>
       <View style={{ flex: 1, gap: 3, justifyContent: 'center' }}>
-        <Txt variant="eyebrow" color={colors.accent} numberOfLines={1}>
-          {d.short} · {d.time}
-          {cw.more ? ` · ${cw.more}` : ''}
-        </Txt>
         <Txt variant="title" numberOfLines={1}>
           {e.title}
+        </Txt>
+        <Txt variant="small" color={colors.muted} numberOfLines={1}>
+          {d.short} · {d.time}
+          {cw.more ? ` · ${cw.more}` : ''}
         </Txt>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
           <Icon name={e.venue ? 'pin' : 'stream'} size={13} color={colors.dim} />
@@ -135,10 +97,16 @@ export function CompactEventCard({ e }: { e: Ev }) {
           </Txt>
         </View>
         <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 5, marginTop: 1 }}>
-          <Txt variant="small" color={colors.dim}>
-            From
-          </Txt>
-          <Txt variant="title">{money(e.fromCents, e.currency)}</Txt>
+          {e.fromCents === 0 ? (
+            <Txt variant="title">Free</Txt>
+          ) : (
+            <>
+              <Txt variant="small" color={colors.dim}>
+                From
+              </Txt>
+              <Txt variant="title">{money(e.fromCents, e.currency)}</Txt>
+            </>
+          )}
           {/* With a price filter in the visitor's currency, the API converts the price too (approximate). */}
           {e.fromCentsIn && e.fromCentsIn.currency !== e.currency ? (
             <Txt variant="tiny" color={colors.muted} accessibilityLabel={`about ${money(e.fromCentsIn.cents, e.fromCentsIn.currency)}`}>
@@ -162,7 +130,7 @@ export function CompactEventCard({ e }: { e: Ev }) {
 export function LargeCardSkeleton({ width = 280 }: { width?: number }) {
   return (
     <View style={{ width, gap: space.md }}>
-      <Skeleton height={width * 0.66} radius={radius.card} />
+      <Skeleton height={width * 0.8} radius={radius.card} />
       <Skeleton height={14} width="70%" />
       <Skeleton height={12} width="45%" />
     </View>
@@ -183,25 +151,20 @@ export function CompactCardSkeleton() {
 }
 
 const styles = StyleSheet.create({
-  largeCard: { borderRadius: radius.lg, borderWidth: 1, borderColor: colors.line, backgroundColor: colors.surface, overflow: 'hidden' },
-  largeMedia: { aspectRatio: 1.5, overflow: 'hidden', backgroundColor: colors.surface2 },
-  largeTop: { position: 'absolute', top: 12, left: 12, right: 12, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
-  largeBottom: { position: 'absolute', left: 14, right: 14, bottom: 12, gap: 1 },
+  largeMedia: { aspectRatio: 1.25, borderRadius: radius.card, overflow: 'hidden', backgroundColor: colors.surface2 },
+  largeHeart: { position: 'absolute', top: 10, right: 10 },
+  largeMeta: { gap: 2, paddingTop: space.md },
   resale: { flexDirection: 'row', alignItems: 'center', gap: 4, alignSelf: 'flex-start', paddingHorizontal: 7, paddingVertical: 2, borderRadius: radius.pill, borderWidth: 1, borderColor: colors.accentLine, backgroundColor: colors.accentSoft },
   resaleGlass: { marginBottom: 5, backgroundColor: colors.glass, borderColor: 'rgba(255,106,92,0.45)' },
-  largeMeta: { flexDirection: 'row', alignItems: 'flex-end', gap: space.md, paddingVertical: space.md, paddingHorizontal: 14, borderTopWidth: 1, borderTopColor: colors.line },
-  dateTile: { width: 44, paddingVertical: 5, borderRadius: 12, backgroundColor: colors.glass, borderWidth: 1, borderColor: 'rgba(255,255,255,0.16)', alignItems: 'center' },
   compact: {
     flexDirection: 'row',
     gap: space.md,
-    padding: space.sm,
-    paddingRight: space.md,
-    borderRadius: radius.card,
-    minHeight: 104,
-    marginBottom: space.sm,
-    borderWidth: 1,
-    borderColor: colors.line,
-    backgroundColor: colors.surface,
+    // Lists offset by this padding, so the photo lines up with the page edge and the pressed tint has room.
+    paddingVertical: space.sm,
+    paddingHorizontal: space.sm,
+    borderRadius: radius.md,
+    minHeight: 100,
+    marginBottom: space.xs,
   },
   thumb: { width: 86, height: 86, alignSelf: 'center', borderRadius: radius.md, overflow: 'hidden', backgroundColor: colors.surface2 },
 });

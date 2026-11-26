@@ -83,7 +83,7 @@ export function Gallery({ media, title }: { media: MediaItem[]; title: string })
 
 const styles = StyleSheet.create({
   item: { borderRadius: radius.card, overflow: 'hidden', backgroundColor: colors.surface2, borderWidth: 1, borderColor: colors.line },
-  playWrap: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(15,10,11,0.25)' },
+  playWrap: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(0,0,0,0.25)' },
   play: { width: 60, height: 60, borderRadius: 30, backgroundColor: colors.accent, alignItems: 'center', justifyContent: 'center', paddingLeft: 3 },
   count: { position: 'absolute', right: 10, bottom: 10, paddingHorizontal: 8, paddingVertical: 3, borderRadius: radius.pill, backgroundColor: colors.glass },
   dots: { flexDirection: 'row', justifyContent: 'center', gap: 6 },

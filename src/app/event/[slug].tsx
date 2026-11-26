@@ -237,7 +237,7 @@ function EventBody({ e, topBar, refetch, jumpToResale, dateParam }: { e: EventDe
         onScroll={(ev) => setSolid(ev.nativeEvent.contentOffset.y > HERO - 140)}>
         <View style={{ height: HERO }}>
           <Image source={e.imageUrl ? { uri: e.imageUrl } : null} style={[StyleSheet.absoluteFill, cancelled && { opacity: 0.5 }]} contentFit="cover" transition={250} accessibilityIgnoresInvertColors />
-          <LinearGradient colors={['rgba(15,10,11,0.5)', colors.fade0, colors.fade0, colors.bg]} locations={[0, 0.28, 0.55, 1]} style={StyleSheet.absoluteFill} />
+          <LinearGradient colors={['rgba(0,0,0,0.5)', colors.fade0, colors.fade0, colors.bg]} locations={[0, 0.28, 0.55, 1]} style={StyleSheet.absoluteFill} />
         </View>
 
         <FadeIn style={{ paddingHorizontal: gutter, marginTop: -72, gap: space.sm }}>

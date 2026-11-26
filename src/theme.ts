@@ -18,21 +18,24 @@ import { RedditMono_600SemiBold } from '@expo-google-fonts/reddit-mono/600SemiBo
 import { Appearance, type TextStyle } from 'react-native';
 import { readAppearance } from './lib/theme-store';
 
-/** The current, dark palette. */
+/**
+ * Dark: black on black. A near-black page with slightly lighter black cards and rows (no tint), so photos and the red
+ * carry the colour.
+ */
 const DARK = {
-  bg: '#0f0a0b',
-  bg2: '#140d0f',
-  surface: '#1a1214',
-  surface2: '#22181b',
-  /** Inside of text fields, pickers and search boxes: near black, so they read clearly as places to type. */
-  field: '#060304',
+  bg: '#0b0b0c',
+  bg2: '#111112',
+  surface: '#1a1a1b',
+  surface2: '#242426',
+  /** Inside of text fields, pickers and search boxes: a touch lighter than the page, so they read as places to type. */
+  field: '#1a1a1b',
   /** A field's border: a touch brighter than line2, so the well's edge shows on dark cards. */
-  fieldLine: 'rgba(255,228,232,0.18)',
-  line: 'rgba(255,228,232,0.08)',
-  line2: 'rgba(255,228,232,0.14)',
-  text: '#f7f2f2',
-  muted: '#b2a6a8',
-  dim: '#786b6e',
+  fieldLine: 'rgba(255,255,255,0.16)',
+  line: 'rgba(255,255,255,0.08)',
+  line2: 'rgba(255,255,255,0.13)',
+  text: '#f5f5f5',
+  muted: '#a8a8ad',
+  dim: '#77777c',
   accent: '#ff4d3d',
   accentHi: '#ff6a5c',
   accentInk: '#ffffff',
@@ -43,58 +46,57 @@ const DARK = {
   successLine: 'rgba(47,191,113,0.35)',
   warning: '#f5a524',
   warningSoft: 'rgba(245,165,36,0.12)',
-  scrim: 'rgba(15,10,11,0.72)',
-  glass: 'rgba(15,10,11,0.6)',
-  /** image overlays fade to the background colour, never pure black */
-  fade0: 'rgba(15,10,11,0)',
-  fade: 'rgba(15,10,11,0.85)',
+  scrim: 'rgba(0,0,0,0.72)',
+  glass: 'rgba(0,0,0,0.55)',
+  /** image overlays fade to black */
+  fade0: 'rgba(0,0,0,0)',
+  fade: 'rgba(0,0,0,0.82)',
   paper: '#f3f1ec',
   ink: '#0d0d0f',
   inkMuted: '#55555c',
   /** Text and icons laid over photos (which keep a dark fade in both themes) */
-  onImage: '#f7f2f2',
-  onImageSoft: 'rgba(247,242,242,0.8)',
+  onImage: '#ffffff',
+  onImageSoft: 'rgba(255,255,255,0.82)',
 } as const;
 
 export type Palette = { [K in keyof typeof DARK]: string };
 
 /**
- * Light: Omoshow red (deepened to #D63A2B so text and white-on-red buttons pass contrast on light backgrounds) on
- * warm cream, with white cards. Photos keep their dark fade and white text (fade, glass, onImage), so event imagery
- * reads the same in both themes.
+ * Light: clean white. A pure white page, white cards with hairline edges and very light grey fills, neutral greys for
+ * text, and Omoshow red (deepened to #D63A2B so text and white-on-red buttons pass contrast). Photos keep their dark
+ * fade and white text (fade, glass, onImage), so event imagery reads the same in both themes.
  */
 const LIGHT: Palette = {
-  bg: '#faf7f5',
-  bg2: '#f4efec',
+  bg: '#ffffff',
+  bg2: '#f6f6f7',
   surface: '#ffffff',
-  surface2: '#f3ecea',
+  surface2: '#f3f3f4',
   field: '#ffffff',
-  // Light needs firmer edges than dark: on cream, faint borders and soft greys look washed out.
-  fieldLine: 'rgba(28,20,22,0.24)',
-  line: 'rgba(28,20,22,0.12)',
-  line2: 'rgba(28,20,22,0.20)',
-  text: '#16100f',
-  muted: '#544a4c',
-  dim: '#766b6d',
+  fieldLine: 'rgba(17,17,19,0.16)',
+  line: 'rgba(17,17,19,0.09)',
+  line2: 'rgba(17,17,19,0.15)',
+  text: '#111113',
+  muted: '#55555c',
+  dim: '#7c7c83',
   accent: '#d63a2b',
   accentHi: '#b8321f',
   accentInk: '#ffffff',
-  accentSoft: 'rgba(214,58,43,0.10)',
-  accentLine: 'rgba(214,58,43,0.32)',
+  accentSoft: 'rgba(214,58,43,0.08)',
+  accentLine: 'rgba(214,58,43,0.30)',
   success: '#17824a',
   successSoft: 'rgba(23,130,74,0.10)',
   successLine: 'rgba(23,130,74,0.30)',
   warning: '#a35f00',
   warningSoft: 'rgba(163,95,0,0.10)',
-  scrim: 'rgba(28,20,22,0.45)',
-  glass: 'rgba(15,10,11,0.6)',
-  fade0: 'rgba(15,10,11,0)',
-  fade: 'rgba(15,10,11,0.85)',
+  scrim: 'rgba(17,17,19,0.45)',
+  glass: 'rgba(0,0,0,0.5)',
+  fade0: 'rgba(0,0,0,0)',
+  fade: 'rgba(0,0,0,0.78)',
   paper: '#f3f1ec',
   ink: '#0d0d0f',
   inkMuted: '#55555c',
-  onImage: '#f7f2f2',
-  onImageSoft: 'rgba(247,242,242,0.8)',
+  onImage: '#ffffff',
+  onImageSoft: 'rgba(255,255,255,0.82)',
 };
 
 /** What the person picked in Account → Appearance. "system" follows the phone's light/dark setting. */

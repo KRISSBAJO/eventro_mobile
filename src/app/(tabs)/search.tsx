@@ -1,5 +1,4 @@
 /** Search: text with debounce, categories, place, dates, price and sort, with paged results. */
-import { LinearGradient } from 'expo-linear-gradient';
 import { useLocalSearchParams } from 'expo-router';
 import { useEffect, useRef, useState, type ComponentRef } from 'react';
 import { ActivityIndicator, FlatList, Pressable, RefreshControl, ScrollView, StyleSheet, TextInput, View } from 'react-native';
@@ -132,15 +131,6 @@ export default function Search() {
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.bg, paddingTop: insets.top + space.md }}>
-      {/* Warm glow behind the top of the screen, like Discover */}
-      <LinearGradient
-        pointerEvents="none"
-        colors={['rgba(255,77,61,0.16)', 'rgba(255,120,80,0.04)', 'rgba(15,10,11,0)']}
-        locations={[0, 0.5, 1]}
-        start={{ x: 0.15, y: 0 }}
-        end={{ x: 0.6, y: 1 }}
-        style={[styles.glow, { height: insets.top + 260 }]}
-      />
       <View style={{ paddingHorizontal: gutter, gap: space.lg, paddingBottom: space.md }}>
         <Txt variant="h1" accessibilityRole="header">
           Search
@@ -274,7 +264,6 @@ function Filter({ label, on, onPress, icon, open }: { label: string; on: boolean
 }
 
 const styles = StyleSheet.create({
-  glow: { position: 'absolute', top: 0, left: 0, right: 0 },
   searchBox: {
     flexDirection: 'row',
     alignItems: 'center',

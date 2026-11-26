@@ -114,8 +114,8 @@ export function Chip({ label, active, onPress, icon, accessibilityLabel }: { lab
         onPress();
       }}
       style={({ pressed }) => [styles.chip, active && styles.chipOn, pressed && { opacity: 0.8 }]}>
-      {icon ? <Icon name={icon} size={15} color={active ? colors.accentInk : colors.muted} /> : null}
-      <Txt variant="smallStrong" color={active ? colors.accentInk : colors.text} numberOfLines={1}>
+      {icon ? <Icon name={icon} size={15} color={active ? colors.bg : colors.muted} /> : null}
+      <Txt variant="smallStrong" color={active ? colors.bg : colors.text} numberOfLines={1}>
         {label}
       </Txt>
     </Pressable>
@@ -151,7 +151,7 @@ export function SectionHeader({ eyebrow, title, action, onAction }: { eyebrow?: 
     <View style={styles.sectionHeader}>
       <View style={{ flex: 1, gap: 4 }}>
         {eyebrow ? (
-          <Txt variant="eyebrow" color={colors.accent}>
+          <Txt variant="eyebrow" color={colors.dim}>
             {eyebrow}
           </Txt>
         ) : null}
@@ -161,10 +161,9 @@ export function SectionHeader({ eyebrow, title, action, onAction }: { eyebrow?: 
       </View>
       {action && onAction ? (
         <Pressable accessibilityRole="button" onPress={onAction} hitSlop={10} style={({ pressed }) => [styles.linkBtn, pressed && { opacity: 0.6 }]}>
-          <Txt variant="smallStrong" color={colors.muted}>
+          <Txt variant="smallStrong" color={colors.text}>
             {action}
           </Txt>
-          <Icon name="chevronRight" size={15} color={colors.muted} />
         </Pressable>
       ) : null}
     </View>
@@ -210,7 +209,7 @@ export function EmptyState({ icon = 'sparkle', title, body, action, onAction, co
   return (
     <View style={[styles.empty, compact && { paddingVertical: space.xxl }]}>
       <View style={styles.emptyIcon}>
-        <Icon name={icon} size={24} color={colors.accent} />
+        <Icon name={icon} size={24} color={colors.text} />
       </View>
       <Txt variant="h3" style={{ textAlign: 'center' }}>
         {title}
@@ -446,9 +445,9 @@ export function Row({ icon, label, detail, onPress, tone }: { icon: IconName; la
   return (
     <Pressable accessibilityRole="button" accessibilityLabel={label} onPress={onPress} style={({ pressed }) => [styles.row, pressed && { backgroundColor: colors.surface2 }]}>
       <View style={styles.rowIcon}>
-        <Icon name={icon} size={18} color={tone === 'accent' ? colors.accent : colors.muted} />
+        <Icon name={icon} size={20} color={tone === 'accent' ? colors.accent : colors.text} />
       </View>
-      <Txt variant="bodyStrong" color={tone === 'accent' ? colors.accent : colors.text} style={{ flex: 1 }}>
+      <Txt variant="body" color={tone === 'accent' ? colors.accent : colors.text} style={{ flex: 1 }}>
         {label}
       </Txt>
       {detail ? (
@@ -495,14 +494,14 @@ const styles = StyleSheet.create({
     borderColor: colors.line2,
     backgroundColor: colors.surface,
   },
-  chipOn: { backgroundColor: colors.accent, borderColor: colors.accent },
+  chipOn: { backgroundColor: colors.text, borderColor: colors.text },
   badge: { alignSelf: 'flex-start', paddingHorizontal: 9, paddingVertical: 4, borderRadius: radius.pill, borderWidth: 1 },
   card: { backgroundColor: colors.surface, borderRadius: radius.card, borderWidth: 1, borderColor: colors.line, padding: space.lg },
-  sectionHeader: { flexDirection: 'row', alignItems: 'flex-end', gap: space.md, marginBottom: space.lg },
+  sectionHeader: { flexDirection: 'row', alignItems: 'flex-end', gap: space.md, marginBottom: space.md },
   linkBtn: { flexDirection: 'row', alignItems: 'center', gap: 2, minHeight: touch, paddingLeft: space.sm },
   notice: { flexDirection: 'row', gap: space.md, padding: space.md + 2, borderRadius: radius.md, borderWidth: 1, alignItems: 'flex-start' },
   empty: { alignItems: 'center', gap: space.sm, paddingVertical: space.huge, paddingHorizontal: space.xxl },
-  emptyIcon: { width: 52, height: 52, borderRadius: 26, backgroundColor: colors.accentSoft, alignItems: 'center', justifyContent: 'center', marginBottom: space.sm },
+  emptyIcon: { width: 56, height: 56, borderRadius: 18, backgroundColor: colors.surface2, alignItems: 'center', justifyContent: 'center', marginBottom: space.sm },
   // No overflow clipping, so the focus glow shows on iOS too (nothing inside has a background to clip).
   areaWrap: { borderRadius: radius.md, borderWidth: 1, borderColor: colors.fieldLine, backgroundColor: colors.field },
   area: { paddingHorizontal: space.lg, paddingTop: space.lg, paddingBottom: space.sm, color: colors.text, ...type.body, outlineWidth: 0, ...NO_OUTLINE },
@@ -514,6 +513,6 @@ const styles = StyleSheet.create({
   eye: { width: touch, height: touch, alignItems: 'center', justifyContent: 'center' },
   stepper: { flexDirection: 'row', alignItems: 'center', gap: 4, borderWidth: 1, borderColor: colors.line2, borderRadius: radius.pill, padding: 3 },
   stepBtn: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
-  row: { flexDirection: 'row', alignItems: 'center', gap: space.md, minHeight: 58, paddingHorizontal: space.lg },
-  rowIcon: { width: 36, height: 36, borderRadius: 11, backgroundColor: colors.surface2, borderWidth: 1, borderColor: colors.line, alignItems: 'center', justifyContent: 'center' },
+  row: { flexDirection: 'row', alignItems: 'center', gap: space.lg, minHeight: 56, paddingHorizontal: space.lg },
+  rowIcon: { width: 24, alignItems: 'center', justifyContent: 'center' },
 });

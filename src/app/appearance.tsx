@@ -17,8 +17,8 @@ import { appearance, colors, gutter, radius, scheme, space, type AppearanceChoic
 
 /** The two palettes as the miniatures draw them (fixed, so each preview shows its own theme whatever is active). */
 const MINI = {
-  light: { page: '#faf7f5', card: '#ffffff', line: 'rgba(28,20,22,0.14)', text: '#16100f', muted: '#766b6d', red: '#d63a2b', bar: '#ffffff' },
-  dark: { page: '#0f0a0b', card: '#1a1214', line: 'rgba(255,228,232,0.14)', text: '#f7f2f2', muted: '#786b6e', red: '#ff4d3d', bar: '#1a1214' },
+  light: { page: '#ffffff', card: '#ffffff', line: 'rgba(17,17,19,0.14)', text: '#111113', muted: '#7c7c83', red: '#d63a2b', bar: '#ffffff' },
+  dark: { page: '#0b0b0c', card: '#1a1a1b', line: 'rgba(255,255,255,0.13)', text: '#f5f5f5', muted: '#77777c', red: '#ff4d3d', bar: '#0b0b0c' },
 } as const;
 type Look = keyof typeof MINI;
 
@@ -28,7 +28,7 @@ const PHOTO = 'https://images.unsplash.com/photo-1459749411175-04bf5292ceea?auto
 function MiniPhone({ look }: { look: Look }) {
   const c = MINI[look];
   return (
-    <View style={[styles.phone, { backgroundColor: c.page, borderColor: look === 'dark' ? '#2a2022' : '#e6dedb' }]}>
+    <View style={[styles.phone, { backgroundColor: c.page, borderColor: look === 'dark' ? '#2a2a2c' : '#e4e4e7' }]}>
       <View style={styles.notch} />
       <View style={{ gap: 3, marginTop: 10 }}>
         <View style={[styles.bar, { width: '38%', backgroundColor: c.muted, opacity: 0.6 }]} />
@@ -46,7 +46,7 @@ function MiniPhone({ look }: { look: Look }) {
       <View style={[styles.card, { backgroundColor: c.card, borderColor: c.line }]}>
         <View style={styles.cardPhoto}>
           <Image source={{ uri: PHOTO }} style={StyleSheet.absoluteFill} contentFit="cover" />
-          <LinearGradient colors={['rgba(15,10,11,0)', 'rgba(15,10,11,0.75)']} style={StyleSheet.absoluteFill} />
+          <LinearGradient colors={['rgba(0,0,0,0)', 'rgba(0,0,0,0.75)']} style={StyleSheet.absoluteFill} />
           <View style={[styles.bar, { position: 'absolute', left: 6, bottom: 6, width: '55%', backgroundColor: '#f7f2f2' }]} />
         </View>
         <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 6 }}>
