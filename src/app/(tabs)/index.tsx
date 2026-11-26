@@ -15,7 +15,7 @@ import { BROWSE_CATEGORIES, CATEGORY_NAME, cityOnly, countryName } from '@/lib/f
 import { openGuaranteeTerms } from '@/lib/guarantee';
 import { haptic } from '@/lib/haptics';
 import { nearestCountry, placeLabel, placeOptions, preciseLocation, rankNear, usePlace } from '@/lib/place';
-import { useAllEvents, useEventsBetween, useEventsNear, useTrendingEvents } from '@/lib/queries';
+import { useAllEvents, useEventsBetween, useEventsNear, useJustAnnounced, useLastMinute, useTrendingEvents } from '@/lib/queries';
 import { colors, gutter, radius, space } from '@/theme';
 
 const SHOW = 8;
@@ -59,6 +59,8 @@ export default function Discover() {
   const near = useEventsNear(place?.lat, place?.lng);
   const weekend = useEventsBetween('weekend');
   const popular = useTrendingEvents();
+  const lastMinute = useLastMinute();
+  const announced = useJustAnnounced();
   const [refreshing, setRefreshing] = useState(false);
   const [locating, setLocating] = useState(false);
   const [locError, setLocError] = useState('');
@@ -79,7 +81,7 @@ export default function Discover() {
   const whereName = place ? (inCity.length && place.city ? place.city : place.source === 'precise' && !inCity.length ? countryName(place.country) : place.city && inCity.length ? place.city : countryName(place.country)) : '';
   const refresh = async () => {
     setRefreshing(true);
-    await Promise.all([all.refetch(), weekend.refetch(), popular.refetch(), place?.lat !== undefined ? near.refetch() : null]);
+    await Promise.all([all.refetch(), weekend.refetch(), popular.refetch(), lastMinute.refetch(), announced.refetch(), place?.lat !== undefined ? near.refetch() : null]);
     setRefreshing(false);
   };
 
@@ -97,6 +99,10 @@ export default function Discover() {
       setLocating(false);
     }
   };
+
+  const soonItems = lastMinute.data?.items ?? [];
+  const soonSlugs = new Set(soonItems.map((e) => e.slug));
+  const weekendItems = (weekend.data?.items ?? []).filter((e) => !soonSlugs.has(e.slug));
 
   const browse = (params: Record<string, string>) => router.navigate({ pathname: '/search', params: { ...params, at: String(Date.now()) } });
   // Cities with the most events on sale (the visitor's country first), for the city pages.
@@ -205,13 +211,33 @@ export default function Discover() {
         )}
       </View>
 
-      {/* This weekend */}
-      {weekend.isPending || (weekend.data?.items.length ?? 0) > 0 ? (
+      {/* Last minute: on in the next three days */}
+      {lastMinute.isPending || soonItems.length ? (
+        <View style={styles.section}>
+          <View style={{ paddingHorizontal: gutter }}>
+            <SectionHeader title="Last minute" action="See all" onAction={() => browse({ date: 'soon' })} />
+          </View>
+          <Rail events={soonItems} loading={lastMinute.isPending} />
+        </View>
+      ) : null}
+
+      {/* Just announced: on sale in the last two weeks */}
+      {announced.items.length ? (
+        <View style={styles.section}>
+          <View style={{ paddingHorizontal: gutter }}>
+            <SectionHeader title="Just announced" action="See all" onAction={() => browse({ sort: 'new' })} />
+          </View>
+          <Rail events={announced.items} />
+        </View>
+      ) : null}
+
+      {/* This weekend (what Last minute doesn't already show) */}
+      {weekend.isPending || weekendItems.length ? (
         <View style={styles.section}>
           <View style={{ paddingHorizontal: gutter }}>
             <SectionHeader title="This weekend" action="See all" onAction={() => browse({ date: 'weekend' })} />
           </View>
-          <Rail events={weekend.data?.items ?? []} loading={weekend.isPending} />
+          <Rail events={weekendItems} loading={weekend.isPending} />
         </View>
       ) : null}
 

@@ -22,6 +22,7 @@ const SORTS: SheetOption<SearchFilters['sort']>[] = [
   { value: 'price-asc', label: 'Price: low to high' },
   { value: 'price-desc', label: 'Price: high to low' },
   { value: 'popular', label: 'Trending' },
+  { value: 'new', label: 'Just announced' },
 ];
 
 /**
@@ -53,7 +54,7 @@ export default function Search() {
   const [seenParams, setSeenParams] = useState('{}');
   if (paramKey !== seenParams) {
     setSeenParams(paramKey);
-    if (p.at || p.category || p.country || p.date || p.q) {
+    if (p.at || p.category || p.country || p.date || p.q || p.sort) {
       setF({
         ...NO_FILTERS,
         category: BROWSE_CATEGORIES.includes(p.category as Category) || p.category === 'OTHER' ? (p.category as Category) : '',

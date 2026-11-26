@@ -51,6 +51,8 @@ export type EventCard = {
   /** lowest all-in price */
   fromCents: number;
   distanceKm?: number | null;
+  /** when the event first went on sale on Omoshow (what sort=new ranks by); null for older events */
+  publishedAt?: string | null;
   /** paid tickets sold in the last 14 days (what sort=popular ranks by) */
   soldRecent?: number;
   /** fan-resale listings on sale now (0 when resale is off or closed); older APIs leave it out */

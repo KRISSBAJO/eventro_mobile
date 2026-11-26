@@ -85,10 +85,17 @@ const addDays = (ymd: string, n: number) => {
   return d.toISOString().slice(0, 10);
 };
 
-export type DateRange = 'any' | 'today' | 'weekend' | 'week' | 'month';
+/** "Last minute" (Discover) and "Next 3 days" (Search): today and the next two days. */
+export function lastMinuteRange(now = new Date()) {
+  const today = todayYmd(now);
+  return { from: today, to: addDays(today, 2) };
+}
+
+export type DateRange = 'any' | 'today' | 'soon' | 'weekend' | 'week' | 'month';
 export const DATE_RANGES: { id: DateRange; label: string }[] = [
   { id: 'any', label: 'Any date' },
   { id: 'today', label: 'Today' },
+  { id: 'soon', label: 'Next 3 days' },
   { id: 'weekend', label: 'This weekend' },
   { id: 'week', label: 'Next 7 days' },
   { id: 'month', label: 'Next 30 days' },
@@ -98,6 +105,7 @@ export const DATE_RANGES: { id: DateRange; label: string }[] = [
 export function dateRange(range: DateRange, now = new Date()): { from?: string; to?: string } {
   const today = todayYmd(now);
   if (range === 'today') return { from: today, to: today };
+  if (range === 'soon') return lastMinuteRange(now);
   if (range === 'week') return { from: today, to: addDays(today, 6) };
   if (range === 'month') return { from: today, to: addDays(today, 29) };
   if (range === 'weekend') {

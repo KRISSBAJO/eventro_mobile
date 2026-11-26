@@ -59,6 +59,7 @@ export default function RootLayout() {
                   <Stack.Screen name="sign-in" options={{ presentation: 'modal' }} />
                   <Stack.Screen name="sign-up" options={{ presentation: 'modal' }} />
                   <Stack.Screen name="forgot-password" options={{ presentation: 'modal' }} />
+                  <Stack.Screen name="find-order" options={{ presentation: 'modal' }} />
                   <Stack.Screen name="change-password" options={{ presentation: 'modal' }} />
                   <Stack.Screen name="reset-password" options={{ presentation: 'modal' }} />
                   <Stack.Screen name="transfer/[id]" options={{ presentation: 'modal' }} />

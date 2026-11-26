@@ -2,7 +2,7 @@
 import { useInfiniteQuery, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
 import { api, ApiError, isOffline, qs } from './api';
-import { dateRange, type DateRange } from './format';
+import { dateRange, lastMinuteRange, type DateRange } from './format';
 import type { Category, DoorEvent, EventDetail, EventPage, EventResale, Health, MyOrg, MyResale, MyTickets } from './types';
 import { readVault, writeVault } from './vault';
 
@@ -47,6 +47,28 @@ export function useEventsBetween(range: DateRange) {
   });
 }
 
+/** Last minute: events on today and in the next two days that still have tickets on sale, soonest first. */
+export function useLastMinute() {
+  const { from, to } = lastMinuteRange();
+  return useQuery({
+    queryKey: ['events', 'last-minute', from, to],
+    queryFn: () => api<EventPage>(`/events${qs({ from, to, pageSize: 12 })}`),
+    staleTime: 2 * 60_000,
+  });
+}
+
+/** Just announced: published in the last two weeks, newest first (GET /events?sort=new). */
+export function useJustAnnounced() {
+  const q = useQuery({
+    queryKey: ['events', 'new'],
+    queryFn: () => api<EventPage>(`/events${qs({ sort: 'new', pageSize: 12 })}`),
+    staleTime: 2 * 60_000,
+  });
+  const [since] = useState(() => Date.now() - 14 * 86_400_000);
+  const items = (q.data?.items ?? []).filter((e) => e.publishedAt && new Date(e.publishedAt).getTime() >= since);
+  return { ...q, items };
+}
+
 export type SearchFilters = {
   q: string;
   category: Category | '';
@@ -57,7 +79,8 @@ export type SearchFilters = {
   maxPrice: number | null;
   /** the visitor's currency (ISO), sent with maxPrice */
   currency: string;
-  sort: 'date' | 'price-asc' | 'price-desc' | 'popular';
+  /** new: most recently put on sale first ("Just announced") */
+  sort: 'date' | 'price-asc' | 'price-desc' | 'popular' | 'new';
 };
 
 export const NO_FILTERS: SearchFilters = { q: '', category: '', country: '', city: '', date: 'any', maxPrice: null, currency: 'USD', sort: 'date' };

@@ -63,9 +63,7 @@ export default function Tickets() {
               <InkButton label="Sign in" onPress={() => router.push({ pathname: '/sign-in', params: { then: 'tickets' } })} />
               <Button label="Create an account" variant="ghost" onPress={() => router.push({ pathname: '/sign-up', params: { then: 'tickets' } })} />
             </View>
-            <Txt variant="small" color={colors.dim} style={{ textAlign: 'center', marginTop: space.xs }}>
-              Bought as a guest? Sign up with the same email.
-            </Txt>
+            <FindOrderLink />
           </View>
           <Picks />
         </>
@@ -101,6 +99,7 @@ export default function Tickets() {
 
               {!groups.upcoming.length ? (
                 <TicketsEmpty
+                  findOrder
                   title={groups.past.length ? 'Nothing coming up' : 'No tickets yet'}
                   body={
                     groups.past.length
@@ -199,6 +198,17 @@ function Segments({ value, onChange, items }: { value: Tab; onChange: (t: Tab) =
   );
 }
 
+/** "Can't find my order?": bought as a guest, or lost the email. */
+function FindOrderLink() {
+  return (
+    <Pressable accessibilityRole="link" onPress={() => router.push('/find-order')} hitSlop={8} style={({ pressed }) => [{ minHeight: 44, justifyContent: 'center', marginTop: space.xs }, pressed && { opacity: 0.6 }]}>
+      <Txt variant="smallStrong" style={{ textDecorationLine: 'underline' }}>
+        Can’t find my order?
+      </Txt>
+    </Pressable>
+  );
+}
+
 /** The main action in an empty state: a solid button in the text colour (black in Light, white in Dark). */
 function InkButton({ label, onPress }: { label: string; onPress: () => void }) {
   return (
@@ -225,7 +235,7 @@ function TicketArt({ icon = 'ticket' }: { icon?: IconName }) {
   );
 }
 
-function TicketsEmpty({ title, body, icon, action = 'Explore events', to = '/' }: { title: string; body: string; icon?: IconName; action?: string; to?: '/' | '/search' }) {
+function TicketsEmpty({ title, body, icon, action = 'Explore events', to = '/', findOrder }: { title: string; body: string; icon?: IconName; action?: string; to?: '/' | '/search'; findOrder?: boolean }) {
   return (
     <View style={styles.empty}>
       <TicketArt icon={icon} />
@@ -238,6 +248,7 @@ function TicketsEmpty({ title, body, icon, action = 'Explore events', to = '/' }
       <View style={{ alignSelf: 'stretch', marginTop: space.md }}>
         <InkButton label={action} onPress={() => router.navigate(to)} />
       </View>
+      {findOrder ? <FindOrderLink /> : null}
     </View>
   );
 }
