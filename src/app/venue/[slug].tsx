@@ -12,6 +12,7 @@ import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { TermsCard } from '@/components/booking-ui';
 import { CompactEventCard } from '@/components/event-card';
+import { FollowButton } from '@/components/follow-button';
 import { Icon } from '@/components/icons';
 import { Badge, Button, Card, EmptyState, ErrorState, FadeIn, IconButton, Skeleton, Txt } from '@/components/ui';
 import { api, ApiError, errorText } from '@/lib/api';
@@ -80,6 +81,14 @@ export default function VenueScreen() {
               {[cityOnly(v.city), v.country ? countryName(v.country) : null].filter(Boolean).join(', ')}
             </Txt>
           </Pressable>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.md, marginTop: space.sm }}>
+            <FollowButton kind="venues" slug={v.slug} name={v.name} size="md" />
+            {v.followers ? (
+              <Txt variant="small" color={colors.dim}>
+                {num(v.followers)} {v.followers === 1 ? 'follower' : 'followers'}
+              </Txt>
+            ) : null}
+          </View>
         </FadeIn>
 
         <View style={{ paddingHorizontal: gutter, marginTop: space.xl, gap: space.lg }}>

@@ -11,6 +11,7 @@ import { Rail } from '@/components/rail';
 import { Button, Chip, ErrorState, focusRing, Notice, SectionHeader, Skeleton, Txt } from '@/components/ui';
 import { errorText, isOffline } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
+import { useFollowing } from '@/lib/following';
 import { BROWSE_CATEGORIES, CATEGORY_NAME, cityOnly, countryName } from '@/lib/format';
 import { openGuaranteeTerms } from '@/lib/guarantee';
 import { haptic } from '@/lib/haptics';
@@ -61,6 +62,8 @@ export default function Discover() {
   const popular = useTrendingEvents();
   const lastMinute = useLastMinute();
   const announced = useJustAnnounced();
+  const following = useFollowing(user?.id);
+  const followed = following.data?.events ?? [];
   const [refreshing, setRefreshing] = useState(false);
   const [locating, setLocating] = useState(false);
   const [locError, setLocError] = useState('');
@@ -219,6 +222,16 @@ export default function Discover() {
             <SectionHeader title="Last minute" action="See all" onAction={() => browse({ date: 'soon' })} />
           </View>
           <Rail events={soonItems} loading={lastMinute.isPending} />
+        </View>
+      ) : null}
+
+      {/* From organizers and venues the fan follows */}
+      {followed.length ? (
+        <View style={styles.section}>
+          <View style={{ paddingHorizontal: gutter }}>
+            <SectionHeader title="From who you follow" action="See all" onAction={() => router.push('/following')} />
+          </View>
+          <Rail events={followed.slice(0, 12)} />
         </View>
       ) : null}
 

@@ -27,6 +27,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { AmountPicker } from '@/components/amount-picker';
 import { DateCards } from '@/components/date-cards';
 import { FanResale } from '@/components/fan-resale';
+import { FollowButton } from '@/components/follow-button';
 import { Gallery } from '@/components/gallery';
 import { HeartButton } from '@/components/heart';
 import { Icon } from '@/components/icons';
@@ -41,6 +42,7 @@ import { CATEGORY_NAME, cityOnly, localTimeText, money, when, zoneAbbr } from '@
 import { haptic } from '@/lib/haptics';
 import { openMaps } from '@/lib/maps';
 import { allInLine, allInOf, amountProblem, fromLabel, isPwyw, pickChips, PROMO_PWYW_NOTE, startAmount } from '@/lib/pwyw';
+import { initials } from '@/lib/following';
 import { useEvent, useEventResale, useMyTickets } from '@/lib/queries';
 import { cardOf } from '@/lib/saved';
 import { bookSession, statusText, type ScheduleItem, type TicketSessions } from '@/lib/schedule';
@@ -311,11 +313,36 @@ function EventBody({ e, topBar, refetch, jumpToResale, dateParam }: { e: EventDe
                   </Txt>
                 </Pressable>
               ) : null}
-              <Txt variant="small" color={colors.dim}>
-                Presented by {e.presentedBy}
-              </Txt>
             </View>
           ) : null}
+
+          {e.organizer?.slug ? (
+            <View style={styles.presenter}>
+              <Pressable
+                accessibilityRole="link"
+                accessibilityLabel={`Presented by ${e.organizer.name}`}
+                onPress={() => router.push({ pathname: '/organizers/[slug]', params: { slug: e.organizer!.slug! } })}
+                style={({ pressed }) => [{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: space.md }, pressed && { opacity: 0.7 }]}
+              >
+                <View style={styles.presenterMark}>
+                  <Txt variant="bodyStrong">{initials(e.organizer.name)}</Txt>
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Txt variant="tiny" color={colors.dim}>
+                    Presented by{e.organizer.verified ? ' · Verified' : ''}
+                  </Txt>
+                  <Txt variant="bodyStrong" numberOfLines={1}>
+                    {e.organizer.name}
+                  </Txt>
+                </View>
+              </Pressable>
+              <FollowButton kind="organizers" slug={e.organizer.slug} name={e.organizer.name} />
+            </View>
+          ) : (
+            <Txt variant="small" color={colors.dim} style={{ marginTop: space.md }}>
+              Presented by {e.presentedBy}
+            </Txt>
+          )}
         </View>
 
         {e.media.length ? (
@@ -753,6 +780,8 @@ function TierCard({ t, currency, on, disabled, onPress, days }: { t: TicketType;
 }
 
 const styles = StyleSheet.create({
+  presenter: { flexDirection: 'row', alignItems: 'center', gap: space.md, marginTop: space.lg, padding: space.md, borderRadius: radius.card, borderWidth: 1, borderColor: colors.line, backgroundColor: colors.surface },
+  presenterMark: { width: 44, height: 44, borderRadius: 14, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.bg2, borderWidth: 1, borderColor: colors.line2 },
   topBar: { position: 'absolute', left: gutter - 4, right: gutter - 4, flexDirection: 'row', justifyContent: 'space-between' },
   topFill: { position: 'absolute', top: 0, left: 0, right: 0, alignItems: 'center', justifyContent: 'flex-end', paddingBottom: 18, backgroundColor: colors.bg2, borderBottomWidth: 1, borderBottomColor: colors.line },
   info: { gap: space.lg, padding: space.lg, borderRadius: radius.card, borderWidth: 1, borderColor: colors.line, backgroundColor: colors.surface },

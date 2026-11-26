@@ -123,6 +123,8 @@ export default function Account() {
           </>
         ) : null}
         <Row icon="heart" label="Saved events" onPress={() => router.push('/saved')} />
+        {line}
+        <Row icon="users" label="Following" onPress={() => router.push('/following')} />
       </Group>
 
       <Group title="Settings">

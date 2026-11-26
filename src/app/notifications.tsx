@@ -23,6 +23,7 @@ const CHOICES: { key: keyof NotifyPrefs; title: string; body: string }[] = [
   { key: 'tickets', title: 'Tickets', body: 'Tickets and gifts friends send you, and when they accept yours.' },
   { key: 'reminders', title: 'Reminders', body: 'The day before, and when doors are about to open.' },
   { key: 'priceDrops', title: 'Price drops', body: 'When events you’re watching get cheaper.' },
+  { key: 'following', title: 'New from who you follow', body: 'When an organizer or venue you follow puts a new event on sale.' },
   { key: 'marketing', title: 'News and offers', body: 'Now and then: events we think you’ll like. Off unless you turn it on.' },
 ];
 /** Organizers (admins and managers) only. */

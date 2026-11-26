@@ -156,6 +156,8 @@ export type EventDetail = {
   cancelReason?: string | null;
   preview?: boolean;
   presentedBy: string;
+  /** The organizer's page (GET /organizers/:slug); slug is null only on old organizers before pages existed */
+  organizer?: { slug: string | null; name: string; verified: boolean };
   venue: Venue | null;
   ticketTypes: TicketType[];
   media: MediaItem[];
@@ -355,6 +357,8 @@ export type VenuePage = {
   /** it has an approved manager already */
   managed?: boolean;
   eventsHosted: number;
+  /** fans following it */
+  followers?: number;
   layout: { sections: number; places: number } | null;
   events: { slug: string; title: string; subtitle: string; startsAt: string; imageUrl: string | null; category: Category; currency: string; fromCents: number; nextDate?: { id: string; startsAt: string } | null }[];
   /** Terms for hiring the venue on Omoshow; null when it isn't taking bookings (see lib/bookings.ts) */
@@ -521,7 +525,17 @@ export type DeviceSession = {
 };
 
 /** GET/PATCH /me/notify-prefs */
-export type NotifyPrefs = { orders: boolean; tickets: boolean; priceDrops: boolean; reminders: boolean; marketing: boolean; /** organizers: new sales (older APIs leave it out: on) */ sales?: boolean };
+export type NotifyPrefs = {
+  orders: boolean;
+  tickets: boolean;
+  priceDrops: boolean;
+  reminders: boolean;
+  marketing: boolean;
+  /** organizers: new sales (older APIs leave it out: on) */
+  sales?: boolean;
+  /** new events from organizers and venues the fan follows (older APIs leave it out: on) */
+  following?: boolean;
+};
 
 /** POST /tickets/:id/listing */
 export type Listed = { listingId: string; feeCents: number; royaltyCents: number; payoutCents: number; capCents: number | null; listCents: number };
