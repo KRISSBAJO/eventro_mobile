@@ -125,6 +125,8 @@ export default function Account() {
         <Row icon="heart" label="Saved events" onPress={() => router.push('/saved')} />
         {line}
         <Row icon="users" label="Following" onPress={() => router.push('/following')} />
+        {line}
+        <Row icon="building" label="Venues to hire" onPress={() => router.push('/venues')} />
       </Group>
 
       <Group title="Settings">

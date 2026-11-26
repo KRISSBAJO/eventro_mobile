@@ -58,7 +58,9 @@ export default function OrgBookings() {
               compact
               icon="building"
               title={status ? 'Nothing here' : 'No venue bookings yet'}
-              body="Book a venue from its page on Omoshow, or choose “Book a venue on Omoshow” when you create an event."
+              body="Find a venue to hire and book it from its page, or choose “Book a venue on Omoshow” when you create an event."
+              action="Browse venues"
+              onAction={() => router.push('/venues')}
             />
           ) : (
             q.data.map((b) => <BookingRow key={b.id} b={b} side="ORGANIZER" onPress={() => router.push({ pathname: '/organizer/bookings/[id]', params: { id: b.id } })} />)

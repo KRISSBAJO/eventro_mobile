@@ -1,5 +1,5 @@
 /** Search: text with debounce, categories, place, dates, price and sort, with paged results. */
-import { useLocalSearchParams } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import { useEffect, useRef, useState, type ComponentRef } from 'react';
 import { ActivityIndicator, FlatList, Pressable, RefreshControl, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -101,6 +101,7 @@ export default function Search() {
         {BROWSE_CATEGORIES.map((c) => (
           <Chip key={c} label={CATEGORY_NAME[c]} active={f.category === c} onPress={() => set({ category: f.category === c ? '' : c })} />
         ))}
+        <Chip label="Venues to hire" icon="building" onPress={() => router.push('/venues')} />
       </ScrollView>
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chips}>
         <Filter label={country ? `${flag(country.code)} ${country.name}` : 'Anywhere'} on={!!f.country} onPress={() => setSheet('country')} open={sheet === 'country'} />
