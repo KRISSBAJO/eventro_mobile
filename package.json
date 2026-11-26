@@ -4,7 +4,7 @@
   "main": "expo-router/entry",
   "dependencies": {
     "@expo-google-fonts/archivo": "^0.4.2",
-    "@expo-google-fonts/inter": "^0.4.2",
+    "@expo-google-fonts/plus-jakarta-sans": "^0.4.2",
     "@expo-google-fonts/reddit-mono": "^0.4.2",
     "@expo/ui": "~58.0.29",
     "@stripe/stripe-react-native": "0.81.0",

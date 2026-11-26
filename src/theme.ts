@@ -2,17 +2,17 @@
  * Omoshow design tokens: colours, radii, spacing and type, in one place.
  *
  * Colours mirror the website's theme (eventro/app/tailwind.css). Fonts match the website too:
- * Archivo for headings, prices and big numbers, Inter for UI and body text, Reddit Mono for eyebrows, codes and labels.
+ * Archivo for headings, prices and big numbers, Plus Jakarta Sans for UI and body text (it has ₦ and the Yoruba letters), Reddit Mono for eyebrows, codes and labels.
  * To change a family, edit `fontAssets` (the files to load) and `font` (the names screens use) below; nothing else
  * refers to a font by name.
  */
 import { Archivo_600SemiBold } from '@expo-google-fonts/archivo/600SemiBold';
 import { Archivo_700Bold } from '@expo-google-fonts/archivo/700Bold';
 import { Archivo_800ExtraBold } from '@expo-google-fonts/archivo/800ExtraBold';
-import { Inter_400Regular } from '@expo-google-fonts/inter/400Regular';
-import { Inter_500Medium } from '@expo-google-fonts/inter/500Medium';
-import { Inter_600SemiBold } from '@expo-google-fonts/inter/600SemiBold';
-import { Inter_700Bold } from '@expo-google-fonts/inter/700Bold';
+import { PlusJakartaSans_400Regular } from '@expo-google-fonts/plus-jakarta-sans/400Regular';
+import { PlusJakartaSans_500Medium } from '@expo-google-fonts/plus-jakarta-sans/500Medium';
+import { PlusJakartaSans_600SemiBold } from '@expo-google-fonts/plus-jakarta-sans/600SemiBold';
+import { PlusJakartaSans_700Bold } from '@expo-google-fonts/plus-jakarta-sans/700Bold';
 import { RedditMono_500Medium } from '@expo-google-fonts/reddit-mono/500Medium';
 import { RedditMono_600SemiBold } from '@expo-google-fonts/reddit-mono/600SemiBold';
 import { Appearance, type TextStyle } from 'react-native';
@@ -143,10 +143,10 @@ export const fontAssets = {
   Archivo_600SemiBold,
   Archivo_700Bold,
   Archivo_800ExtraBold,
-  Inter_400Regular,
-  Inter_500Medium,
-  Inter_600SemiBold,
-  Inter_700Bold,
+  PlusJakartaSans_400Regular,
+  PlusJakartaSans_500Medium,
+  PlusJakartaSans_600SemiBold,
+  PlusJakartaSans_700Bold,
   RedditMono_500Medium,
   RedditMono_600SemiBold,
 };
@@ -157,7 +157,7 @@ export const fontAssets = {
  */
 export const font = {
   display: { semibold: 'Archivo_600SemiBold', bold: 'Archivo_700Bold', heavy: 'Archivo_800ExtraBold' },
-  body: { regular: 'Inter_400Regular', medium: 'Inter_500Medium', semibold: 'Inter_600SemiBold', bold: 'Inter_700Bold' },
+  body: { regular: 'PlusJakartaSans_400Regular', medium: 'PlusJakartaSans_500Medium', semibold: 'PlusJakartaSans_600SemiBold', bold: 'PlusJakartaSans_700Bold' },
   mono: { medium: 'RedditMono_500Medium', semibold: 'RedditMono_600SemiBold' },
 } as const;
 
