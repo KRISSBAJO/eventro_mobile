@@ -1,14 +1,14 @@
 import { Image } from 'expo-image';
-import * as WebBrowser from 'expo-web-browser';
-import { Alert, Pressable, ScrollView, View } from 'react-native';
+import { router } from 'expo-router';
+import { Pressable, ScrollView, View } from 'react-native';
 import { Txt } from '@/components/ui';
-import { WEB_URL } from '@/lib/api';
+
 import { cityOnly, dateRange, when } from '@/lib/format';
 import type { SearchFilters } from '@/lib/queries';
 import type { EventCard } from '@/lib/types';
 import { colors, gutter, radius, space } from '@/theme';
 
-// The website's built-in catalog. Sample cards open the website's event details.
+// Cards from either catalog use the same native event route.
 export const sampleCatalog: EventCard[] = [
   {
     "slug": "nova-hart",
@@ -279,7 +279,7 @@ export function SampleEvents({ events }: { events: EventCard[] }) {
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: gutter, gap: space.md }}>
         {events.map(e => (
           <Pressable key={e.slug} accessibilityRole="link" accessibilityLabel={e.title + ', view event details'}
-            onPress={() => void WebBrowser.openBrowserAsync(WEB_URL + '/events/' + encodeURIComponent(e.slug)).catch(() => Alert.alert('Couldn’t open event', 'Please try again.'))}
+            onPress={() => router.push({ pathname: '/event/[slug]', params: { slug: e.slug } })}
             style={{ width: 215, gap: 4 }}>
             <Image source={{ uri: e.imageUrl ?? undefined }} style={{ height: 128, borderRadius: radius.card, backgroundColor: colors.surface2 }} contentFit="cover" />
             <Txt variant="bodyStrong">{e.title}</Txt>
