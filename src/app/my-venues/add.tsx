@@ -15,6 +15,7 @@ import { GradientButton, Section, formStyles } from '@/components/form-ui';
 import { Icon, type IconName } from '@/components/icons';
 import { OptionSheet } from '@/components/option-sheet';
 import { OrgScreen } from '@/components/org-ui';
+import { VenuePhotos } from '@/components/venue-photos';
 import { Pick } from '@/components/venue-fields';
 import { claimErrors, ClaimFields, EMPTY_CLAIM, placeLine, RequestCard, VenueRow, type ClaimInput } from '@/components/venue-owner';
 import { Badge, Button, EmptyState, ErrorState, Field, Notice, Skeleton, TextArea, Txt } from '@/components/ui';
@@ -410,7 +411,8 @@ type NewForm = {
   capacity: string;
   phone: string;
   website: string;
-  imageUrl: string;
+  /** uploaded photo links, cover first */
+  photos: string[];
   about: string;
 };
 
@@ -430,8 +432,7 @@ function newErrors(f: NewForm, claim: ClaimInput) {
   if (f.phone.trim() && !PHONE_RE.test(f.phone.trim())) e.phone = 'Enter the phone number with its country code, e.g. +234 803 000 0000.';
   const w = linkError(f.website, 'The website', 200);
   if (w) e.website = w;
-  const p = linkError(f.imageUrl, 'The photo link', 500);
-  if (p) e.imageUrl = p;
+  if (!f.photos.length) e.photos = 'Add at least one photo of the venue.';
   if (len(f.about) > 2000) e.about = 'Keep it to 2,000 characters.';
   return { errors: { ...e, ...claimErrors(claim, false) }, countryCode: country };
 }
@@ -454,7 +455,7 @@ function NewVenue({
   onSent: (name: string) => void;
 }) {
   const qc = useQueryClient();
-  const [f, setF] = useState<NewForm>({ name: initialName, country: initialCountry, otherCountry: '', address: '', city: '', region: '', postalCode: '', capacity: '', phone: '', website: '', imageUrl: '', about: '' });
+  const [f, setF] = useState<NewForm>({ name: initialName, country: initialCountry, otherCountry: '', address: '', city: '', region: '', postalCode: '', capacity: '', phone: '', website: '', photos: [], about: '' });
   const [sheet, setSheet] = useState(false);
   const [tried, setTried] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -487,7 +488,7 @@ function NewVenue({
           ...(t(f.capacity) ? { capacity: wholeIn(f.capacity, 1, 500_000, 'Capacity').n } : {}),
           ...(t(f.phone) ? { phone: t(f.phone) } : {}),
           ...(t(f.website) ? { website: t(f.website) } : {}),
-          ...(t(f.imageUrl) ? { imageUrl: t(f.imageUrl) } : {}),
+          photos: f.photos,
           ...(t(f.about) ? { about: t(f.about) } : {}),
           role: claim.role,
           message: t(claim.message),
@@ -547,13 +548,16 @@ function NewVenue({
         <Field label="Postal code (optional)" value={f.postalCode} onChangeText={(postalCode) => set({ postalCode })} maxLength={20} autoCapitalize="characters" />
       </Section>
 
+      <Section icon="sparkle" title="Photos" sub="Show the space. The first photo is the cover on its page.">
+        <VenuePhotos photos={f.photos} onChange={(fn) => setF((p) => ({ ...p, photos: fn(p.photos) }))} error={errors.photos} />
+      </Section>
+
       <Section icon="sliders" title="Details" sub="Optional, and you can change them later.">
         <View style={formStyles.row2}>
           <Field style={{ flex: 1 }} label="Capacity" placeholder="e.g. 400" keyboardType="number-pad" value={f.capacity} onChangeText={(v) => set({ capacity: v.replace(/[^\d,]/g, '') })} error={errors.capacity} />
           <Field style={{ flex: 1.4 }} label="Phone" placeholder="+234 803 000 0000" keyboardType="phone-pad" value={f.phone} onChangeText={(phone) => set({ phone })} maxLength={25} error={errors.phone} />
         </View>
         <Field label="Website" placeholder="https://" keyboardType="url" autoCapitalize="none" autoCorrect={false} value={f.website} onChangeText={(website) => set({ website })} maxLength={200} error={errors.website} />
-        <Field label="Photo link" placeholder="https://…/photo.jpg" keyboardType="url" autoCapitalize="none" autoCorrect={false} value={f.imageUrl} onChangeText={(imageUrl) => set({ imageUrl })} maxLength={500} error={errors.imageUrl} />
         <TextArea label="About" value={f.about} onChangeText={(about) => set({ about })} maxLength={2000} minHeight={110} placeholder="What it’s like, getting there, accessibility, food and drink…" error={errors.about} />
       </Section>
 

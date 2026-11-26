@@ -137,6 +137,8 @@ export type ManagedVenue = {
   capacity: number | null;
   about: string | null;
   imageUrl: string | null;
+  /** the gallery, cover first */
+  photos?: { url: string; alt?: string }[] | null;
   website: string | null;
   phone: string | null;
   verified?: boolean;

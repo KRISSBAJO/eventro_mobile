@@ -13,6 +13,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { TermsCard } from '@/components/booking-ui';
 import { CompactEventCard } from '@/components/event-card';
 import { FollowButton } from '@/components/follow-button';
+import { PhotoStrip } from '@/components/photo-strip';
 import { Icon } from '@/components/icons';
 import { Badge, Button, Card, EmptyState, ErrorState, FadeIn, IconButton, Skeleton, Txt } from '@/components/ui';
 import { api, ApiError, errorText } from '@/lib/api';
@@ -92,6 +93,8 @@ export default function VenueScreen() {
         </FadeIn>
 
         <View style={{ paddingHorizontal: gutter, marginTop: space.xl, gap: space.lg }}>
+          <PhotoStrip photos={v.photos ?? []} title={v.name} />
+
           <Card style={{ gap: space.md }}>
             <View style={{ flexDirection: 'row', gap: space.md }}>
               <View style={styles.icon}>

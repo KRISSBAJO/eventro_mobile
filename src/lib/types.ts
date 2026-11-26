@@ -351,6 +351,8 @@ export type VenuePage = {
   capacity: number | null;
   about: string | null;
   imageUrl: string | null;
+  /** cover first, then the venue's other photos and its hire listing's */
+  photos?: { url: string; alt?: string }[];
   website: string | null;
   phone: string | null;
   verified: boolean;

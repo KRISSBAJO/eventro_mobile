@@ -1,26 +1,28 @@
 /**
  * A venue's details as its managers keep them (PATCH /me/venues/:id): about, address and postcode, phone, capacity,
- * website and photo link. Only changed fields are sent. Links are cleared with null and text with ''; the API can't
+ * website and photos. Only changed fields are sent. Links are cleared with null and text with ''; the API can't
  * clear a phone number or capacity, so those can be changed but not emptied.
  */
 import { useQueryClient } from '@tanstack/react-query';
-import { Image } from 'expo-image';
 import { useLocalSearchParams } from 'expo-router';
 import { useState } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { View } from 'react-native';
 import { formStyles, GradientButton, Section } from '@/components/form-ui';
-import { Icon } from '@/components/icons';
 import { OrgScreen } from '@/components/org-ui';
+import { VenuePhotos } from '@/components/venue-photos';
 import { managerGate } from '@/components/venue-owner';
 import { Button, Field, Notice, TextArea, Txt } from '@/components/ui';
 import { api, errorText } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import type { ManagedVenue } from '@/lib/bookings';
 import { haptic } from '@/lib/haptics';
-import { linkError, PHONE_RE, URL_RE, useManagedVenue, wholeIn } from '@/lib/my-venues';
-import { colors, radius, space } from '@/theme';
+import { linkError, PHONE_RE, useManagedVenue, wholeIn } from '@/lib/my-venues';
+import { colors, space } from '@/theme';
 
-type Key = 'about' | 'address' | 'postalCode' | 'phone' | 'capacity' | 'website' | 'imageUrl';
+type Key = 'about' | 'address' | 'postalCode' | 'phone' | 'capacity' | 'website';
+
+/** The venue's photo links, cover first (its single photo when it has no gallery yet). */
+const photosOf = (v: ManagedVenue) => (v.photos?.length ? v.photos.map((p) => p.url) : v.imageUrl ? [v.imageUrl] : []);
 
 const formOf = (v: ManagedVenue): Record<Key, string> => ({
   about: v.about ?? '',
@@ -29,14 +31,13 @@ const formOf = (v: ManagedVenue): Record<Key, string> => ({
   phone: v.phone ?? '',
   capacity: v.capacity ? String(v.capacity) : '',
   website: v.website ?? '',
-  imageUrl: v.imageUrl ?? '',
 });
 
 /** The changed fields in the API's shape, and each field's problem. */
-function changes(v: ManagedVenue, f: Record<Key, string>) {
+function changes(v: ManagedVenue, f: Record<Key, string>, photos: string[]) {
   const was = formOf(v);
   const body: Record<string, unknown> = {};
-  const errors: Partial<Record<Key, string>> = {};
+  const errors: Partial<Record<Key | 'photos', string>> = {};
   const val = (k: Key) => f[k].trim();
   const changed = (k: Key) => val(k) !== was[k].trim();
   if (changed('about')) {
@@ -63,10 +64,9 @@ function changes(v: ManagedVenue, f: Record<Key, string>) {
     if (e) errors.website = e;
     body.website = val('website') || null;
   }
-  if (changed('imageUrl')) {
-    const e = linkError(f.imageUrl, 'The photo link', 500);
-    if (e) errors.imageUrl = e;
-    body.imageUrl = val('imageUrl') || null;
+  if (photos.join(' ') !== photosOf(v).join(' ')) {
+    if (!photos.length) errors.photos = 'Keep at least one photo of the venue.';
+    body.photos = photos;
   }
   return { body, errors };
 }
@@ -83,11 +83,12 @@ export default function DetailsScreen() {
 function DetailsForm({ venue }: { venue: ManagedVenue }) {
   const qc = useQueryClient();
   const [f, setF] = useState(() => formOf(venue));
+  const [photos, setPhotos] = useState(() => photosOf(venue));
   const [tried, setTried] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [note, setNote] = useState('');
-  const { body, errors: problems } = changes(venue, f);
+  const { body, errors: problems } = changes(venue, f, photos);
   const errors = tried ? problems : {};
   const first = Object.values(problems)[0];
   const dirty = Object.keys(body).length > 0;
@@ -99,7 +100,6 @@ function DetailsForm({ venue }: { venue: ManagedVenue }) {
       setF((p) => ({ ...p, [k]: v }));
     },
   });
-  const photo = URL_RE.test(f.imageUrl.trim()) ? f.imageUrl.trim() : null;
 
   const save = async () => {
     setTried(true);
@@ -167,20 +167,15 @@ function DetailsForm({ venue }: { venue: ManagedVenue }) {
         <Field label="Website (optional)" placeholder="https://" keyboardType="url" autoCapitalize="none" autoCorrect={false} maxLength={200} {...input('website')} />
       </Section>
 
-      <Section icon="sparkle" title="Photo" sub="A link to a photo of the venue, shown at the top of its page.">
-        <View style={styles.photo}>
-          {photo ? (
-            <Image source={{ uri: photo }} style={StyleSheet.absoluteFill} contentFit="cover" transition={200} />
-          ) : (
-            <View style={{ alignItems: 'center', gap: 6 }}>
-              <Icon name="building" size={24} color={colors.dim} />
-              <Txt variant="small" color={colors.dim}>
-                No photo yet
-              </Txt>
-            </View>
-          )}
-        </View>
-        <Field label="Photo link (optional)" placeholder="https://…/photo.jpg" keyboardType="url" autoCapitalize="none" autoCorrect={false} maxLength={500} {...input('imageUrl')} />
+      <Section icon="sparkle" title="Photos" sub="Shown on the venue’s page; the first is the cover.">
+        <VenuePhotos
+          photos={photos}
+          onChange={(fn) => {
+            setNote('');
+            setPhotos(fn);
+          }}
+          error={errors.photos}
+        />
       </Section>
 
       {note ? (
@@ -193,6 +188,3 @@ function DetailsForm({ venue }: { venue: ManagedVenue }) {
   );
 }
 
-const styles = StyleSheet.create({
-  photo: { aspectRatio: 16 / 9, borderRadius: radius.md, overflow: 'hidden', borderWidth: 1, borderColor: colors.line, backgroundColor: colors.surface2, alignItems: 'center', justifyContent: 'center' },
-});
