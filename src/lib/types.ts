@@ -34,6 +34,9 @@ export type Category =
   | 'OTHER';
 
 /** GET /events items. */
+/** GET /me/watching items: an event card plus when watching started, the lowest price then, and whether it's lower now. */
+export type WatchedEvent = EventCard & { watchingSince: string; startedFromCents: number | null; dropped: boolean };
+
 export type EventCard = {
   slug: string;
   title: string;

@@ -4,12 +4,14 @@
  * it's one tap with the account's email; signed out it asks for an email. The phone remembers which events it
  * asked about, like the website does.
  */
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { router } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 import { api, errorText } from '@/lib/api';
 import { emailOk, useAuth } from '@/lib/auth';
 import { money } from '@/lib/format';
+import { useWatching } from '@/lib/queries';
 import { haptic } from '@/lib/haptics';
 import { readJson, writeJson } from '@/lib/storage';
 import { colors, radius, space } from '@/theme';
@@ -27,7 +29,11 @@ export function PriceAlert({ slug }: { slug: string }) {
     staleTime: 5 * 60_000,
     retry: 0,
   });
-  const [watching, setWatching] = useState<string | null>(null);
+  const qc = useQueryClient();
+  const list = useWatching(user?.id);
+  const [local, setWatching] = useState<string | null>(null);
+  // Signed in, the account's Watching list is the truth (stopping from the list or an email link turns this off).
+  const watching = user && list.data ? (list.data.slugs.includes(slug) ? (local ?? user.email) : null) : local;
   const [open, setOpen] = useState(false);
   const [email, setEmail] = useState('');
   const [busy, setBusy] = useState(false);
@@ -60,6 +66,7 @@ export function PriceAlert({ slug }: { slug: string }) {
       haptic.success();
       setWatching(r.email);
       setOpen(false);
+      void qc.invalidateQueries({ queryKey: ['me', 'watching'] });
       const m = (await readJson<Record<string, string>>(KEY)) ?? {};
       const keep = Object.entries({ ...m, [slug]: r.email }).slice(-50);
       void writeJson(KEY, Object.fromEntries(keep));
@@ -85,6 +92,13 @@ export function PriceAlert({ slug }: { slug: string }) {
           <Txt variant="small" color={colors.muted} style={{ flex: 1 }}>
             Price alert on. We’ll email <Txt variant="smallStrong">{watching}</Txt> if it gets cheaper.
           </Txt>
+          {user ? (
+            <Pressable accessibilityRole="link" hitSlop={8} onPress={() => router.navigate({ pathname: '/tickets', params: { tab: 'watching' } })}>
+              <Txt variant="smallStrong" style={{ textDecorationLine: 'underline' }}>
+                Watching
+              </Txt>
+            </Pressable>
+          ) : null}
         </View>
       ) : open && !user ? (
         <View style={[styles.box, { flexDirection: 'column', alignItems: 'stretch' }]}>

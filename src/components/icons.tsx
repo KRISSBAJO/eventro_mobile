@@ -1,6 +1,7 @@
 /** Line icons in the website's style (24-unit grid, 2px round strokes), drawn with react-native-svg. */
+import { Text, View } from 'react-native';
 import Svg, { Circle, Path } from 'react-native-svg';
-import { colors } from '@/theme';
+import { colors, font } from '@/theme';
 
 const PATHS = {
   discover: ['M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18Z', 'm15.5 8.5-2.2 4.8-4.8 2.2 2.2-4.8 4.8-2.2Z'],
@@ -86,6 +87,19 @@ export function Icon({ name, size = 22, color = colors.text, strokeWidth = 2, fi
         <Path key={d} d={d} stroke={color} strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round" fill={fill ?? 'none'} />
       ))}
     </Svg>
+  );
+}
+
+/** The full Omoshow logo: the mark and the "omoshow" wordmark, as in the website's header. */
+export function Logo({ size = 28 }: { size?: number }) {
+  const fs = Math.round(size * 0.78);
+  return (
+    <View accessible accessibilityRole="image" accessibilityLabel="Omoshow" style={{ flexDirection: 'row', alignItems: 'center', gap: Math.round(size * 0.3) }}>
+      <LogoMark size={size} />
+      <Text allowFontScaling={false} style={{ fontFamily: font.display.bold, fontSize: fs, lineHeight: Math.round(fs * 1.15), letterSpacing: -0.045 * fs, color: colors.text }}>
+        omoshow
+      </Text>
+    </View>
   );
 }
 

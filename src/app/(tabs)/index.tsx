@@ -6,7 +6,7 @@ import { router } from 'expo-router';
 import { useState } from 'react';
 import { Pressable, RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Icon, type IconName } from '@/components/icons';
+import { Icon, Logo, type IconName } from '@/components/icons';
 import { Rail } from '@/components/rail';
 import { Button, Chip, ErrorState, focusRing, Notice, SectionHeader, Skeleton, Txt } from '@/components/ui';
 import { errorText, isOffline } from '@/lib/api';
@@ -116,20 +116,9 @@ export default function Discover() {
       style={{ flex: 1, backgroundColor: colors.bg }}
       contentContainerStyle={{ paddingTop: insets.top + space.md, paddingBottom: space.huge }}
       refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor={colors.accent} colors={[colors.accent]} progressBackgroundColor={colors.surface} />}>
-      {/* Where you are, and you */}
+      {/* The logo and you, then where you are */}
       <View style={styles.header}>
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel={`Location: ${placeLabel(place)}. Change location`}
-          onPress={() => router.push('/place')}
-          hitSlop={8}
-          style={({ pressed }) => [styles.place, pressed && { opacity: 0.6 }]}>
-          <Icon name={place?.source === 'precise' ? 'locate' : 'pin'} size={20} color={colors.text} />
-          <Txt variant="h2" numberOfLines={1} style={{ flexShrink: 1 }}>
-            {!ready ? '…' : !place ? 'Choose a city' : place.source === 'precise' ? 'Near you' : place.city ? cityOnly(place.city) : countryName(place.country)}
-          </Txt>
-          <Icon name="chevronDown" size={18} color={colors.text} />
-        </Pressable>
+        <Logo size={28} />
         <Pressable
           accessibilityRole="button"
           accessibilityLabel={user ? 'Your account' : 'Sign in'}
@@ -139,6 +128,18 @@ export default function Discover() {
           {user ? <Txt variant="smallStrong">{initialsOf(user.name)}</Txt> : <Icon name="user" size={18} color={colors.text} />}
         </Pressable>
       </View>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={`Location: ${placeLabel(place)}. Change location`}
+        onPress={() => router.push('/place')}
+        hitSlop={8}
+        style={({ pressed }) => [styles.place, pressed && { opacity: 0.6 }]}>
+        <Icon name={place?.source === 'precise' ? 'locate' : 'pin'} size={18} color={colors.text} />
+        <Txt variant="h3" numberOfLines={1} style={{ flexShrink: 1 }}>
+          {!ready ? '…' : !place ? 'Choose a city' : place.source === 'precise' ? 'Near you' : place.city ? cityOnly(place.city) : countryName(place.country)}
+        </Txt>
+        <Icon name="chevronDown" size={16} color={colors.text} />
+      </Pressable>
 
       {/* One search field, filters inside it */}
       <View style={styles.search}>
@@ -320,7 +321,7 @@ function GuaranteeRow() {
 
 const styles = StyleSheet.create({
   header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: gutter, gap: space.md, minHeight: 48 },
-  place: { flexDirection: 'row', alignItems: 'center', gap: 6, flexShrink: 1 },
+  place: { flexDirection: 'row', alignItems: 'center', alignSelf: 'flex-start', gap: 6, marginTop: space.md, marginHorizontal: gutter },
   avatar: { width: 40, height: 40, borderRadius: 20, backgroundColor: colors.surface2, alignItems: 'center', justifyContent: 'center' },
   search: {
     flexDirection: 'row',

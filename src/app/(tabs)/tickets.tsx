@@ -1,7 +1,7 @@
 /** The wallet: tickets grouped by event, upcoming first, past ones folded away. Opens offline from the saved copy. */
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import { useState } from 'react';
 import { Pressable, RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -12,15 +12,15 @@ import { Badge, Button, ErrorState, FadeIn, Notice, Skeleton, Txt } from '@/comp
 import { api, errorText } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { dateLine, rangeLine, ticketWhen } from '@/lib/dates';
-import { cityOnly, countryName, firstName, localStamp, when } from '@/lib/format';
+import { cityOnly, countryName, firstName, localStamp, money, when } from '@/lib/format';
 import { haptic } from '@/lib/haptics';
 import { rankNear, usePlace } from '@/lib/place';
-import { useAllEvents, useMyTickets, useRefreshWallet } from '@/lib/queries';
+import { useAllEvents, useMyTickets, useRefreshWallet, useUnwatch, useWatching } from '@/lib/queries';
 import { inTime } from '@/lib/resale';
 import { useSaved } from '@/lib/saved';
 import { claimShort, COVERED_LABEL, FREE_NOTE, isComp } from '@/lib/guarantee';
 import { groupTickets, seatLine, ticketState, type TicketGroup } from '@/lib/tickets';
-import type { IncomingTransfer } from '@/lib/types';
+import type { IncomingTransfer, WatchedEvent } from '@/lib/types';
 import { colors, gutter, radius, space } from '@/theme';
 
 export default function Tickets() {
@@ -28,7 +28,17 @@ export default function Tickets() {
   const { user, ready } = useAuth();
   const t = useMyTickets(user?.id);
   const saved = useSaved();
-  const [tab, setTab] = useState<Tab>('upcoming');
+  const watching = useWatching(user?.id);
+  // Opened from an event's price alert (?tab=watching): straight to that tab, each time the link is followed.
+  const { tab: wanted } = useLocalSearchParams<{ tab?: string }>();
+  const pick = (w?: string): Tab | null => (w === 'watching' || w === 'saved' ? w : null);
+  const [tab, setTab] = useState<Tab>(pick(wanted) ?? 'upcoming');
+  const [seen, setSeen] = useState(wanted);
+  if (wanted !== seen) {
+    setSeen(wanted);
+    const next = pick(wanted);
+    if (next) setTab(next);
+  }
   const [refreshing, setRefreshing] = useState(false);
 
   const groups = groupTickets(t.data?.tickets ?? []);
@@ -36,7 +46,7 @@ export default function Tickets() {
 
   const refresh = async () => {
     setRefreshing(true);
-    await Promise.all([t.refetch(), saved.refetch()]);
+    await Promise.all([t.refetch(), saved.refetch(), watching.refetch()]);
     setRefreshing(false);
   };
 
@@ -84,6 +94,7 @@ export default function Tickets() {
               { id: 'upcoming', label: 'Upcoming', count: groups.upcoming.length },
               { id: 'past', label: 'Past', count: groups.past.length },
               { id: 'saved', label: 'Saved', count: saved.items.length },
+              { id: 'watching', label: 'Watching', count: watching.data?.items.length ?? 0 },
             ]}
           />
 
@@ -142,6 +153,8 @@ export default function Tickets() {
                 <Picks />
               </>
             )
+          ) : tab === 'watching' ? (
+            <WatchingList q={watching} />
           ) : saved.loading ? (
             <View style={{ gap: space.sm }}>
               <Skeleton height={104} radius={radius.card} />
@@ -169,9 +182,73 @@ export default function Tickets() {
   );
 }
 
-type Tab = 'upcoming' | 'past' | 'saved';
+type Tab = 'upcoming' | 'past' | 'saved' | 'watching';
 
-/** Upcoming / Past / Saved as underlined tabs. */
+/** Events with a price alert: today's price, and a green line when it's lower than when watching started. */
+function WatchingList({ q }: { q: ReturnType<typeof useWatching> }) {
+  const unwatch = useUnwatch();
+  const [error, setError] = useState('');
+  if (q.isPending) {
+    return (
+      <View style={{ gap: space.sm }}>
+        <Skeleton height={104} radius={radius.card} />
+        <Skeleton height={104} radius={radius.card} />
+      </View>
+    );
+  }
+  if (q.error) return <ErrorState message={errorText(q.error)} onRetry={() => void q.refetch()} />;
+  const items = q.data?.items ?? [];
+  if (!items.length) {
+    return (
+      <>
+        <TicketsEmpty icon="bell" title="Not watching anything" body="Tap “Tell me if the price drops” on an event. It shows up here with today’s price." action="Find events" to="/search" />
+        <Picks />
+      </>
+    );
+  }
+  const stop = async (e: WatchedEvent) => {
+    haptic.select();
+    setError('');
+    try {
+      await unwatch(e.slug);
+    } catch (err) {
+      setError(errorText(err));
+    }
+  };
+  return (
+    <View style={{ gap: space.xs }}>
+      {error ? <Notice icon="alert">{error}</Notice> : null}
+      {items.map((e, i) => (
+        <FadeIn key={e.slug} delay={i * 40}>
+          <View style={{ marginHorizontal: -space.sm }}>
+            <CompactEventCard e={e} />
+          </View>
+          <View style={styles.watchMeta}>
+            {e.dropped && e.startedFromCents !== null ? (
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1 }}>
+                <View style={styles.dropDot} />
+                <Txt variant="smallStrong" color={colors.success} numberOfLines={1} style={{ flexShrink: 1 }}>
+                  Down from {money(e.startedFromCents, e.currency)}
+                </Txt>
+              </View>
+            ) : (
+              <Txt variant="small" color={colors.dim} numberOfLines={1} style={{ flex: 1 }}>
+                Watching since {when(e.watchingSince).short}
+              </Txt>
+            )}
+            <Pressable accessibilityRole="button" accessibilityLabel={`Stop watching ${e.title}`} hitSlop={8} onPress={() => void stop(e)}>
+              <Txt variant="smallStrong" color={colors.muted}>
+                Stop
+              </Txt>
+            </Pressable>
+          </View>
+        </FadeIn>
+      ))}
+    </View>
+  );
+}
+
+/** Upcoming / Past / Saved / Watching as underlined tabs. */
 function Segments({ value, onChange, items }: { value: Tab; onChange: (t: Tab) => void; items: { id: Tab; label: string; count: number }[] }) {
   return (
     <View style={styles.segments} accessibilityRole="tablist">
@@ -459,6 +536,8 @@ const styles = StyleSheet.create({
   segments: { flexDirection: 'row', borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.line2, marginHorizontal: -gutter, paddingHorizontal: gutter },
   segment: { flex: 1, alignItems: 'center', justifyContent: 'center', height: 46, borderBottomWidth: 2, borderBottomColor: 'transparent', marginBottom: -StyleSheet.hairlineWidth },
   segmentOn: { borderBottomColor: colors.text },
+  watchMeta: { flexDirection: 'row', alignItems: 'center', gap: space.md, paddingLeft: 98, paddingBottom: space.sm, marginTop: -2 },
+  dropDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: colors.success },
   empty: { alignItems: 'center', gap: space.sm, paddingTop: space.xxxl, paddingBottom: space.md },
   artTile: { width: 88, height: 88, borderRadius: 26, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.surface2, marginBottom: space.md },
   ink: { height: 52, borderRadius: radius.pill, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.text },

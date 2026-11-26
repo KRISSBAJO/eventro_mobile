@@ -3,7 +3,7 @@ import { useInfiniteQuery, useQuery, useQueryClient } from '@tanstack/react-quer
 import { useEffect, useState } from 'react';
 import { api, ApiError, isOffline, qs } from './api';
 import { dateRange, lastMinuteRange, type DateRange } from './format';
-import type { Category, DoorEvent, EventDetail, EventPage, EventResale, Health, MyOrg, MyResale, MyTickets } from './types';
+import type { Category, DoorEvent, EventDetail, EventPage, EventResale, Health, MyOrg, MyResale, MyTickets, WatchedEvent } from './types';
 import { readVault, writeVault } from './vault';
 
 /** Every upcoming public event (the catalog is small); used for near-you, place options and rails. */
@@ -133,6 +133,31 @@ export function useHealth() {
  * seeds), so the wallet and its door codes still work offline; `offline` is true when the saved copy is showing
  * because the API couldn't be reached.
  */
+/** Watching: the signed-in fan's price alerts on upcoming events, newest first. */
+export function useWatching(userId: string | undefined) {
+  return useQuery({
+    queryKey: ['me', 'watching', userId],
+    queryFn: () => api<{ slugs: string[]; items: WatchedEvent[] }>('/me/watching'),
+    enabled: !!userId,
+    staleTime: 30_000,
+  });
+}
+
+/** Stop watching an event from the list; the list updates straight away. */
+export function useUnwatch() {
+  const qc = useQueryClient();
+  return async (slug: string) => {
+    qc.setQueriesData<{ slugs: string[]; items: WatchedEvent[] }>({ queryKey: ['me', 'watching'] }, (d) =>
+      d ? { slugs: d.slugs.filter((s) => s !== slug), items: d.items.filter((e) => e.slug !== slug) } : d,
+    );
+    try {
+      await api(`/me/watching/${encodeURIComponent(slug)}`, { method: 'DELETE' });
+    } finally {
+      void qc.invalidateQueries({ queryKey: ['me', 'watching'] });
+    }
+  };
+}
+
 export function useMyTickets(userId: string | undefined) {
   const key = userId ? `tickets-${userId}` : null;
   type Saved = { at: number; data: MyTickets };
