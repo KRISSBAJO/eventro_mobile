@@ -112,6 +112,9 @@ export type OrgEvent = {
 
 /** GET /organizer/events/:id (the event row with its venue, promos and media) */
 export type OrgEventDetail = DonationSettings & {
+  /** a change to the live event's name, tagline or cover waiting for Omoshow to check it, and why the last one was turned down */
+  pendingEdit?: { title?: string; subtitle?: string; imageUrl?: string | null; media?: unknown } | null;
+  pendingEditNote?: string | null;
   id: string;
   orgId: string;
   slug: string;
@@ -337,6 +340,8 @@ export type CancelDatePreview = {
   resaleListings: number;
   /** it's the last active date: cancelling it cancels the event */
   cancelsEvent: boolean;
+  /** a day of a multi-day event: passes for other days too, which get the day's share back and keep working (else undefined) */
+  partial?: number;
 };
 
 /** POST /organizer/events/:id/dates/:dateId/cancel */

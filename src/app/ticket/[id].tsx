@@ -309,12 +309,64 @@ function TicketCard({ t, offline, feePermille, userId }: { t: Ticket; offline: b
           {t.id}
         </Txt>
       </View>
+      {t.dateChange && t.event.status !== 'CANCELLED' && t.status !== 'VOID' ? <DateChangeBox t={t} change={t.dateChange} offline={offline} /> : null}
       <SessionsBox t={t} offline={offline} />
       {t.guarantee ? <GuaranteeBox t={t} userId={userId} /> : null}
       {note ? (
         <Notice tone={note.tone} icon={note.tone === 'success' ? 'check' : 'alert'} title={note.title}>
           {note.body}
         </Notice>
+      ) : null}
+    </View>
+  );
+}
+
+/** The event moved since this ticket was bought: the new time, why, and (the buyer, in the window) a full refund. */
+function DateChangeBox({ t, change, offline }: { t: Ticket; change: NonNullable<Ticket['dateChange']>; offline: boolean }) {
+  const qc = useQueryClient();
+  const confirm = useConfirm();
+  const [busy, setBusy] = useState(false);
+  const [problem, setProblem] = useState('');
+  const to = when(change.toStartsAt);
+  const from = when(change.fromStartsAt);
+  const amount = money(change.refundCents, ticketCurrency(t));
+  const refund = async () => {
+    const yes = await confirm({ title: `Refund ${amount}?`, message: 'Every ticket on this order is cancelled, and the money goes back to how you paid in 5–10 business days.', confirmLabel: 'Refund', cancelLabel: 'Keep my tickets', destructive: true });
+    if (!yes) return;
+    setBusy(true);
+    setProblem('');
+    try {
+      await api(`/me/orders/${encodeURIComponent(t.orderId)}/date-change-refund`, { method: 'POST' });
+      haptic.success();
+      await qc.invalidateQueries({ queryKey: ['me', 'tickets'] });
+      router.back();
+    } catch (e) {
+      setProblem(errorText(e));
+      setBusy(false);
+    }
+  };
+  return (
+    <View style={styles.moved}>
+      <View style={{ gap: 4 }}>
+        <Txt variant="bodyStrong">
+          New time: {to.short}, {to.time}
+        </Txt>
+        <Txt variant="small" color={colors.muted}>
+          Moved from {from.short}, {from.time}.{change.reason ? ` Reason given: “${change.reason}”.` : ''} Your ticket still works for the new time.
+        </Txt>
+      </View>
+      {change.refundable && !offline ? (
+        <>
+          <Txt variant="small" color={colors.muted}>
+            Can’t make it? You can get a full refund of {amount} until {when(change.refundUntil).short}.
+          </Txt>
+          <Button label={busy ? 'Refunding…' : 'Get a refund'} variant="ghost" size="md" disabled={busy} onPress={() => void refund()} />
+        </>
+      ) : null}
+      {problem ? (
+        <Txt variant="small" color={colors.accent}>
+          {problem}
+        </Txt>
       ) : null}
     </View>
   );
@@ -667,6 +719,7 @@ const styles = StyleSheet.create({
   action: { flex: 1, flexDirection: 'row', gap: 8, alignItems: 'center', justifyContent: 'center', minHeight: 52 },
   actionSep: { width: 1, backgroundColor: 'rgba(13,13,15,0.1)' },
   sessions: { gap: space.sm, padding: space.lg, paddingBottom: space.sm, borderRadius: radius.card, borderWidth: 1, borderColor: colors.line, backgroundColor: colors.surface },
+  moved: { gap: space.md, padding: space.md + 2, borderRadius: radius.md, borderWidth: 1, borderColor: colors.warning, backgroundColor: colors.surface },
   guarantee: { gap: space.md, padding: space.md + 2, borderRadius: radius.md, borderWidth: 1, borderColor: colors.line2, backgroundColor: colors.surface },
   freeNote: { flexDirection: 'row', gap: space.sm, alignItems: 'center', paddingHorizontal: space.xs },
 });

@@ -184,6 +184,17 @@ function Editor({ e, admin, schedule0 }: { e: OrgEventDetail; admin: boolean; sc
     mode0 === 'SINGLE' ? [{ key: 'd0', id: null, date: start.date, start: start.time, doors: doors0?.time ?? '', end: wallParts(e.endsAt)?.time ?? '', label: '' }] : draftsOf(dates0),
   );
   const [cancelling, setCancelling] = useState<string | null>(null);
+  const [changeReason, setChangeReason] = useState('');
+  // A live event with tickets out whose time moves by 30 minutes or more: holders hear, and buyers can take a refund.
+  const live = e.status === 'PUBLISHED' && e.ticketTypes.some((t) => t.sold > 0);
+  const far = (a: string, b: string) => Math.abs(Date.parse(a) - Date.parse(b)) >= 30 * 60_000;
+  const timeMoved =
+    live &&
+    mode === mode0 &&
+    (mode === 'SINGLE'
+      ? !!date && !!time && far(wallIso(date, time), e.startsAt)
+      : dates.some((d) => d.id && !d.cancelled && d.date && d.start && dates0.some((x) => x.id === d.id && far(wallIso(d.date, d.start), x.startsAt))));
+  const pendingEdit = !!e.pendingEdit && ['title', 'subtitle', 'imageUrl', 'media'].some((k) => k in (e.pendingEdit as object));
   // The schedule. "Who can book" names ticket types by the form's tier keys (a tier's first copy id); the API's ids
   // and DATES tier keys map back to them.
   const tierKeyOf = (raw: string) => {
@@ -349,7 +360,14 @@ function Editor({ e, admin, schedule0 }: { e: OrgEventDetail; admin: boolean; sc
       if (cover && !uploaded && cover !== (e.imageUrl ?? '')) body.imageUrl = cover;
       Object.assign(body, donationChanges(donations, e));
       if (limit !== (e.compLimit ?? null)) body.compLimit = limit;
-      const res = Object.keys(body).length ? await api<{ dates?: EventDate[] }>(path, { method: 'PATCH', body }) : null;
+      if (timeMoved && changeReason.trim()) body.changeReason = changeReason.trim();
+      const res = Object.keys(body).length ? await api<{ dates?: EventDate[]; heldForReview?: string[]; dateChanges?: unknown[] }>(path, { method: 'PATCH', body }) : null;
+      // A live event: a new name, tagline or cover waits for Omoshow; a moved time is announced to ticket holders.
+      if (res?.heldForReview?.length) notes.push('Your new name, tagline or cover goes live once Omoshow checks it, usually within a day.');
+      if (res?.dateChanges?.length) {
+        notes.push('Ticket holders are being told about the new time, and buyers can get a refund if they can’t make it.');
+        setChangeReason('');
+      }
       // Multiple dates: a row's date id (new rows get theirs from the answer, matched by start).
       const savedDates = res?.dates ?? dates0;
       const idOf = (key: string) => {
@@ -515,6 +533,15 @@ function Editor({ e, admin, schedule0 }: { e: OrgEventDetail; admin: boolean; sc
       ) : null}
       {error ? <Notice icon="alert">{error}</Notice> : null}
 
+      {pendingEdit ? (
+        <Notice tone="warning" icon="clock" title="Waiting for Omoshow to check your changes">
+          Fans keep seeing the current name, tagline and cover until they’re approved, usually within a day.
+        </Notice>
+      ) : e.pendingEditNote ? (
+        <Notice icon="alert" title="Omoshow didn’t approve your last change">
+          “{e.pendingEditNote}”
+        </Notice>
+      ) : null}
       <View style={styles.card}>
         <Label>Details</Label>
         <Field label="Event name" value={title} onChangeText={setTitle} maxLength={120} error={errors.title} />
@@ -538,9 +565,9 @@ function Editor({ e, admin, schedule0 }: { e: OrgEventDetail; admin: boolean; sc
             today={today}
             keep={(d) => (mode0 === 'DATES' && d.id && e.ticketTypes.some((t) => t.eventDateId === d.id && t.sold > 0) ? 'This date has orders, so it can’t be removed. Cancel it instead.' : null)}
             extra={(d) =>
-              // Org admins can cancel one performance of a published run.
-              mode0 === 'DATES' && mode === 'DATES' && admin && d.id && !d.cancelled && e.status === 'PUBLISHED' ? (
-                <Button label="Cancel this date…" variant="danger" size="sm" icon="alert" onPress={() => setCancelling(d.id)} />
+              // Org admins can cancel one performance (or one day) of a published event, until it starts.
+              mode0 !== 'SINGLE' && mode === mode0 && admin && d.id && !d.cancelled && e.status === 'PUBLISHED' && d.date >= today ? (
+                <Button label={mode0 === 'DAYS' ? 'Cancel this day…' : 'Cancel this date…'} variant="danger" size="sm" icon="alert" onPress={() => setCancelling(d.id)} />
               ) : null
             }
           />
@@ -553,6 +580,12 @@ function Editor({ e, admin, schedule0 }: { e: OrgEventDetail; admin: boolean; sc
             </View>
           </>
         )}
+        {timeMoved ? (
+          <Notice tone="warning" icon="bell" title="Ticket holders will be told">
+            Their tickets keep working at the new time. Buyers who can’t make it can get a full refund for 14 days, or until the new start if that’s sooner.
+          </Notice>
+        ) : null}
+        {timeMoved ? <Field label="Reason (optional, sent to them)" value={changeReason} onChangeText={setChangeReason} maxLength={300} placeholder="e.g. The headliner’s flight was moved" /> : null}
         {!canSwitch && mode0 !== 'SINGLE' ? (
           <Txt variant="small" color={colors.dim}>
             {mode0 === 'DATES' ? 'Multiple dates' : 'Multi-day event'}: tickets have sold, so this can’t change to another kind of event.

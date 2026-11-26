@@ -437,7 +437,12 @@ export type Ticket = Dated & {
   guarantee?: TicketGuarantee | null;
   /** the sessions this ticket has booked (lib/schedule.ts), by time; older APIs and saved copies leave it out */
   sessions?: BookedSession[];
+  /** the event (or this ticket's date or day) moved since it was bought; `refundable`: this account can still take a full refund */
+  dateChange?: DateChange | null;
 };
+
+/** GET /me/tickets `dateChange` */
+export type DateChange = { id: string; fromStartsAt: string; toStartsAt: string; reason: string | null; refundUntil: string; refundable: boolean; refundCents: number };
 
 /* ---------- the Omoshow Guarantee (the scan guarantee) ---------- */
 

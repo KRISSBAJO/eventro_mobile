@@ -24,6 +24,8 @@ export function CancelDateSheet({ eventId, dateId, onClose, onDone }: { eventId:
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const p = preview.data;
+  /** a day of a multi-day event */
+  const day = p?.partial !== undefined;
   const reasonOk = reason.trim().length >= 10;
   const refunds = (p?.refundCents ?? []).filter((r) => r.cents > 0);
   const refundText = refunds.length ? refunds.map((r) => money(r.cents, r.currency)).join(' + ') : '';
@@ -67,12 +69,23 @@ export function CancelDateSheet({ eventId, dateId, onClose, onDone }: { eventId:
                 </Notice>
               ) : null}
               <View style={styles.lines}>
-                <Line big={num(p.paidOrders)} text={`paid ${p.paidOrders === 1 ? 'order' : 'orders'} for this date refunded in full${refundText ? ` (${refundText})` : ''}`} />
-                <Line big={num(p.tickets)} text={`${p.tickets === 1 ? 'ticket stops' : 'tickets stop'} working`} />
+                {day && p.partial ? (
+                  <>
+                    <Line big={num(p.paidOrders)} text={`paid ${p.paidOrders === 1 ? 'order' : 'orders'} refunded${refundText ? ` (${refundText})` : ''}: tickets for this day only in full, passes this day’s share`} />
+                    <Line big={num(p.partial)} text={`${p.partial === 1 ? 'pass keeps' : 'passes keep'} working on the other days`} />
+                  </>
+                ) : (
+                  <>
+                    <Line big={num(p.paidOrders)} text={`paid ${p.paidOrders === 1 ? 'order' : 'orders'} for this ${day ? 'day' : 'date'} refunded in full${refundText ? ` (${refundText})` : ''}`} />
+                    <Line big={num(p.tickets)} text={`${p.tickets === 1 ? 'ticket stops' : 'tickets stop'} working`} />
+                  </>
+                )}
                 {p.resaleListings ? <Line big={num(p.resaleListings)} text={`resale ${p.resaleListings === 1 ? 'listing' : 'listings'} closed`} /> : null}
               </View>
               <Txt variant="small" color={colors.muted}>
-                Sales for this date stop straight away and buyers are emailed with your reason. Other dates aren’t affected. This can’t be undone.
+                {day
+                  ? 'Nobody can check in on this day, and buyers are emailed with your reason. Other days aren’t affected. This can’t be undone.'
+                  : 'Sales for this date stop straight away and buyers are emailed with your reason. Other dates aren’t affected. This can’t be undone.'}
               </Txt>
               <Field
                 label="Reason (sent to buyers)"
