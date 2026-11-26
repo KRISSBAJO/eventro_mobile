@@ -394,7 +394,7 @@ export function TextArea({
             accessibilityActions={[{ name: 'increment' }, { name: 'decrement' }]}
             onAccessibilityAction={(e) => setManual(clamp(height + (e.nativeEvent.actionName === 'increment' ? 80 : -80)))}
             hitSlop={10}
-            style={[styles.grip, Platform.OS === 'web' && ({ cursor: 'ns-resize' } as ViewStyle)]}>
+            style={[styles.grip, Platform.OS === 'web' && ({ cursor: 'ns-resize' } as unknown as ViewStyle)]}>
             <View style={[styles.gripBar, dragging && { backgroundColor: colors.accent }]} />
             <View style={[styles.gripBar, { width: 14 }, dragging && { backgroundColor: colors.accent }]} />
           </View>
