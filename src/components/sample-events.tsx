@@ -274,16 +274,14 @@ export function SampleEvents({ events }: { events: EventCard[] }) {
   return (
     <View style={{ gap: space.md, marginVertical: space.lg }}>
       <View style={{ paddingHorizontal: gutter }}>
-        <Txt variant="h2" accessibilityRole="header">Sample events</Txt>
-        <Txt variant="small" color={colors.muted}>Explore the website’s sample catalog.</Txt>
+        <Txt variant="h2" accessibilityRole="header">Upcoming events</Txt>
       </View>
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: gutter, gap: space.md }}>
         {events.map(e => (
-          <Pressable key={e.slug} accessibilityRole="link" accessibilityLabel={e.title + ', sample event, view on website'}
+          <Pressable key={e.slug} accessibilityRole="link" accessibilityLabel={e.title + ', view event details'}
             onPress={() => void WebBrowser.openBrowserAsync(WEB_URL + '/events/' + encodeURIComponent(e.slug)).catch(() => Alert.alert('Couldn’t open event', 'Please try again.'))}
             style={{ width: 215, gap: 4 }}>
             <Image source={{ uri: e.imageUrl ?? undefined }} style={{ height: 128, borderRadius: radius.card, backgroundColor: colors.surface2 }} contentFit="cover" />
-            <Txt variant="tiny" color={colors.accent}>Sample</Txt>
             <Txt variant="bodyStrong">{e.title}</Txt>
             <Txt variant="small" color={colors.muted}>{when(e.startsAt).short} · {cityOnly(e.city)}</Txt>
           </Pressable>
