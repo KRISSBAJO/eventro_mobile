@@ -442,7 +442,7 @@ export type Ticket = Dated & {
 };
 
 /** GET /me/tickets `dateChange` */
-export type DateChange = { id: string; fromStartsAt: string; toStartsAt: string; reason: string | null; refundUntil: string; refundable: boolean; refundCents: number };
+export type DateChange = { id: string; fromStartsAt: string; toStartsAt: string; reason: string | null; refundUntil: string; refundable: boolean; refundCents: number; whole?: boolean };
 
 /* ---------- the Omoshow Guarantee (the scan guarantee) ---------- */
 

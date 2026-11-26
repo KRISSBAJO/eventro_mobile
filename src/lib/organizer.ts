@@ -261,7 +261,7 @@ export type Payouts = {
   payoutMethod: { provider: 'stripe' | 'paystack'; bankLast4: string | null; bankName: string | null; accountName: string | null; country: string | null; updatedAt: string | null } | null;
   holdUntil: string | null;
   /** amountCents = ticketCents + donationCents (older APIs send amountCents only) */
-  history: { salesDate: string; amountCents: number; ticketCents?: number; donationCents?: number; status: 'PAID' }[];
+  history: { salesDate: string; amountCents: number; ticketCents?: number; donationCents?: number; owedCents?: number; status: 'PAID' }[];
   /** donations inside pendingCents / nextPayoutCents, and the last 31 days' (net) */
   pendingDonationCents?: number;
   nextPayoutDonationCents?: number;
@@ -269,6 +269,11 @@ export type Payouts = {
   donationNote?: string;
   /** all-time donation refunds made after the organizer had been paid for the order: owed to Omoshow (0 normally) */
   donationOwedCents?: number;
+  /** owed to Omoshow (refunds of orders already paid out), taken from today's and the next payout (already inside them) */
+  pendingOwedCents?: number;
+  nextPayoutOwedCents?: number;
+  /** owed and not yet covered by sales: it comes out of the next ones */
+  owedOutstandingCents?: number;
 };
 
 /** GET /organizer/events/:id/price-drops */

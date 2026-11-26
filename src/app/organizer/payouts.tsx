@@ -3,7 +3,8 @@
  * 30 days (GET /organizer/orgs/:orgId/payouts). Setting up or changing the bank account happens only on the website
  * (Stripe Connect or Paystack): the app never asks for bank details. Donations fans added at checkout are paid out
  * with the tickets but shown as their own line (no Omoshow fee on them); the organizer passes them to the cause.
- * A donation refunded after the organizer had been paid for its order is owed to Omoshow (`donationOwedCents`).
+ * Refunds of orders the organizer had already been paid for (a cancelled or moved date, a refunded donation) are owed
+ * to Omoshow: their share comes out of the next payouts, shown on each day (`owedCents`) and as what's still to come.
  */
 import { useLocalSearchParams } from 'expo-router';
 import { StyleSheet, View } from 'react-native';
@@ -52,13 +53,13 @@ export default function PayoutsScreen() {
           <StatTile
             label="Next payout"
             value={money(d.nextPayoutCents, d.currency, { decimals: true })}
-            sub={d.nextPayoutDonationCents ? `${next}. Includes ${money(d.nextPayoutDonationCents, d.currency, { decimals: true })} in donations.` : next}
+            sub={`${[next, d.nextPayoutDonationCents ? `Includes ${money(d.nextPayoutDonationCents, d.currency, { decimals: true })} in donations` : '', d.nextPayoutOwedCents ? `After ${money(d.nextPayoutOwedCents, d.currency, { decimals: true })} owed to Omoshow` : ''].filter(Boolean).join('. ')}.`}
             tone="success"
           />
           <StatTile
             label="Today so far"
             value={money(d.pendingCents, d.currency, { decimals: true })}
-            sub={`Today’s sales after the 3.5% fee${d.pendingDonationCents ? `, plus ${money(d.pendingDonationCents, d.currency, { decimals: true })} in donations (no fee)` : ''}${d.converted ? `, in ${d.currency}` : ''}`}
+            sub={`Today’s sales after the 3.5% fee${d.pendingDonationCents ? `, plus ${money(d.pendingDonationCents, d.currency, { decimals: true })} in donations (no fee)` : ''}${d.converted ? `, in ${d.currency}` : ''}${d.pendingOwedCents ? `, after ${money(d.pendingOwedCents, d.currency, { decimals: true })} owed to Omoshow` : ''}`}
           />
         </TileRow>
         {d.donationsCents || d.pendingDonationCents || d.nextPayoutDonationCents || d.history.some((h) => h.donationCents) ? (
@@ -70,10 +71,10 @@ export default function PayoutsScreen() {
             </Txt>
           </View>
         ) : null}
-        {d.donationOwedCents ? (
-          <Txt variant="small" color={colors.dim}>
-            {`${money(d.donationOwedCents, d.currency, { decimals: true })} owed to Omoshow for donations refunded after you’d been paid for those orders.`}
-          </Txt>
+        {d.owedOutstandingCents ? (
+          <Notice tone="warning" icon="cash" title={`${money(d.owedOutstandingCents, d.currency, { decimals: true })} owed to Omoshow`}>
+            Your share of refunds (cancelled or moved dates, refunded donations) on orders you’d already been paid for. It comes out of your next payouts.
+          </Notice>
         ) : null}
         <View style={styles.card}>
           <Label>Payout account</Label>
@@ -102,11 +103,17 @@ export default function PayoutsScreen() {
                 <View key={h.salesDate}>
                   {i ? <Divider style={{ marginLeft: space.lg }} /> : null}
                   <View style={styles.row}>
-                    <View style={{ flex: 1, gap: 2, paddingVertical: h.donationCents ? space.sm : 0 }}>
+                    <View style={{ flex: 1, gap: 2, paddingVertical: h.donationCents || h.owedCents ? space.sm : 0 }}>
                       <Txt>Sales on {day(h.salesDate)}</Txt>
-                      {h.donationCents ? (
+                      {h.donationCents || h.owedCents ? (
                         <Txt variant="tiny" color={colors.dim}>
-                          {`Tickets ${money(h.ticketCents ?? h.amountCents - h.donationCents, d.currency, { decimals: true })} · donations ${money(h.donationCents, d.currency, { decimals: true })}`}
+                          {[
+                            `Tickets ${money(h.ticketCents ?? h.amountCents - (h.donationCents ?? 0) + (h.owedCents ?? 0), d.currency, { decimals: true })}`,
+                            h.donationCents ? `donations ${money(h.donationCents, d.currency, { decimals: true })}` : '',
+                            h.owedCents ? `owed −${money(h.owedCents, d.currency, { decimals: true })}` : '',
+                          ]
+                            .filter(Boolean)
+                            .join(' · ')}
                         </Txt>
                       ) : null}
                     </View>

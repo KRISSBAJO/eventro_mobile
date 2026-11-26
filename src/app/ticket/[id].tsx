@@ -330,8 +330,16 @@ function DateChangeBox({ t, change, offline }: { t: Ticket; change: NonNullable<
   const to = when(change.toStartsAt);
   const from = when(change.fromStartsAt);
   const amount = money(change.refundCents, ticketCurrency(t));
+  /** a multi-day pass: only the moved day's share comes back, and the pass keeps working */
+  const pass = change.whole === false;
   const refund = async () => {
-    const yes = await confirm({ title: `Refund ${amount}?`, message: 'Every ticket on this order is cancelled, and the money goes back to how you paid in 5–10 business days.', confirmLabel: 'Refund', cancelLabel: 'Keep my tickets', destructive: true });
+    const yes = await confirm({
+      title: `Refund ${amount}?`,
+      message: pass ? 'That day’s share goes back to how you paid in 5–10 business days. Your pass keeps working on the other days.' : 'Every ticket on this order is cancelled, and the money goes back to how you paid in 5–10 business days.',
+      confirmLabel: 'Refund',
+      cancelLabel: pass ? 'Keep it' : 'Keep my tickets',
+      destructive: !pass,
+    });
     if (!yes) return;
     setBusy(true);
     setProblem('');
@@ -339,7 +347,8 @@ function DateChangeBox({ t, change, offline }: { t: Ticket; change: NonNullable<
       await api(`/me/orders/${encodeURIComponent(t.orderId)}/date-change-refund`, { method: 'POST' });
       haptic.success();
       await qc.invalidateQueries({ queryKey: ['me', 'tickets'] });
-      router.back();
+      if (!pass) router.back();
+      else setBusy(false);
     } catch (e) {
       setProblem(errorText(e));
       setBusy(false);
@@ -358,7 +367,7 @@ function DateChangeBox({ t, change, offline }: { t: Ticket; change: NonNullable<
       {change.refundable && !offline ? (
         <>
           <Txt variant="small" color={colors.muted}>
-            Can’t make it? You can get a full refund of {amount} until {when(change.refundUntil).short}.
+            {pass ? `Can’t make that day? You can get its share back (${amount}) until ${when(change.refundUntil).short}.` : `Can’t make it? You can get a full refund of ${amount} until ${when(change.refundUntil).short}.`}
           </Txt>
           <Button label={busy ? 'Refunding…' : 'Get a refund'} variant="ghost" size="md" disabled={busy} onPress={() => void refund()} />
         </>
