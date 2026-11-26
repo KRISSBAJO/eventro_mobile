@@ -7,8 +7,9 @@ import { useState } from 'react';
 import { Pressable, RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Icon, Logo, type IconName } from '@/components/icons';
+import { WideCardSkeleton, WideEventCard } from '@/components/event-card';
 import { Rail } from '@/components/rail';
-import { Button, Chip, ErrorState, focusRing, Notice, SectionHeader, Skeleton, Txt } from '@/components/ui';
+import { Button, Chip, ErrorState, FadeIn, focusRing, Notice, SectionHeader, Skeleton, Txt } from '@/components/ui';
 import { errorText, isOffline } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { useFollowing } from '@/lib/following';
@@ -215,13 +216,29 @@ export default function Discover() {
         )}
       </View>
 
-      {/* Last minute: on in the next three days */}
+      {/* Last minute: on in the next three days. The three soonest as big cards, the rest behind See all. */}
       {lastMinute.isPending || soonItems.length ? (
         <View style={styles.section}>
           <View style={{ paddingHorizontal: gutter }}>
             <SectionHeader title="Last minute" action="See all" onAction={() => browse({ date: 'soon' })} />
           </View>
-          <Rail events={soonItems} loading={lastMinute.isPending} />
+          <View style={{ paddingHorizontal: gutter, gap: space.xl }}>
+            {lastMinute.isPending ? (
+              <WideCardSkeleton />
+            ) : (
+              soonItems.slice(0, 3).map((e, i) => (
+                <FadeIn key={e.slug} delay={i * 60}>
+                  <WideEventCard e={e} />
+                </FadeIn>
+              ))
+            )}
+            {soonItems.length > 3 ? (
+              <Pressable accessibilityRole="link" onPress={() => browse({ date: 'soon' })} style={({ pressed }) => [styles.more, pressed && { opacity: 0.7 }]}>
+                <Txt variant="bodyStrong">See all {soonItems.length} last-minute events</Txt>
+                <Icon name="arrowRight" size={18} color={colors.text} />
+              </Pressable>
+            ) : null}
+          </View>
         </View>
       ) : null}
 
@@ -333,6 +350,7 @@ function GuaranteeRow() {
 }
 
 const styles = StyleSheet.create({
+  more: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: space.sm, height: 50, borderRadius: radius.pill, borderWidth: 1, borderColor: colors.line2 },
   header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: gutter, gap: space.md, minHeight: 48 },
   place: { flexDirection: 'row', alignItems: 'center', alignSelf: 'flex-start', gap: 6, marginTop: space.md, marginHorizontal: gutter },
   avatar: { width: 40, height: 40, borderRadius: 20, backgroundColor: colors.surface2, alignItems: 'center', justifyContent: 'center' },

@@ -5,7 +5,8 @@
  */
 import { Image } from 'expo-image';
 import { router } from 'expo-router';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { Platform, Pressable, Share, StyleSheet, View } from 'react-native';
+import { WEB_URL } from '@/lib/api';
 import { cardWhen } from '@/lib/dates';
 import { haptic } from '@/lib/haptics';
 import { cityOnly, distanceLabel, money, when } from '@/lib/format';
@@ -33,6 +34,63 @@ function ResaleBadge({ glass }: { glass?: boolean }) {
       <Txt variant="tiny" color={glass ? colors.onImage : colors.accentHi} numberOfLines={1}>
         Resale
       </Txt>
+    </View>
+  );
+}
+
+/**
+ * A full-width card for a short list (Last minute on Discover): a wide photo, then the name with Share and the heart
+ * beside it, the date and place, and the price.
+ */
+export function WideEventCard({ e }: { e: Ev }) {
+  const cw = cardWhen(e);
+  const d = when(cw.startsAt);
+  const share = () => {
+    haptic.tap();
+    const url = `${WEB_URL}/events/${e.slug}`;
+    Share.share(Platform.OS === 'ios' ? { message: `${e.title} on Omoshow`, url } : { message: `${e.title} on Omoshow: ${url}` }).catch(() => undefined);
+  };
+  return (
+    <Pressable accessibilityRole="link" accessibilityLabel={a11y(e)} onPress={() => open(e.slug)} style={({ pressed }) => pressed && { opacity: 0.9 }}>
+      <View style={styles.wideMedia}>
+        <Image source={e.imageUrl ? { uri: e.imageUrl } : null} style={StyleSheet.absoluteFill} contentFit="cover" transition={250} recyclingKey={e.slug} />
+      </View>
+      <View style={styles.wideMeta}>
+        <View style={{ flex: 1, gap: 3 }}>
+          <Txt variant="h3" numberOfLines={2}>
+            {e.title}
+          </Txt>
+          <Txt variant="body" color={colors.muted} numberOfLines={1}>
+            {d.short} · {d.time} · {e.venue || 'Online'}
+          </Txt>
+          <Txt variant="bodyStrong" style={{ marginTop: 2 }}>
+            {e.fromCents === 0 ? 'Free' : `From ${money(e.fromCents, e.currency)}`}
+            {cw.more ? (
+              <Txt variant="small" color={colors.muted}>
+                {`  ·  ${cw.more}`}
+              </Txt>
+            ) : null}
+          </Txt>
+        </View>
+        <View style={styles.wideActions}>
+          <Pressable accessibilityRole="button" accessibilityLabel={`Share ${e.title}`} hitSlop={8} onPress={share} style={({ pressed }) => [styles.wideAction, pressed && { opacity: 0.6 }]}>
+            <Icon name="share" size={17} color={colors.text} />
+          </Pressable>
+          <HeartButton card={e} size={36} />
+        </View>
+      </View>
+    </Pressable>
+  );
+}
+
+export function WideCardSkeleton() {
+  return (
+    <View>
+      <Skeleton height={190} radius={radius.card} />
+      <View style={{ gap: 6, paddingTop: space.md }}>
+        <Skeleton height={20} width="80%" />
+        <Skeleton height={14} width="55%" />
+      </View>
     </View>
   );
 }
@@ -154,6 +212,10 @@ const styles = StyleSheet.create({
   largeMedia: { aspectRatio: 1.25, borderRadius: radius.card, overflow: 'hidden', backgroundColor: colors.surface2 },
   largeHeart: { position: 'absolute', top: 10, right: 10 },
   largeMeta: { gap: 2, paddingTop: space.md },
+  wideMedia: { aspectRatio: 2, borderRadius: radius.card, overflow: 'hidden', backgroundColor: colors.surface2 },
+  wideMeta: { flexDirection: 'row', alignItems: 'flex-start', gap: space.md, paddingTop: space.md },
+  wideActions: { flexDirection: 'row', alignItems: 'center', gap: space.sm, marginTop: -2 },
+  wideAction: { width: 36, height: 36, borderRadius: 18, borderWidth: 1, borderColor: colors.line2, alignItems: 'center', justifyContent: 'center' },
   resale: { flexDirection: 'row', alignItems: 'center', gap: 4, alignSelf: 'flex-start', paddingHorizontal: 7, paddingVertical: 2, borderRadius: radius.pill, borderWidth: 1, borderColor: colors.accentLine, backgroundColor: colors.accentSoft },
   resaleGlass: { marginBottom: 5, backgroundColor: colors.glass, borderColor: 'rgba(255,106,92,0.45)' },
   compact: {
