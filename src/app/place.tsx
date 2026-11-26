@@ -1,7 +1,9 @@
 /** Choose where you are: your precise position, a country or a city, or back to the automatic guess. */
+import * as Location from 'expo-location';
+import { sampleCatalog, availableSamples } from '@/components/sample-events';
 import { router } from 'expo-router';
 import { useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { Platform, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Icon } from '@/components/icons';
 import { Divider, IconButton, Notice, Skeleton, Txt } from '@/components/ui';
@@ -18,12 +20,14 @@ export default function PlacePicker() {
   const all = useAllEvents();
   const [locating, setLocating] = useState(false);
   const [error, setError] = useState('');
-  const options = placeOptions(all.data?.items ?? []);
+  const live = all.data?.items ?? [];
+  const options = placeOptions([...live, ...availableSamples(live)]);
+  const close = () => router.canGoBack() ? router.back() : router.replace('/');
 
   const pick = (p: Place | null) => {
     haptic.select();
     save(p);
-    router.back();
+    close();
   };
 
   const usePrecise = async () => {
@@ -32,7 +36,8 @@ export default function PlacePicker() {
     try {
       const { lat, lng } = await preciseLocation();
       haptic.success();
-      pick({ country: nearestCountry(all.data?.items ?? [], lat, lng) ?? place?.country ?? 'US', lat, lng, source: 'precise' });
+      const address = Platform.OS === 'web' ? undefined : (await Location.reverseGeocodeAsync({ latitude: lat, longitude: lng }).catch(() => []))[0];
+      pick({ country: address?.isoCountryCode ?? nearestCountry([...live, ...sampleCatalog], lat, lng) ?? place?.country ?? '', city: address?.city ?? undefined, lat, lng, source: 'precise' });
     } catch (e) {
       haptic.warning();
       setError(errorText(e));
@@ -49,7 +54,7 @@ export default function PlacePicker() {
         <Txt variant="h2" accessibilityRole="header">
           Your location
         </Txt>
-        <IconButton icon="close" label="Close" onPress={() => router.back()} />
+        <IconButton icon="close" label="Close" onPress={close} />
       </View>
       <ScrollView contentContainerStyle={{ paddingHorizontal: gutter, paddingBottom: insets.bottom + space.xxxl, gap: space.md }}>
         <Pressable accessibilityRole="button" accessibilityLabel="Use my precise location" disabled={locating} onPress={usePrecise} style={({ pressed }) => [styles.precise, pressed && { backgroundColor: colors.surface2 }]}>
@@ -67,15 +72,15 @@ export default function PlacePicker() {
         {error ? <Notice tone="warning">{error}</Notice> : null}
 
         <Txt variant="eyebrow" color={colors.dim} style={{ marginTop: space.lg }}>
-          Or pick a place
+          Pick a city or country
         </Txt>
-        {all.isPending ? (
+        {all.isPending && !options.length ? (
           <View style={{ gap: space.md }}>
             <Skeleton height={48} />
             <Skeleton height={48} />
             <Skeleton height={48} />
           </View>
-        ) : all.error ? (
+        ) : all.error && !options.length ? (
           <Notice tone="warning" action="Try again" onAction={() => all.refetch()}>
             {errorText(all.error)}
           </Notice>
