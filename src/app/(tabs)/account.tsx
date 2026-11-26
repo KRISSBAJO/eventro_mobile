@@ -4,11 +4,12 @@
  * approval), sign out, help and legal pages.
  */
 import Constants from 'expo-constants';
+import * as Updates from 'expo-updates';
 import { router } from 'expo-router';
 import * as WebBrowser from 'expo-web-browser';
-import { ScrollView, StyleSheet, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useState, type ReactNode } from 'react';
+import { useRef, useState, type ReactNode } from 'react';
 import { useConfirm } from '@/components/confirm';
 import { RequestCard } from '@/components/venue-owner';
 import { Button, Divider, Notice, Row, Txt } from '@/components/ui';
@@ -41,6 +42,38 @@ export default function Account() {
   const { place } = usePlace();
   const health = useHealth();
   const ask = useConfirm();
+  const updateBusy = useRef(false);
+  const [checkingUpdate, setCheckingUpdate] = useState(false);
+  const [updateMessage, setUpdateMessage] = useState('');
+  const checkForUpdate = async () => {
+    if (updateBusy.current) return;
+    updateBusy.current = true;
+    setCheckingUpdate(true);
+    setUpdateMessage('Checking for updates…');
+    try {
+      const check = await Updates.checkForUpdateAsync();
+      if (!check.isAvailable && !check.isRollBackToEmbedded) {
+        setUpdateMessage('You’re up to date.');
+        return;
+      }
+      setUpdateMessage('Downloading update…');
+      const result = await Updates.fetchUpdateAsync();
+      if (!result.isNew && !result.isRollBackToEmbedded) {
+        setUpdateMessage('You’re up to date.');
+        return;
+      }
+      setUpdateMessage('Update ready for the next launch.');
+      if (await ask({ title: 'Restart Omoshow?', message: 'Your update is ready.', confirmLabel: 'Restart now' })) {
+        await Updates.reloadAsync();
+      }
+    } catch {
+      setUpdateMessage('Couldn’t update. Check your connection and try again.');
+    } finally {
+      updateBusy.current = false;
+      setCheckingUpdate(false);
+    }
+  };
+
   const [signingOut, setSigningOut] = useState(false);
 
   // An in-app sheet, not Alert/window.confirm: the web build's confirm can be blocked (it then returns false at
@@ -211,6 +244,14 @@ export default function Account() {
         <Txt variant="mono" color={colors.dim}>
           Omoshow {Constants.expoConfig?.version ?? '1.0.0'}
         </Txt>
+        {Updates.isEnabled ? (
+          <View style={{ alignItems: 'center' }}>
+            <Pressable accessibilityRole="button" disabled={checkingUpdate} onPress={() => void checkForUpdate()} style={{ minHeight: 44, justifyContent: 'center', paddingHorizontal: 12 }}>
+              <Txt variant="bodyStrong" color={colors.accent}>Check for updates</Txt>
+            </Pressable>
+            {updateMessage ? <Txt variant="tiny" accessibilityLiveRegion="polite" color={colors.dim}>{updateMessage}</Txt> : null}
+          </View>
+        ) : null}
         {health.data?.payments === 'mock' ? (
           <Txt variant="tiny" color={colors.dim}>
             Test mode: payments are simulated
