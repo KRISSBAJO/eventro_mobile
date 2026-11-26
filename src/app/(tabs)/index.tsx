@@ -9,14 +9,14 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Icon, Logo, type IconName } from '@/components/icons';
 import { WideCardSkeleton, WideEventCard } from '@/components/event-card';
 import { Rail } from '@/components/rail';
-import { Button, Chip, ErrorState, FadeIn, focusRing, Notice, SectionHeader, Skeleton, Txt } from '@/components/ui';
+import { Chip, ErrorState, FadeIn, focusRing, SectionHeader, Skeleton, Txt } from '@/components/ui';
 import { errorText, isOffline } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { useFollowing } from '@/lib/following';
 import { BROWSE_CATEGORIES, CATEGORY_NAME, cityOnly, countryName } from '@/lib/format';
 import { openGuaranteeTerms } from '@/lib/guarantee';
-import { haptic } from '@/lib/haptics';
-import { nearestCountry, placeLabel, placeOptions, preciseLocation, rankNear, usePlace } from '@/lib/place';
+import { availableSamples, SampleEvents } from '@/components/sample-events';
+import { placeLabel, placeOptions, rankNear, usePlace } from '@/lib/place';
 import { useAllEvents, useEventsBetween, useEventsNear, useJustAnnounced, useLastMinute, useTrendingEvents } from '@/lib/queries';
 import { colors, gutter, radius, space } from '@/theme';
 
@@ -56,7 +56,7 @@ const initialsOf = (name: string) =>
 export default function Discover() {
   const insets = useSafeAreaInsets();
   const { user } = useAuth();
-  const { place, ready, save } = usePlace();
+  const { place, ready } = usePlace();
   const all = useAllEvents();
   const near = useEventsNear(place?.lat, place?.lng);
   const weekend = useEventsBetween('weekend');
@@ -66,10 +66,8 @@ export default function Discover() {
   const following = useFollowing(user?.id);
   const followed = following.data?.events ?? [];
   const [refreshing, setRefreshing] = useState(false);
-  const [locating, setLocating] = useState(false);
-  const [locError, setLocError] = useState('');
-
   const events = all.data?.items ?? [];
+  const samples = rankNear(availableSamples(events), place).map(r => r.event);
   const ranked = rankNear(place?.lat !== undefined && near.data ? near.data.items : events, place);
   const local = ranked.filter((r) => r.tier === 'city' || r.tier === 'country');
   const inCity = ranked.filter((r) => r.tier === 'city');
@@ -87,21 +85,6 @@ export default function Discover() {
     setRefreshing(true);
     await Promise.all([all.refetch(), weekend.refetch(), popular.refetch(), lastMinute.refetch(), announced.refetch(), place?.lat !== undefined ? near.refetch() : null]);
     setRefreshing(false);
-  };
-
-  const usePrecise = async () => {
-    setLocating(true);
-    setLocError('');
-    try {
-      const { lat, lng } = await preciseLocation();
-      save({ country: nearestCountry(events, lat, lng) ?? place?.country ?? 'US', lat, lng, source: 'precise' });
-      haptic.success();
-    } catch (e) {
-      setLocError(errorText(e));
-      haptic.warning();
-    } finally {
-      setLocating(false);
-    }
   };
 
   const soonItems = lastMinute.data?.items ?? [];
@@ -140,7 +123,7 @@ export default function Discover() {
         style={({ pressed }) => [styles.place, pressed && { opacity: 0.6 }]}>
         <Icon name={place?.source === 'precise' ? 'locate' : 'pin'} size={18} color={colors.text} />
         <Txt variant="h3" numberOfLines={1} style={{ flexShrink: 1 }}>
-          {!ready ? '…' : !place ? 'Choose a city' : place.source === 'precise' ? 'Near you' : place.city ? cityOnly(place.city) : countryName(place.country)}
+          {!ready ? '…' : !place ? 'Choose a city' : place.city ? cityOnly(place.city) : place.source === 'precise' ? 'Near you' : countryName(place.country)}
         </Txt>
         <Icon name="chevronDown" size={16} color={colors.text} />
       </Pressable>
@@ -175,7 +158,7 @@ export default function Discover() {
       </ScrollView>
 
       {/* Near you */}
-      <View style={styles.section}>
+      <View style={!ready || all.isPending || all.error || (place && local.length) ? styles.section : undefined}>
         {!ready || all.isPending ? (
           <>
             <View style={{ paddingHorizontal: gutter, marginBottom: space.md }}>
@@ -185,19 +168,7 @@ export default function Discover() {
           </>
         ) : all.error && !events.length ? (
           <ErrorState message={isOffline(all.error) ? 'You’re offline. Pull down to try again when you’re back online.' : errorText(all.error)} onRetry={() => all.refetch()} />
-        ) : !place || !local.length ? (
-          <View style={{ paddingHorizontal: gutter, gap: space.xs }}>
-            <Txt variant="h2">{place ? `Nothing on in ${countryName(place.country)} yet` : 'See what’s on near you'}</Txt>
-            <Txt variant="small" color={colors.muted}>
-              {place ? 'Try another city, or browse what’s popular below.' : 'Share your location or pick a city to put the closest events first.'}
-            </Txt>
-            <View style={{ flexDirection: 'row', gap: space.sm, marginTop: space.md }}>
-              <Button label={locating ? 'Finding you…' : 'Use my location'} icon="locate" loading={locating} size="md" onPress={usePrecise} />
-              <Button label="Pick a city" variant="ghost" size="md" onPress={() => router.push('/place')} />
-            </View>
-            {locError ? <Notice tone="warning">{locError}</Notice> : null}
-          </View>
-        ) : (
+        ) : !place || !local.length ? null : (
           <>
             <View style={{ paddingHorizontal: gutter }}>
               <SectionHeader
@@ -207,14 +178,11 @@ export default function Discover() {
               />
             </View>
             <Rail events={shown.map((r) => r.event)} distances={distances} />
-            {locError ? (
-              <View style={{ paddingHorizontal: gutter, marginTop: space.md }}>
-                <Notice tone="warning">{locError}</Notice>
-              </View>
-            ) : null}
           </>
         )}
       </View>
+
+      <SampleEvents events={samples} />
 
       {/* Last minute: on in the next three days. The three soonest as big cards, the rest behind See all. */}
       {lastMinute.isPending || soonItems.length ? (

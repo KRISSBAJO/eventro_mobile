@@ -7,10 +7,13 @@ import { CompactCardSkeleton, CompactEventCard } from '@/components/event-card';
 import { Icon } from '@/components/icons';
 import { OptionSheet, type SheetOption } from '@/components/option-sheet';
 import { Chip, EmptyState, ErrorState, focusRing, NO_OUTLINE, Txt } from '@/components/ui';
-import { errorText, isOffline } from '@/lib/api';
+import { api as requestApi, errorText, isOffline } from '@/lib/api';
 import { BROWSE_CATEGORIES, CATEGORY_NAME, DATE_RANGES, currencyForCountry, currencySymbol, flag, num, type DateRange } from '@/lib/format';
 import { haptic } from '@/lib/haptics';
 import { placeOptions, usePlace } from '@/lib/place';
+import { useQuery } from '@tanstack/react-query';
+
+import { availableSamples, matchSamples, SampleEvents } from '@/components/sample-events';
 import { NO_FILTERS, useAllEvents, useEventSearch, type SearchFilters } from '@/lib/queries';
 import type { Category } from '@/lib/types';
 import { colors, gutter, radius, space, type } from '@/theme';
@@ -76,7 +79,11 @@ export default function Search() {
 
   const search = useEventSearch(f);
   const all = useAllEvents();
-  const places = placeOptions(all.data?.items ?? []);
+  const live = all.data?.items ?? [];
+  const catalog = availableSamples(live);
+  const places = placeOptions([...live, ...catalog]);
+  const rates = useQuery({ queryKey: ['fx', 'sample-rates'], queryFn: () => requestApi<{rates: Record<string, number>}>('/fx/rates'), enabled: f.maxPrice !== null && f.currency !== 'USD', staleTime: 3600000 });
+  const samples = matchSamples(catalog, f, f.currency === 'USD' ? 1 : rates.data?.rates[f.currency]);
   const country = places.find((c) => c.code === f.country);
   // Prices are picked in the visitor's currency; a chosen limit keeps the currency it was picked in.
   const steps = PRICE_STEPS[visitorCurrency] ?? [25, 50, 100, 200];
@@ -84,7 +91,7 @@ export default function Search() {
   const limitLabel = f.maxPrice !== null ? `Under ${currencySymbol(f.currency)}${num(f.maxPrice)}` : 'Any price';
 
   const items = search.data?.pages.flatMap((p) => p.items) ?? [];
-  const total = search.data?.pages[0]?.total ?? 0;
+  const total = (search.data?.pages[0]?.total ?? 0) + samples.length;
   const set = (patch: Partial<SearchFilters>) => setF((cur) => ({ ...cur, ...patch }));
   const active = !!(f.q || f.category || f.country || f.date !== 'any' || f.maxPrice !== null || f.sort !== 'date');
   const clearAll = () => {
@@ -203,7 +210,7 @@ export default function Search() {
           ) : search.error ? (
             <ErrorState message={isOffline(search.error) ? 'You’re offline. Try again when you’re back online.' : errorText(search.error)} onRetry={() => search.refetch()} />
           ) : (
-            <EmptyState
+            samples.length ? <></> : <EmptyState
               icon="search"
               title="No results"
               body={active ? 'Nothing matches those filters. Try a wider date range, another city or fewer filters.' : 'No events are on sale right now. Check back soon.'}
@@ -212,7 +219,7 @@ export default function Search() {
             />
           )
         }
-        ListFooterComponent={search.isFetchingNextPage ? <ActivityIndicator color={colors.accent} style={{ marginVertical: space.xl }} /> : undefined}
+        ListFooterComponent={<>{search.isFetchingNextPage ? <ActivityIndicator color={colors.accent} style={{ marginVertical: space.xl }} /> : null}<SampleEvents events={samples} /></>}
       />
 
       <OptionSheet
