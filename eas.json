@@ -18,10 +18,15 @@
       "env": {
         "EXPO_PUBLIC_API_URL": "https://api.omoshow.com/api/v1",
         "EXPO_PUBLIC_WEB_URL": "https://omoshow.com"
-      }
+      },
+      "channel": "production"
     }
   },
   "submit": {
-    "production": {}
+    "production": {
+      "ios": {
+        "ascAppId": "6839389842"
+      }
+    }
   }
 }
