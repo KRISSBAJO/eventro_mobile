@@ -265,7 +265,8 @@ export function Field({ label, error, hint, secure, style, inputStyle, ...input 
       <Txt variant="smallStrong" color={colors.muted}>
         {label}
       </Txt>
-      <View style={[styles.inputWrap, focused && focusRing, !!error && { borderColor: colors.accent }]}>
+      {/* collapsable={false}: the focus glow adds a shadow, and without this iOS re-nests the text box when it appears, which drops focus and closes the keyboard. */}
+      <View collapsable={false} style={[styles.inputWrap, focused && focusRing, !!error && { borderColor: colors.accent }]}>
         <TextInput
           placeholderTextColor={colors.dim}
           selectionColor={colors.accent}
@@ -362,7 +363,8 @@ export function TextArea({
       <Txt variant="smallStrong" color={colors.muted}>
         {label}
       </Txt>
-      <View style={[styles.areaWrap, (focused || dragging) && focusRing, !!error && { borderColor: colors.accent }]}>
+      {/* collapsable={false}: see Field (keeps the keyboard open when the glow appears). */}
+      <View collapsable={false} style={[styles.areaWrap, (focused || dragging) && focusRing, !!error && { borderColor: colors.accent }]}>
         <TextInput
           multiline
           value={value}
@@ -466,7 +468,11 @@ const NATIVE_DRIVER = Platform.OS !== 'web';
 /** On web, hides the browser's own focus outline, which would draw over the focus ring below. */
 export const NO_OUTLINE = (Platform.OS === 'web' ? { outlineStyle: 'none' } : {}) as TextStyle;
 
-/** The field being typed in: an orange edge with a soft orange glow, like the buttons. */
+/**
+ * The field being typed in: an orange edge with a soft orange glow, like the buttons. A View that wraps a TextInput
+ * and takes this on focus must set collapsable={false}: the shadow changes how the native views nest, and moving a
+ * focused text box makes iOS close the keyboard straight away.
+ */
 export const focusRing: ViewStyle = {
   borderColor: colors.accent,
   shadowColor: colors.accent,
