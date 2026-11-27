@@ -114,7 +114,8 @@ export default function EventDashboard() {
   })();
   const cancelled = e.status === 'CANCELLED';
   const draft = e.status === 'DRAFT' || e.status === 'REJECTED';
-  const canPause = editor && e.status === 'PUBLISHED' && st !== 'Ended';
+  // A postponed event's sales stay paused until it has a date again (Postpone screen).
+  const canPause = editor && e.status === 'PUBLISHED' && st !== 'Ended' && !e.postponedAt;
   const recentDays = (s?.daily ?? []).slice(-30);
   const anySales = recentDays.some((x) => x.tickets > 0);
   const vb = e.venueBooking ?? null;
@@ -243,6 +244,10 @@ export default function EventDashboard() {
       ) : e.status === 'DRAFT' ? (
         <Notice tone="plain" icon="file" title="Draft">
           Only your team can see it. Submit it for review when it’s ready.
+        </Notice>
+      ) : e.postponedAt ? (
+        <Notice tone="warning" icon="clock" title="Postponed" action="Manage" onAction={() => router.push({ pathname: '/organizer/events/[id]/postpone', params: { id: e.id } })}>
+          {`New date to be announced${e.postponeReason ? `: “${e.postponeReason}”` : ''}. Sales are paused until you set the new date.`}
         </Notice>
       ) : cancelled ? (
         <Notice tone="accent" icon="alert" title="Cancelled">
@@ -475,6 +480,18 @@ export default function EventDashboard() {
           </>
         ) : null}
       </Group>
+
+      {isAdmin(role) && !cancelled && (e.status === 'PUBLISHED' || e.postponedAt) && st !== 'Ended' ? (
+        <View style={styles.card}>
+          <Label>{e.postponedAt ? 'Postponed' : 'Postpone'}</Label>
+          <Txt variant="small" color={colors.muted}>
+            {e.postponedAt
+              ? 'New date to be announced. Sales are paused and buyers can get a refund. Set the new date, or mark it back on.'
+              : 'Need a new date but don’t have one yet? Postponing pauses sales, keeps tickets valid and lets buyers get a refund.'}
+          </Txt>
+          <Button label={e.postponedAt ? 'Manage the postponement' : 'Postpone…'} icon="clock" variant="ghost" size="md" onPress={() => router.push({ pathname: '/organizer/events/[id]/postpone', params: { id: e.id } })} />
+        </View>
+      ) : null}
 
       {isAdmin(role) && !cancelled ? (
         <View style={[styles.card, { borderColor: colors.accentLine }]}>

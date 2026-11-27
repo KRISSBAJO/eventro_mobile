@@ -115,6 +115,9 @@ export type OrgEventDetail = DonationSettings & {
   /** a change to the live event's name, tagline or cover waiting for Omoshow to check it, and why the last one was turned down */
   pendingEdit?: { title?: string; subtitle?: string; imageUrl?: string | null; media?: unknown } | null;
   pendingEditNote?: string | null;
+  /** postponed: new date to be announced */
+  postponedAt?: string | null;
+  postponeReason?: string | null;
   id: string;
   orgId: string;
   slug: string;
@@ -322,6 +325,20 @@ export type Promo = { code: string; percent: number; limit: number | null; used:
 export type TeamMember = { id: string; email: string; role: OrgRole; status: 'ACTIVE' | 'INVITED'; user: { name: string } | null };
 
 /** GET /organizer/events/:id/cancel-preview */
+/** GET /organizer/events/:id/impact: who a change reaches, the postponement if any, and the changes told to holders. */
+export type EventImpact = {
+  paidOrders: number;
+  tickets: number;
+  comps: number;
+  transferred: number;
+  activeHolds: number;
+  pushAccounts: number;
+  paidCents: { currency: string; cents: number }[];
+  postponedAt?: string | null;
+  postponeReason?: string | null;
+  changes?: { id: string; kind: 'TIME' | 'POSTPONED' | 'PERKS'; createdAt: string; fromStartsAt: string; toStartsAt: string; reason: string | null; detail: { tier?: string; removed?: string[] } | null; emailed: number; failed: number }[];
+};
+
 export type CancelPreview = {
   id: string;
   title: string;
