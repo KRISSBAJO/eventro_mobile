@@ -8,6 +8,7 @@
  * your role and email until you edit it. A new venue that turns out to be on Omoshow already (409 VENUE_EXISTS) can be
  * claimed instead with the same role and note. `?slug=` (a venue page's "Claim this page") starts at claiming it.
  */
+import { LiveStats } from '@/components/live-stats';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Image } from 'expo-image';
 import { router, useLocalSearchParams } from 'expo-router';
@@ -656,6 +657,7 @@ function FindStep({
         </View>
       ) : (
         <View style={styles.perks}>
+          <LiveStats show={['venues', 'venueCities']} />
           {['Free to list, no commission', 'You set the price and hours', 'You approve every booking'].map((t) => (
             <View key={t} style={{ flexDirection: 'row', alignItems: 'center', gap: space.sm }}>
               <Icon name="check" size={15} color={colors.success} strokeWidth={2.6} />

@@ -29,7 +29,7 @@
  *
  * Schedule items keep their date and time of day: moving the event's date (or a date row) moves its items with it.
  */
-import { useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Image } from 'expo-image';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useState } from 'react';
@@ -67,6 +67,7 @@ import {
   wallParts,
   webPaths,
   type OrgEventDetail,
+  type EventImpact,
 } from '@/lib/organizer';
 import { useAuth } from '@/lib/auth';
 import { NO_PWYW, pwywBody, pwywDraftOf, pwywErrors, type PwywDraft } from '@/lib/pwyw';
@@ -106,6 +107,7 @@ export default function EditEvent() {
   const orgs = useMyOrgs(user?.id);
   const ev = useOrgEvent(id);
   const sched = useOrgSchedule(id);
+  const [now] = useState(() => Date.now());
   if (ev.isPending || orgs.isPending || sched.isPending) {
     return (
       <OrgScreen title="Edit event">
@@ -127,6 +129,8 @@ export default function EditEvent() {
       </OrgScreen>
     );
   }
+  // Cancelled or over: only the description can still be corrected (the API refuses the rest).
+  if (closedWhy(ev.data, now)) return <ClosedEditor e={ev.data} why={closedWhy(ev.data, now)!} />;
   // The form keeps its values across refetches; comparisons use the latest saved event.
   // A schedule that couldn't load is left alone (the card says so), so saving never wipes it.
   return <Editor key={ev.data.id} e={ev.data} admin={isAdmin(membershipOf(orgs.data, ev.data.orgId)?.role)} schedule0={sched.data?.items ?? null} />;
@@ -195,6 +199,32 @@ function Editor({ e, admin, schedule0 }: { e: OrgEventDetail; admin: boolean; sc
       ? !!date && !!time && far(wallIso(date, time), e.startsAt)
       : dates.some((d) => d.id && !d.cancelled && d.date && d.start && dates0.some((x) => x.id === d.id && far(wallIso(d.date, d.start), x.startsAt))));
   const pendingEdit = !!e.pendingEdit && ['title', 'subtitle', 'imageUrl', 'media'].some((k) => k in (e.pendingEdit as object));
+  // Who a time change reaches (the moved date on a multi-date event), shown with the warning.
+  const movedDateId = mode !== 'SINGLE' ? dates.find((d) => d.id && !d.cancelled && d.date && d.start && dates0.some((x) => x.id === d.id && far(wallIso(d.date, d.start), x.startsAt)))?.id : undefined;
+  const reach = useQuery({
+    queryKey: ['organizer', 'impact', e.id, movedDateId ?? null],
+    queryFn: () => api<EventImpact>(`/organizer/events/${encodeURIComponent(e.id)}/impact${movedDateId ? `?dateId=${encodeURIComponent(movedDateId)}` : ''}`),
+    enabled: timeMoved,
+    staleTime: 30_000,
+  });
+  const [withdrawing, setWithdrawing] = useState(false);
+  /** Takes back a change waiting for Omoshow's check: fans keep seeing the live version. */
+  const withdraw = async () => {
+    if (withdrawing) return;
+    setWithdrawing(true);
+    try {
+      await api(`/organizer/events/${encodeURIComponent(e.id)}/pending-edit`, { method: 'DELETE' });
+      haptic.success();
+      setTitle(e.title);
+      setSubtitle(e.subtitle ?? '');
+      setSaved('Change withdrawn. Fans keep seeing the version that’s live now.');
+      await qc.invalidateQueries({ queryKey: ['organizer'] });
+    } catch (err) {
+      setError(errorText(err));
+    } finally {
+      setWithdrawing(false);
+    }
+  };
   // The schedule. "Who can book" names ticket types by the form's tier keys (a tier's first copy id); the API's ids
   // and DATES tier keys map back to them.
   const tierKeyOf = (raw: string) => {
@@ -534,7 +564,7 @@ function Editor({ e, admin, schedule0 }: { e: OrgEventDetail; admin: boolean; sc
       {error ? <Notice icon="alert">{error}</Notice> : null}
 
       {pendingEdit ? (
-        <Notice tone="warning" icon="clock" title="Waiting for Omoshow to check your changes">
+        <Notice tone="warning" icon="clock" title="Waiting for Omoshow to check your changes" action={withdrawing ? 'Withdrawing…' : 'Withdraw the change'} onAction={() => void withdraw()}>
           Fans keep seeing the current name, tagline and cover until they’re approved, usually within a day.
         </Notice>
       ) : e.pendingEditNote ? (
@@ -584,6 +614,18 @@ function Editor({ e, admin, schedule0 }: { e: OrgEventDetail; admin: boolean; sc
           <Notice tone="warning" icon="bell" title="Ticket holders will be told">
             Their tickets keep working at the new time. Buyers who can’t make it can get a full refund for 14 days, or until the new start if that’s sooner.
           </Notice>
+        ) : null}
+        {timeMoved && reach.data ? (
+          <Txt variant="small">
+            {[
+              reach.data.paidOrders ? `${num(reach.data.paidOrders)} paid ${reach.data.paidOrders === 1 ? 'order' : 'orders'} (${num(reach.data.tickets - reach.data.comps)} tickets)` : 'No paid orders',
+              reach.data.comps ? `${num(reach.data.comps)} on the guest list` : '',
+              reach.data.transferred ? `${num(reach.data.transferred)} held by someone other than the buyer` : '',
+              reach.data.activeHolds ? `${num(reach.data.activeHolds)} checking out right now` : '',
+            ]
+              .filter(Boolean)
+              .join(' · ')}
+          </Txt>
         ) : null}
         {timeMoved ? <Field label="Reason (optional, sent to them)" value={changeReason} onChangeText={setChangeReason} maxLength={300} placeholder="e.g. The headliner’s flight was moved" /> : null}
         {!canSwitch && mode0 !== 'SINGLE' ? (
@@ -803,3 +845,52 @@ const styles = StyleSheet.create({
   addTier: { gap: space.md, padding: space.md, borderRadius: radius.md, borderWidth: 1, borderStyle: 'dashed', borderColor: colors.line2 },
   mini: { width: touch, height: touch, borderRadius: touch / 2, alignItems: 'center', justifyContent: 'center' },
 });
+
+/**
+ * Why an event can't be edited any more, or null: cancelled, or over (its last date's end, or 6 hours after the start
+ * when there's no end, has passed). Same rule as the API.
+ */
+function closedWhy(e: OrgEventDetail, now: number) {
+  if (e.status === 'CANCELLED') return 'This event was cancelled';
+  const live = (e.dates ?? []).filter((d) => d.status === 'ACTIVE');
+  const list = live.length ? live : [{ startsAt: e.startsAt, endsAt: e.endsAt ?? null }];
+  const end = Math.max(...list.map((d) => (d.endsAt ? Date.parse(d.endsAt) : Date.parse(d.startsAt) + 6 * 3_600_000)));
+  return end < now ? 'This event is over' : null;
+}
+
+/** A cancelled or finished event: only its description can still be corrected (the change is logged). */
+function ClosedEditor({ e, why }: { e: OrgEventDetail; why: string }) {
+  const qc = useQueryClient();
+  const [about, setAbout] = useState(e.description ?? '');
+  const [busy, setBusy] = useState(false);
+  const [saved, setSaved] = useState('');
+  const [error, setError] = useState('');
+  const save = async () => {
+    setBusy(true);
+    setError('');
+    try {
+      await api(`/organizer/events/${encodeURIComponent(e.id)}`, { method: 'PATCH', body: { description: about.trim() } });
+      haptic.success();
+      setSaved('Saved.');
+      await qc.invalidateQueries({ queryKey: ['organizer'] });
+    } catch (err) {
+      setError(errorText(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <OrgScreen title="Edit event" eyebrow={e.title} footer={<Button label="Save description" loading={busy} disabled={about.trim() === (e.description ?? '').trim()} onPress={() => void save()} />}>
+      <Notice tone="plain" icon="lock" title={why}>
+        Its name, dates, venue and tickets are part of the record now. You can still correct the description, and the change is kept in the event’s history.
+      </Notice>
+      {saved ? (
+        <Notice tone="success" icon="check">
+          {saved}
+        </Notice>
+      ) : null}
+      {error ? <Notice icon="alert">{error}</Notice> : null}
+      <TextArea label="Description" value={about} onChangeText={setAbout} maxLength={5000} placeholder="What should people know?" />
+    </OrgScreen>
+  );
+}

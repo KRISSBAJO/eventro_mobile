@@ -7,6 +7,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { router } from 'expo-router';
 import { useState } from 'react';
 import { View } from 'react-native';
+import { LiveStats } from '@/components/live-stats';
 import { OrgScreen } from '@/components/org-ui';
 import { Button, EmptyState, Field, Notice, Txt } from '@/components/ui';
 import { api, errorText } from '@/lib/api';
@@ -47,6 +48,7 @@ export default function StartSelling() {
         <EmptyState icon="lock" title="Sign in first" body="Your organizer profile belongs to your Omoshow account." action="Sign in" onAction={() => router.push('/sign-in')} />
       ) : (
         <View style={{ gap: space.lg }}>
+          <LiveStats show={['tickets', 'events', 'cities']} />
           <Txt color={colors.muted}>
             Set up your organizer profile. This is the name on your event pages and receipts. You can change it later, and add your logo and payout account on the website.
           </Txt>
