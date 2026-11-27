@@ -358,16 +358,22 @@ function DateChangeBox({ t, change, offline }: { t: Ticket; change: NonNullable<
     <View style={styles.moved}>
       <View style={{ gap: 4 }}>
         <Txt variant="bodyStrong">
-          New time: {to.short}, {to.time}
+          {change.kind === 'POSTPONED' ? 'Postponed: new date to be announced' : change.kind === 'PERKS' ? `${change.detail?.tier ?? 'Your ticket'} changed` : `New time: ${to.short}, ${to.time}`}
         </Txt>
         <Txt variant="small" color={colors.muted}>
-          Moved from {from.short}, {from.time}.{change.reason ? ` Reason given: “${change.reason}”.` : ''} Your ticket still works for the new time.
+          {change.kind === 'POSTPONED'
+            ? `${change.reason ? `Reason given: “${change.reason}”. ` : ''}Your ticket stays valid for the new date; we’ll tell you when it’s set.`
+            : change.kind === 'PERKS'
+              ? `It no longer includes ${(change.detail?.removed ?? []).join(', ')}. Your ticket still gets you in.`
+              : `Moved from ${from.short}, ${from.time}.${change.reason ? ` Reason given: “${change.reason}”.` : ''} Your ticket still works for the new time.`}
         </Txt>
       </View>
       {change.refundable && !offline ? (
         <>
           <Txt variant="small" color={colors.muted}>
-            {pass ? `Can’t make that day? You can get its share back (${amount}) until ${when(change.refundUntil).short}.` : `Can’t make it? You can get a full refund of ${amount} until ${when(change.refundUntil).short}.`}
+            {pass
+              ? `Can’t make that day? You can get its share back (${amount}) until ${when(change.refundUntil).short}.`
+              : `${change.kind === 'TIME' || !change.kind ? 'Can’t make it?' : 'Prefer your money back?'} You can get a full refund of ${amount} until ${when(change.refundUntil).short}.`}
           </Txt>
           <Button label={busy ? 'Refunding…' : 'Get a refund'} variant="ghost" size="md" disabled={busy} onPress={() => void refund()} />
         </>

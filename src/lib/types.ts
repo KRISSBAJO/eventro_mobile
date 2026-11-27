@@ -154,6 +154,9 @@ export type EventDetail = {
   status?: 'CANCELLED' | string;
   cancelledAt?: string | null;
   cancelReason?: string | null;
+  /** postponed: new date to be announced (tickets stay valid, sales paused) */
+  postponedAt?: string | null;
+  postponeReason?: string | null;
   preview?: boolean;
   presentedBy: string;
   /** The organizer's page (GET /organizers/:slug); slug is null only on old organizers before pages existed */
@@ -442,7 +445,11 @@ export type Ticket = Dated & {
 };
 
 /** GET /me/tickets `dateChange` */
-export type DateChange = { id: string; fromStartsAt: string; toStartsAt: string; reason: string | null; refundUntil: string; refundable: boolean; refundCents: number; whole?: boolean };
+export type DateChange = { id: string; fromStartsAt: string; toStartsAt: string; reason: string | null; refundUntil: string; refundable: boolean; refundCents: number; whole?: boolean;
+  /** TIME: a new time; POSTPONED: new date to be announced; PERKS: the tier lost something (detail: { tier, removed }) */
+  kind?: 'TIME' | 'POSTPONED' | 'PERKS';
+  detail?: { tier?: string; removed?: string[] } | null;
+};
 
 /* ---------- the Omoshow Guarantee (the scan guarantee) ---------- */
 

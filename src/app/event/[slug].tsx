@@ -220,6 +220,10 @@ function EventBody({ e, topBar, refetch, jumpToResale, dateParam }: { e: EventDe
     <Notice tone="accent" icon="alert" title="This event was cancelled">
       {`${e.cancelReason ? `${e.cancelReason} ` : ''}Everyone with tickets gets a full refund to the card they paid with.`}
     </Notice>
+  ) : e.postponedAt ? (
+    <Notice tone="warning" icon="clock" title="Postponed: new date to be announced">
+      {`${e.postponeReason ? `${e.postponeReason} ` : ''}Tickets aren’t on sale for now. If you have tickets, they stay valid for the new date, or you can get a refund from your ticket.`}
+    </Notice>
   ) : ended ? (
     <Notice tone="plain" icon="clock" title="This event has ended">
       Thanks to everyone who came. Browse what’s on next.
@@ -247,7 +251,7 @@ function EventBody({ e, topBar, refetch, jumpToResale, dateParam }: { e: EventDe
             <Pressable accessibilityRole="link" accessibilityLabel={`More ${CATEGORY_NAME[e.category] ?? e.category} events`} onPress={() => router.push({ pathname: '/category/[category]', params: { category: e.category } })} hitSlop={6}>
               <Badge label={CATEGORY_NAME[e.category] ?? e.category} tone="glass" />
             </Pressable>
-            {cancelled ? <Badge label="Cancelled" tone="accent" /> : null}
+            {cancelled ? <Badge label="Cancelled" tone="accent" /> : e.postponedAt ? <Badge label="Postponed" tone="warning" /> : null}
             {e.online ? <Badge label="Online" tone="glass" /> : null}
           </View>
           <Txt variant="h1" accessibilityRole="header">
