@@ -251,6 +251,7 @@ function Revealed({ gift, token, onStatus }: { gift: Gift; token: string; onStat
               <TierGlyph look={look} size={18} />
               <Txt variant="title" color={look.ink} numberOfLines={1} style={{ flex: 1 }}>
                 {qty} × {gift.ticketType?.name ?? 'Ticket'}
+                {gift.also?.length ? ` + ${gift.also.map((l) => `${l.quantity} × ${l.name}`).join(' + ')}` : ''}
               </Txt>
               {gift.ticketType?.badge ? <TierBadge label={gift.ticketType.badge} look={look} /> : null}
             </View>

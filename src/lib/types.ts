@@ -636,6 +636,8 @@ export type Gift = Dated & {
   event?: { slug: string; title: string; subtitle: string; startsAt: string; imageUrl: string | null; online: boolean; timezone: string | null; venue: { name: string; city: string | null } | null };
   ticketType?: { name: string; perks: string[] } & TierFields;
   quantity?: number;
+  /** a cart sent as a gift: its other ticket types, which open with this one */
+  also?: { quantity: number; name: string }[];
   seats?: { section: string | null; sectionName: string | null; row: string | null; seat: number | null }[];
   totalCents?: number;
   currency?: string;

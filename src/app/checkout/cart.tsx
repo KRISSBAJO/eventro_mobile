@@ -5,8 +5,9 @@
  * code and one payment, which the pay and verify endpoints take like an order id.
  *
  * Free and test-mode carts finish here; Paystack and the Stripe sheet work as in the one-type checkout; Stripe
- * without the in-app sheet hands the cart to the website's checkout. A cart can't be a gift (gifts are one ticket
- * type), and pay-what-you-want amounts are fixed when the cart is held.
+ * without the in-app sheet hands the cart to the website's checkout. A cart can carry a donation (on its first
+ * order) and be sent as a gift (one email, one claim for every ticket type). On a seat map each line gets the best
+ * seats together in its sections. Pay-what-you-want amounts are fixed when the cart is held.
  */
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { router, useLocalSearchParams } from 'expo-router';
@@ -16,14 +17,17 @@ import { KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Swit
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Image } from 'expo-image';
 import { CheckoutQuestions, answerList, questionProblem, type Answers } from '@/components/checkout-questions';
+import { AmountPicker } from '@/components/amount-picker';
 import { CheckoutSuccess } from '@/components/checkout-success';
+import { GiftOption, giftBody, giftErrors, NO_GIFT, type GiftDraft } from '@/components/gift-option';
 import { Icon } from '@/components/icons';
 import { Button, Card, EmptyState, ErrorState, Field, IconButton, Notice, Skeleton, Txt } from '@/components/ui';
 import { api, ApiError, errorText, WEB_URL } from '@/lib/api';
 import { emailOk, useAuth } from '@/lib/auth';
 import { NATIVE, openPaystack, providerFor, sleep } from '@/lib/checkout';
-import { ticketWhen } from '@/lib/dates';
-import { money } from '@/lib/format';
+import { ownTimes, ticketWhen } from '@/lib/dates';
+import { DONATION_NO_REFUND, DONATION_ON_BEHALF, donationLabel, donationProblem } from '@/lib/donations';
+import { instantOf, money } from '@/lib/format';
 import { haptic } from '@/lib/haptics';
 import { useHealth } from '@/lib/queries';
 import { payWithStripeSheet, stripeSheetAvailable } from '@/lib/stripe-sheet';
@@ -54,6 +58,8 @@ export default function CartCheckout() {
   const [answers, setAnswers] = useState<Answers>({});
   const [submitted, setSubmitted] = useState(false);
   const [protection, setProtection] = useState(false);
+  const [gift, setGift] = useState<GiftDraft>(NO_GIFT);
+  const [donation, setDonation] = useState<number | null>(0);
   const [promoInput, setPromoInput] = useState('');
   const [promo, setPromo] = useState<string | null>(null);
   const [promoError, setPromoError] = useState('');
@@ -86,18 +92,22 @@ export default function CartCheckout() {
   const testMode = health.data?.payments === 'mock' || provider === 'mock';
   const sum = holds ? holds.reduce((n, h) => n + (h.unitCents ?? h.ticketType.priceCents) * h.quantity, 0) : 0;
   const protect = protection && sum > 0;
+  // A donation to the event's cause (no fee on it); it rides on the cart's first order.
+  const dn = first?.event.donations ?? null;
+  const donationErr = dn ? donationProblem(donation, dn, currency) : null;
+  const donationCents = dn && donation && !donationErr ? donation : 0;
 
   const quote = useQuery({
-    queryKey: ['cart-quote', key, protect, promo],
-    queryFn: () => api<CartQuote>('/quote/cart', { body: { holdIds: ids, protection: protect, ...(promo ? { promoCode: promo } : {}) } }),
-    enabled: !!holds && !order,
+    queryKey: ['cart-quote', key, protect, promo, donationCents],
+    queryFn: () => api<CartQuote>('/quote/cart', { body: { holdIds: ids, protection: protect, ...(promo ? { promoCode: promo } : {}), ...(dn ? { donationCents } : {}) } }),
+    enabled: !!holds && !order && !donationErr,
     placeholderData: (prev) => prev,
     staleTime: Infinity,
     retry: (n, e) => n < 1 && !(e instanceof ApiError && e.status === 400),
   });
   const totals = quote.data;
-  const total = order?.totalCents ?? totals?.totalCents ?? sum;
-  const free = !!holds && (order ? order.totalCents === 0 : totals && !quote.isPlaceholderData ? totals.totalCents === 0 : sum === 0);
+  const total = order?.totalCents ?? totals?.totalCents ?? sum + donationCents;
+  const free = !!holds && (order ? order.totalCents === 0 : totals && !quote.isPlaceholderData ? totals.totalCents === 0 : sum === 0 && donationCents === 0);
   /** Stripe without the in-app sheet: the website takes the card (and asks its own questions). */
   const handsOff = provider === 'stripe' && !stripeSheetAvailable && !free;
 
@@ -107,8 +117,12 @@ export default function CartCheckout() {
 
   const errors = {
     name: name.trim().length < 2 ? 'Enter the name for the tickets.' : '',
-    email: !emailOk(email) ? 'Enter a valid email; your tickets go there.' : '',
+    email: !emailOk(email) ? (gift.on ? 'Enter a valid email; your receipt goes there.' : 'Enter a valid email; your tickets go there.') : '',
   };
+  // A gift has to arrive before the event starts (the venue's wall-clock time, in its zone).
+  const ownStart = first ? ownTimes(first, first.event).startsAt : '';
+  const eventStart = first ? (first.event.timezone ? instantOf(ownStart, first.event.timezone) : new Date(ownStart)).getTime() : 0;
+  const giftErr = giftErrors(gift, email, eventStart, now);
   const quantity = holds ? holds.reduce((n, h) => n + h.quantity, 0) : 0;
   // Each ticket in the cart's order, by name, for questions asked per ticket.
   const ticketNames = holds ? holds.flatMap((h) => Array.from({ length: h.quantity }, () => h.ticketType.name)) : [];
@@ -123,7 +137,7 @@ export default function CartCheckout() {
     }
     setPromoBusy(true);
     try {
-      const q = await api<CartQuote>('/quote/cart', { body: { holdIds: ids, promoCode: code, protection: protect } });
+      const q = await api<CartQuote>('/quote/cart', { body: { holdIds: ids, promoCode: code, protection: protect, ...(dn ? { donationCents } : {}) } });
       if (q.promo) {
         setPromo(q.promo.code);
         setPromoError('');
@@ -186,8 +200,13 @@ export default function CartCheckout() {
         return;
       }
       setSubmitted(true);
-      if (errors.name || errors.email) {
+      if (errors.name || errors.email || giftErr.name || giftErr.email || giftErr.at) {
         haptic.warning();
+        return;
+      }
+      if (!order && donationErr) {
+        haptic.warning();
+        setPayError(donationErr);
         return;
       }
       const unanswered = order ? '' : questionProblem(questions, answers, quantity);
@@ -207,6 +226,8 @@ export default function CartCheckout() {
             protection: protect,
             ...(promo ? { promoCode: promo } : {}),
             ...(questions.length ? { answers: answerList(answers) } : {}),
+            ...(dn ? { donationCents } : {}),
+            ...giftBody(gift),
             ...(NATIVE && provider === 'paystack' ? { returnTo: 'app' } : {}),
           },
         }));
@@ -356,7 +377,7 @@ export default function CartCheckout() {
                 </Notice>
               ) : null}
               <Field label="Name on the tickets" value={name} onChangeText={setName} autoComplete="name" textContentType="name" autoCapitalize="words" error={submitted ? errors.name : ''} editable={!order} />
-              <Field label="Email" value={email} onChangeText={setEmail} autoComplete="email" textContentType="emailAddress" keyboardType="email-address" autoCapitalize="none" autoCorrect={false} error={submitted ? errors.email : ''} hint="Your tickets and receipt go here." editable={!order} />
+              <Field label="Email" value={email} onChangeText={setEmail} autoComplete="email" textContentType="emailAddress" keyboardType="email-address" autoCapitalize="none" autoCorrect={false} error={submitted ? errors.email : ''} hint={gift.on ? 'Your receipt goes here. You can manage the gift from My tickets.' : 'Your tickets and receipt go here.'} editable={!order} />
               {first.event.minAge ? (
                 <Notice tone="plain" icon="alert">
                   {`This event is ${first.event.minAge}+. Everyone needs ID showing their age at the door.`}
@@ -377,6 +398,22 @@ export default function CartCheckout() {
                 showErrors={submitted}
                 disabled={!!order}
               />
+            ) : null}
+            {/* The whole cart as a gift: one email to them, one tap to claim every ticket. */}
+            {!order ? <GiftOption gift={gift} patch={(p) => setGift((g) => ({ ...g, ...p }))} errors={giftErr} show={submitted} eventStart={eventStart} now={now} /> : null}
+            {dn && !order ? (
+              <Card style={{ gap: space.md }}>
+                <View style={{ gap: 2 }}>
+                  <Txt variant="bodyStrong">Add a donation to {dn.cause}</Txt>
+                  <Txt variant="small" color={colors.muted}>
+                    {dn.description ? `${dn.description} ` : ''}Optional. No Omoshow fee is taken on it.
+                  </Txt>
+                </View>
+                <AmountPicker label="Donation" chips={dn.suggestedCents} none="No donation" value={donation} onChange={setDonation} currency={currency} error={donationErr ?? undefined} />
+                <Txt variant="tiny" color={colors.dim}>
+                  {`${DONATION_NO_REFUND} ${DONATION_ON_BEHALF}`}
+                </Txt>
+              </Card>
             ) : null}
             {sum > 0 ? (
               <Card style={{ flexDirection: 'row', alignItems: 'center', gap: space.md }}>
@@ -404,10 +441,26 @@ export default function CartCheckout() {
           <Txt variant="bodyStrong">Order summary</Txt>
           {holds.map((h) => (
             <View key={h.id} style={styles.row}>
-              <Txt style={{ flex: 1 }} numberOfLines={2}>{`${h.quantity} × ${h.ticketType.name}`}</Txt>
+              <View style={{ flex: 1 }}>
+                <Txt numberOfLines={2}>{`${h.quantity} × ${h.ticketType.name}`}</Txt>
+                {/* On a seat map: the seats held for this line (the best together in its sections). */}
+                {seatLine(h) ? (
+                  <Txt variant="small" color={colors.dim}>
+                    {seatLine(h)}
+                  </Txt>
+                ) : null}
+              </View>
               <Txt variant="smallStrong">{money((h.unitCents ?? h.ticketType.priceCents) * h.quantity, currency)}</Txt>
             </View>
           ))}
+          {donationCents || order?.donationCents ? (
+            <View style={styles.row}>
+              <Txt style={{ flex: 1 }} color={colors.muted}>
+                {donationLabel(dn?.cause)}
+              </Txt>
+              <Txt variant="smallStrong">{money(order?.donationCents ?? donationCents, currency)}</Txt>
+            </View>
+          ) : null}
           {totals?.discountCents ? (
             <View style={styles.row}>
               <Txt style={{ flex: 1 }} color={colors.muted}>{`Promo ${totals.promo?.code ?? ''}`}</Txt>
@@ -487,6 +540,16 @@ export default function CartCheckout() {
       </View>
     </KeyboardAvoidingView>
   );
+}
+
+/** "Section 104 · Row C · Seats 7, 8" for a line held on a seat map ('' for general admission without a section). */
+function seatLine(h: Hold) {
+  const section = h.section ? [h.section.level !== h.section.label ? h.section.level : null, h.section.label].filter(Boolean).join(' ') : '';
+  const seated = h.seats.filter((s) => s.row && s.seat);
+  if (!seated.length) return section;
+  const sameRow = seated.every((s) => s.row === seated[0].row);
+  const seats = sameRow ? seated.map((s) => s.seat).join(', ') : seated.map((s) => `${s.row}${s.seat}`).join(', ');
+  return [section, sameRow ? `Row ${seated[0].row}` : '', `Seat${seated.length > 1 ? 's' : ''} ${seats}`].filter(Boolean).join(' · ');
 }
 
 const styles = StyleSheet.create({

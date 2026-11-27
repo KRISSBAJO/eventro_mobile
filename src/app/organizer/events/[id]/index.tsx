@@ -478,6 +478,8 @@ export default function EventDashboard() {
             <Divider style={{ marginLeft: 62 }} />
             <Row icon="clock" label="Sales and checkout" detail="On-sale times, presale, questions" onPress={() => router.push({ pathname: '/organizer/events/[id]/sales', params: { id: e.id } })} />
             <Divider style={{ marginLeft: 62 }} />
+            <Row icon="star" label="Reviews" detail="Read and reply" onPress={() => router.push({ pathname: '/organizer/events/[id]/reviews', params: { id: e.id } })} />
+            <Divider style={{ marginLeft: 62 }} />
             <Row icon="seat" label={e.seatMap ? 'Seat map' : 'Add a seat map'} detail="Website" onPress={() => openWeb(webPaths.seating(e.id))} />
           </>
         ) : null}

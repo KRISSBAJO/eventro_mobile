@@ -468,6 +468,11 @@ function EventBody({ e, topBar, refetch, jumpToResale, dateParam }: { e: EventDe
             {onSale && lines.length ? (
               <View style={styles.cart}>
                 <Txt variant="smallStrong">Also in your order</Txt>
+                {seatMap ? (
+                  <Txt variant="small" color={colors.dim}>
+                    With several ticket types we hold the best seats together for each. To pick exact seats, buy one type at a time.
+                  </Txt>
+                ) : null}
                 {lines.map((l) => (
                   <View key={l.tierId} style={{ flexDirection: 'row', alignItems: 'center', gap: space.md }}>
                     <Txt style={{ flex: 1 }} numberOfLines={1}>{`${l.qty} × ${l.t.name}`}</Txt>
@@ -481,7 +486,7 @@ function EventBody({ e, topBar, refetch, jumpToResale, dateParam }: { e: EventDe
                 ))}
               </View>
             ) : null}
-            {onSale && tier && tier.available > 0 && !seatMap && !amountErr && lines.length < 5 && types.some((t) => t.available > 0 && t.id !== tier.id && !lines.some((l) => l.tierId === t.id)) ? (
+            {onSale && tier && tier.available > 0 && !amountErr && lines.length < 5 && types.some((t) => t.available > 0 && t.id !== tier.id && !lines.some((l) => l.tierId === t.id)) ? (
               <Button
                 label="Add another ticket type"
                 icon="plus"
@@ -606,7 +611,7 @@ function EventBody({ e, topBar, refetch, jumpToResale, dateParam }: { e: EventDe
                 </Txt>
               </Txt>
             </View>
-            {seatMap ? (
+            {seatMap && !lines.length ? (
               <Button
                 label={tier.available === 0 ? 'Sold out' : 'Choose seats'}
                 icon="seat"
