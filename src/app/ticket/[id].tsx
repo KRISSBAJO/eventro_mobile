@@ -310,12 +310,48 @@ function TicketCard({ t, offline, feePermille, userId }: { t: Ticket; offline: b
         </Txt>
       </View>
       {t.dateChange && t.event.status !== 'CANCELLED' && t.status !== 'VOID' ? <DateChangeBox t={t} change={t.dateChange} offline={offline} /> : null}
+      {t.updates?.length ? <UpdatesBox updates={t.updates} /> : null}
       <SessionsBox t={t} offline={offline} />
       {t.guarantee ? <GuaranteeBox t={t} userId={userId} /> : null}
       {note ? (
         <Notice tone={note.tone} icon={note.tone === 'success' ? 'check' : 'alert'} title={note.title}>
           {note.body}
         </Notice>
+      ) : null}
+    </View>
+  );
+}
+
+/** What the organizer told ticket holders ("Doors now 7 PM"): the newest in full, earlier ones behind a tap. */
+function UpdatesBox({ updates }: { updates: NonNullable<Ticket['updates']> }) {
+  const [all, setAll] = useState(false);
+  const shown = all ? updates : updates.slice(0, 1);
+  return (
+    <View style={{ gap: space.md, padding: space.lg, borderRadius: radius.card, borderWidth: 1, borderColor: colors.line2, backgroundColor: colors.surface }}>
+      <Txt variant="eyebrow" color={colors.dim}>
+        From the organizer
+      </Txt>
+      {shown.map((u) => (
+        <View key={u.id} style={{ gap: 4 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: space.md }}>
+            <Txt variant="bodyStrong" style={{ flex: 1 }}>
+              {u.subject}
+            </Txt>
+            <Txt variant="small" color={colors.dim}>
+              {when(u.sentAt).short}
+            </Txt>
+          </View>
+          <Txt variant="small" color={colors.muted}>
+            {u.body}
+          </Txt>
+        </View>
+      ))}
+      {updates.length > 1 ? (
+        <Pressable accessibilityRole="button" hitSlop={8} onPress={() => setAll((v) => !v)} style={{ alignSelf: 'flex-start' }}>
+          <Txt variant="smallStrong" color={colors.accent}>
+            {all ? 'Show less' : `${updates.length - 1} earlier ${updates.length === 2 ? 'message' : 'messages'}`}
+          </Txt>
+        </Pressable>
       ) : null}
     </View>
   );

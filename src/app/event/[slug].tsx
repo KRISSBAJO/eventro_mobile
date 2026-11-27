@@ -32,6 +32,7 @@ import { Gallery } from '@/components/gallery';
 import { HeartButton } from '@/components/heart';
 import { Icon } from '@/components/icons';
 import { PriceAlert } from '@/components/price-alert';
+import { Waitlist } from '@/components/waitlist';
 import { ScheduleList } from '@/components/schedule';
 import { TierBadge, TierGlyph, TierSurface } from '@/components/tier-look';
 import { Badge, Button, EmptyState, ErrorState, FadeIn, IconButton, Notice, Skeleton, Stepper, Txt } from '@/components/ui';
@@ -433,6 +434,8 @@ function EventBody({ e, topBar, refetch, jumpToResale, dateParam }: { e: EventDe
                 </Txt>
               </Pressable>
             ) : null}
+            {/* Sold-out ticket types: tell me if they come back. */}
+            {!cancelled && !ended && !e.salesPaused ? <Waitlist slug={e.slug} soldOut={types.filter((t) => t.available === 0).map((t) => ({ id: t.id, name: t.name }))} all={types.length > 0 && types.every((t) => t.available === 0)} /> : null}
             {!cancelled && !ended ? <PriceAlert slug={e.slug} /> : null}
             <View style={styles.trust}>
               {[

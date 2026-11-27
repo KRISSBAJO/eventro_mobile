@@ -442,7 +442,12 @@ export type Ticket = Dated & {
   sessions?: BookedSession[];
   /** the event (or this ticket's date or day) moved since it was bought; `refundable`: this account can still take a full refund */
   dateChange?: DateChange | null;
+  /** messages the organizer sent to holders of this ticket, newest first (up to 5); older APIs and saved copies leave it out */
+  updates?: OrganizerUpdate[];
 };
+
+/** GET /me/tickets `updates`: a message from the organizer to ticket holders ("Doors now 7 PM") */
+export type OrganizerUpdate = { id: string; subject: string; body: string; sentAt: string };
 
 /** GET /me/tickets `dateChange` */
 export type DateChange = { id: string; fromStartsAt: string; toStartsAt: string; reason: string | null; refundUntil: string; refundable: boolean; refundCents: number; whole?: boolean;

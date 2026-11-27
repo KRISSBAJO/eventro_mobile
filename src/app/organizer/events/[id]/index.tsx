@@ -17,7 +17,7 @@
  * Sessions (stats `sessions`): each bookable session on the schedule with its places booked and check-ins; a row
  * opens its bookings (organizer/events/[id]/sessions/[itemId].tsx), where people are checked in by tapping.
  */
-import { useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Image } from 'expo-image';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useState } from 'react';
@@ -481,6 +481,17 @@ export default function EventDashboard() {
         ) : null}
       </Group>
 
+      {editor && e.status === 'PUBLISHED' ? (
+        <View style={styles.card}>
+          <Label>Ticket holders</Label>
+          <Txt variant="small" color={colors.muted}>
+            Doors moved, or something to bring? Send a short message to everyone holding a ticket, by email and push.
+          </Txt>
+          <Button label="Message ticket holders" icon="send" variant="ghost" size="md" onPress={() => router.push({ pathname: '/organizer/events/[id]/messages', params: { id: e.id } })} />
+          <WaitlistLine eventId={e.id} />
+        </View>
+      ) : null}
+
       {isAdmin(role) && !cancelled && (e.status === 'PUBLISHED' || e.postponedAt) && st !== 'Ended' ? (
         <View style={styles.card}>
           <Label>{e.postponedAt ? 'Postponed' : 'Postpone'}</Label>
@@ -555,6 +566,32 @@ function GuaranteeRefundsCard({ r }: { r: GuaranteeRefunds }) {
           })}
         </>
       )}
+    </View>
+  );
+}
+
+/** How many fans are waiting for tickets to come back (GET …/waitlist); nothing when nobody is. */
+function WaitlistLine({ eventId }: { eventId: string }) {
+  const { user } = useAuth();
+  const q = useQuery({
+    queryKey: ['organizer', 'waitlist', eventId, user?.id],
+    queryFn: () => api<{ waiting: number; anyTicket: number; byType: { name: string; waiting: number }[]; told: number }>(`/organizer/events/${encodeURIComponent(eventId)}/waitlist`),
+    enabled: !!user,
+    staleTime: 60_000,
+    retry: 0,
+  });
+  const w = q.data;
+  if (!w || (!w.waiting && !w.told)) return null;
+  // Copies of a type (one per date) add up under its name.
+  const by = new Map<string, number>();
+  for (const t of w.byType) by.set(t.name, (by.get(t.name) ?? 0) + t.waiting);
+  const parts = [...[...by.entries()].map(([name, n]) => `${name} ${num(n)}`), ...(w.anyTicket ? [`any ticket ${num(w.anyTicket)}`] : [])];
+  return (
+    <View style={{ gap: 2, paddingTop: space.md, borderTopWidth: 1, borderTopColor: colors.line }}>
+      <Txt variant="smallStrong">{`Waitlist: ${num(w.waiting)} ${w.waiting === 1 ? 'person' : 'people'} waiting${parts.length ? ` · ${parts.join(' · ')}` : ''}`}</Txt>
+      <Txt variant="small" color={colors.dim}>
+        {`They hear automatically when tickets come back.${w.told ? ` ${num(w.told)} told so far.` : ''}`}
+      </Txt>
     </View>
   );
 }
