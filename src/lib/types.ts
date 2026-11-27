@@ -102,6 +102,12 @@ export type TicketType = {
   /** the look fans see (lib/tiers.ts lookOf falls back to the name when it's missing) */
   look?: TierLook;
   available: number;
+  /** its sale window: SOON (not on public sale yet; a presale code may open it), ON or ENDED; older APIs leave it out */
+  saleState?: 'SOON' | 'ON' | 'ENDED';
+  /** when it goes on public sale (an instant) */
+  salesStart?: string | null;
+  /** set by the event screen: why it can't be bought right now, though it isn't sold out */
+  closed?: 'SOON' | 'ENDED' | null;
   /** DATES: the date this tier copy is for (copies of one tier share `tierKey`) */
   eventDateId?: string | null;
   tierKey?: string | null;
@@ -135,7 +141,14 @@ export type Venue = {
 };
 
 /** GET /events/:slug */
+/** A question the organizer asks at checkout: free text or a choice, once per order or for each ticket. */
+export type CheckoutQuestion = { id: string; label: string; type: 'TEXT' | 'CHOICE'; options: string[]; required: boolean; per: 'ORDER' | 'TICKET' };
+
 export type EventDetail = {
+  /** a presale code is being taken (`open`), or will be from `startsAt`; null without a presale */
+  presale?: { open: boolean; startsAt: string | null } | null;
+  /** the youngest age admitted (null = all ages) */
+  minAge?: number | null;
   id: string;
   slug: string;
   fromCents: number;
@@ -235,7 +248,10 @@ export type Hold = Dated & {
     feeMode?: FeeMode;
     feePermille?: number;
     donations?: Donations | null;
+    minAge?: number | null;
   };
+  /** questions the organizer asks at checkout (older APIs: none) */
+  questions?: CheckoutQuestion[];
   order: { id: string; status: string } | null;
 };
 

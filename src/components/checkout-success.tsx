@@ -16,6 +16,7 @@ import { colors, gutter, space } from '@/theme';
 import { Icon } from './icons';
 import { TierChip } from './tier-look';
 import { Badge, Button, Card, Notice, Txt } from './ui';
+import { addToCalendar } from '@/lib/calendar';
 
 /**
  * After a first purchase: the moment notifications are worth asking for (reminders before doors open). Shown once,
@@ -158,6 +159,14 @@ export function CheckoutSuccess({ order, eventSlug, testMode, signedIn, resale }
 
       {signedIn ? <PushOffer /> : null}
 
+      {order.gift ? null : (
+        <Button
+          label="Add to calendar"
+          icon="calendar"
+          variant="ghost"
+          onPress={() => void addToCalendar({ slug: eventSlug, title: order.event.title, startsAt: order.date?.startsAt ?? order.event.startsAt, where: order.event.venue ? [order.event.venue.name, order.event.venue.city].filter(Boolean).join(', ') : null, dateId: order.date?.id }).catch(() => undefined)}
+        />
+      )}
       {signedIn ? (
         ticketId ? (
           <Button label="View my ticket" icon="ticket" onPress={() => router.replace({ pathname: '/ticket/[id]', params: { id: ticketId } })} />

@@ -28,6 +28,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Image } from 'expo-image';
 import { AmountPicker } from '@/components/amount-picker';
 import { CheckoutSuccess } from '@/components/checkout-success';
+import { CheckoutQuestions, answerList, questionProblem, type Answers } from '@/components/checkout-questions';
 import { GiftOption, giftBody, giftErrors, NO_GIFT, type GiftDraft } from '@/components/gift-option';
 import { Icon } from '@/components/icons';
 import { TierChip } from '@/components/tier-look';
@@ -63,6 +64,8 @@ export default function Checkout() {
 
   const [name, setName] = useState(user?.name ?? '');
   const [email, setEmail] = useState(user?.email ?? '');
+  // The organizer's questions (by "<question id>:<ticket number>").
+  const [answers, setAnswers] = useState<Answers>({});
   const [submitted, setSubmitted] = useState(false);
   const [protection, setProtection] = useState(false);
   const [gift, setGift] = useState<GiftDraft>(NO_GIFT);
@@ -253,6 +256,14 @@ export default function Checkout() {
       setPayError(amountErr ?? donationErr ?? '');
       return;
     }
+    // The organizer's questions (when the card is taken on the website, it asks them there).
+    const handsOff = provider === 'stripe' && !stripeSheetAvailable && !free;
+    const unanswered = !order && !handsOff ? questionProblem(h.questions ?? [], answers, h.quantity) : '';
+    if (unanswered) {
+      haptic.warning();
+      setPayError(unanswered);
+      return;
+    }
     setPhase('paying');
     setPayError('');
     try {
@@ -281,6 +292,7 @@ export default function Checkout() {
             email: email.trim().toLowerCase(),
             name: name.trim(),
             protection: protect,
+            ...(h.questions?.length ? { answers: answerList(answers) } : {}),
             ...(promo ? { promoCode: promo } : {}),
             ...(pw && amount !== null ? { amountCents: amount } : {}),
             // Always sent (0 too) when the event takes donations: left out, the API uses the hold's stored one.
@@ -495,7 +507,23 @@ export default function Checkout() {
             hint={gift.on ? 'Your receipt goes here. You can manage the gift from My tickets.' : 'Your tickets and receipt go here.'}
             editable={!order}
           />
+          {h.event.minAge ? (
+            <Notice tone="plain" icon="alert">
+              {`This event is ${h.event.minAge}+. Everyone needs ID showing their age at the door.`}
+            </Notice>
+          ) : null}
         </View>
+
+        {/* The organizer's questions (the website asks them when it takes the card). */}
+        {h.questions?.length && !(provider === 'stripe' && !stripeSheetAvailable && !free) ? (
+          <View style={{ gap: space.md }}>
+            <CheckoutQuestions questions={h.questions} qty={h.quantity} tierName={h.ticketType.name} answers={answers} onChange={(k, v) => {
+                setAnswers((a) => ({ ...a, [k]: v }));
+                setPayError('');
+              }}
+              showErrors={submitted} disabled={!!order} />
+          </View>
+        ) : null}
 
         {/* Gift */}
         {!order ? <GiftOption gift={gift} patch={patchGift} errors={giftErr} show={submitted} eventStart={eventStart} now={now} /> : null}

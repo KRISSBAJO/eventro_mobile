@@ -33,6 +33,7 @@ import { HeartButton } from '@/components/heart';
 import { Icon } from '@/components/icons';
 import { PriceAlert } from '@/components/price-alert';
 import { Waitlist } from '@/components/waitlist';
+import { PresaleBox } from '@/components/presale';
 import { ScheduleList } from '@/components/schedule';
 import { TierBadge, TierGlyph, TierSurface } from '@/components/tier-look';
 import { Badge, Button, EmptyState, ErrorState, FadeIn, IconButton, Notice, Skeleton, Stepper, Txt } from '@/components/ui';
@@ -122,7 +123,15 @@ function EventBody({ e, topBar, refetch, jumpToResale, dateParam }: { e: EventDe
   const liveDates = activeOnly(e.dates);
   const pickable = byDate ? upcoming(e.dates, 0) : [];
   const ended = eventEnded(e, 3);
-  const allTypes = [...e.ticketTypes].sort((a, b) => a.sortOrder - b.sortOrder);
+  // Sale windows: a type that isn't on public sale yet (unless a presale code opened it), or whose sales ended, can't
+  // be bought, so below it counts as unavailable and says why (`closed`).
+  const [presale, setPresale] = useState<{ code: string; ids: string[] } | null>(null);
+  const allTypes = [...e.ticketTypes]
+    .sort((a, b) => a.sortOrder - b.sortOrder)
+    .map((t) => {
+      const closed = t.saleState === 'ENDED' ? ('ENDED' as const) : t.saleState === 'SOON' && !presale?.ids.includes(t.id) ? ('SOON' as const) : null;
+      return closed ? { ...t, available: 0, closed } : t;
+    });
   const onSale = !cancelled && !ended && !e.salesPaused && allTypes.some((t) => t.available > 0);
 
   // DATES: the picked date (a link's ?date=, else the only date on sale, else none until the fan picks).
@@ -205,7 +214,7 @@ function EventBody({ e, topBar, refetch, jumpToResale, dateParam }: { e: EventDe
     setBusy(true);
     setError('');
     try {
-      const h = await api<HoldCreated>('/holds', { body: { ticketTypeId: tier.id, quantity: qty, ...(pw && amount !== null ? { amountCents: amount } : {}) } });
+      const h = await api<HoldCreated>('/holds', { body: { ticketTypeId: tier.id, quantity: qty, ...(pw && amount !== null ? { amountCents: amount } : {}), ...(presale && tier.saleState === 'SOON' ? { accessCode: presale.code } : {}) } });
       haptic.success();
       router.push({ pathname: '/checkout/[holdId]', params: { holdId: h.id } });
     } catch (err) {
@@ -434,14 +443,24 @@ function EventBody({ e, topBar, refetch, jumpToResale, dateParam }: { e: EventDe
                 </Txt>
               </Pressable>
             ) : null}
-            {/* Sold-out ticket types: tell me if they come back. */}
-            {!cancelled && !ended && !e.salesPaused ? <Waitlist slug={e.slug} soldOut={types.filter((t) => t.available === 0).map((t) => ({ id: t.id, name: t.name }))} all={types.length > 0 && types.every((t) => t.available === 0)} /> : null}
+            {/* Not on public sale yet: a presale code opens those ticket types. */}
+            {!cancelled && !ended && !e.salesPaused && e.presale && types.some((t) => t.closed === 'SOON') ? <PresaleBox slug={e.slug} presale={e.presale} onUnlocked={(code, ids) => setPresale({ code, ids })} /> : null}
+            {/* Sold-out ticket types (and ones not on sale yet): tell me when they can be bought. */}
+            {!cancelled && !ended && !e.salesPaused ? (
+              <Waitlist
+                slug={e.slug}
+                soldOut={types.filter((t) => t.available === 0 && t.closed !== 'ENDED').map((t) => ({ id: t.id, name: t.name }))}
+                all={types.length > 0 && types.every((t) => t.available === 0)}
+                onSale={types.some((t) => t.closed === 'SOON') && !types.some((t) => t.available === 0 && !t.closed)}
+              />
+            ) : null}
             {!cancelled && !ended ? <PriceAlert slug={e.slug} /> : null}
             <View style={styles.trust}>
               {[
                 // The Omoshow Guarantee covers paid tickets only: free ones have nothing to refund.
                 // A pay-what-you-want ticket that can be free is only covered when it's paid for ("from" is 0 then).
                 allTypes.every((t) => t.priceCents <= 0 && !isPwyw(t)) ? null : allTypes.some((t) => t.priceCents <= 0) ? 'Paid tickets covered by the Omoshow Guarantee' : 'Covered by the Omoshow Guarantee',
+                e.minAge ? `${e.minAge}+ only. Bring ID that shows your age` : null,
                 'Instant mobile delivery',
                 seatMap ? 'Pick your exact seats, or let us find the best together' : 'Prices include all fees',
                 e.donations ? `Add an optional donation to ${e.donations.cause} at checkout` : null,
@@ -456,6 +475,11 @@ function EventBody({ e, topBar, refetch, jumpToResale, dateParam }: { e: EventDe
                 </View>
               ))}
             </View>
+            <Pressable accessibilityRole="link" hitSlop={8} onPress={() => router.push({ pathname: '/report', params: { slug: e.slug, title: e.title } })} style={{ alignSelf: 'flex-start' }}>
+              <Txt variant="small" color={colors.dim} style={{ textDecorationLine: 'underline' }}>
+                Report this event
+              </Txt>
+            </Pressable>
           </View>
         ) : !cancelled && !ended ? (
           <View style={{ paddingHorizontal: gutter, marginTop: space.xl }}>
@@ -684,6 +708,9 @@ function InfoRow({ icon, title, lines, action, onTitle }: { icon: 'calendar' | '
   );
 }
 
+/** "Fri, Dec 4, 10:00 AM": when a ticket type goes on sale, in the phone's own time. */
+const onSaleLabel = (iso: string) => new Date(iso).toLocaleString('en-US', { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+
 /** A tier in its look: the gradient head (glyph, name, badge, price), then what's included. Premium looks glow. */
 function TierCard({ t, currency, on, disabled, onPress, days }: { t: TicketType; currency: string; on: boolean; disabled?: boolean; onPress: () => void; days?: string }) {
   const [open, setOpen] = useState(false);
@@ -772,7 +799,7 @@ function TierCard({ t, currency, on, disabled, onPress, days }: { t: TicketType;
             ) : null}
             {out ? (
               <Txt variant="smallStrong" color={colors.accent}>
-                Sold out
+                {t.closed === 'ENDED' ? 'Sales ended' : t.closed === 'SOON' ? (t.salesStart ? `On sale ${onSaleLabel(t.salesStart)}` : 'Not on sale yet') : 'Sold out'}
               </Txt>
             ) : t.available < 50 ? (
               <Txt variant="smallStrong" color={colors.accent}>

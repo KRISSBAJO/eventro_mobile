@@ -19,7 +19,7 @@ const KEY = 'waitlist';
 /** "" stands for any ticket to the event. */
 const ANY = '';
 
-export function Waitlist({ slug, soldOut, all }: { slug: string; soldOut: { id: string; name: string }[]; all: boolean }) {
+export function Waitlist({ slug, soldOut, all, onSale }: { slug: string; soldOut: { id: string; name: string }[]; all: boolean; /** waiting for tickets to go on sale, not for a sell-out */ onSale?: boolean }) {
   const { user } = useAuth();
   const qc = useQueryClient();
   const key = ['event', slug, 'waitlist', user?.id];
@@ -43,7 +43,7 @@ export function Waitlist({ slug, soldOut, all }: { slug: string; soldOut: { id: 
   if (!soldOut.length) return null;
   // Signed in, the account's entries are the truth; signed out, what this phone joined.
   const ids = user ? (mine.data?.ticketTypeIds ?? []) : local;
-  const rows = all ? [{ id: ANY, name: 'Any ticket' }, ...(soldOut.length > 1 ? soldOut : [])] : soldOut;
+  const rows = all && !onSale ? [{ id: ANY, name: 'Any ticket' }, ...(soldOut.length > 1 ? soldOut : [])] : soldOut;
 
   const join = async (id: string) => {
     if (!user && !emailOk(email)) {
@@ -90,9 +90,9 @@ export function Waitlist({ slug, soldOut, all }: { slug: string; soldOut: { id: 
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.md }}>
         <Icon name="bell" size={18} color={colors.accent} />
         <View style={{ flex: 1 }}>
-          <Txt variant="bodyStrong">{all ? 'Sold out. Join the waitlist' : 'Tell me if tickets come back'}</Txt>
+          <Txt variant="bodyStrong">{onSale ? 'Tell me when tickets go on sale' : all ? 'Sold out. Join the waitlist' : 'Tell me if tickets come back'}</Txt>
           <Txt variant="small" color={colors.dim}>
-            One email when they do. First to check out gets them.
+            {onSale ? 'One email when they do.' : 'One email when they do. First to check out gets them.'}
           </Txt>
         </View>
       </View>

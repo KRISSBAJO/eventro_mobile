@@ -41,6 +41,7 @@ import { seatLine, ticketCurrency, ticketState } from '@/lib/tickets';
 import { lookOf } from '@/lib/tiers';
 import type { QrToken, Ticket } from '@/lib/types';
 import { colors, font, gutter, radius, space } from '@/theme';
+import { addToCalendar } from '@/lib/calendar';
 
 export default function TicketScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -311,6 +312,15 @@ function TicketCard({ t, offline, feePermille, userId }: { t: Ticket; offline: b
       </View>
       {t.dateChange && t.event.status !== 'CANCELLED' && t.status !== 'VOID' ? <DateChangeBox t={t} change={t.dateChange} offline={offline} /> : null}
       {t.updates?.length ? <UpdatesBox updates={t.updates} /> : null}
+      {t.event.status !== 'CANCELLED' && t.status !== 'VOID' ? (
+        <Button
+          label="Add to calendar"
+          icon="calendar"
+          variant="ghost"
+          size="md"
+          onPress={() => void addToCalendar({ slug: t.event.slug, title: t.event.title, startsAt: t.date?.startsAt ?? t.event.startsAt, endsAt: t.date?.endsAt ?? null, timezone: t.event.timezone, where: t.event.venue ? [t.event.venue.name, t.event.venue.city].filter(Boolean).join(', ') : null, dateId: t.date?.id }).catch(() => undefined)}
+        />
+      ) : null}
       <SessionsBox t={t} offline={offline} />
       {t.guarantee ? <GuaranteeBox t={t} userId={userId} /> : null}
       {note ? (
