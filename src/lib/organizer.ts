@@ -45,6 +45,9 @@ export type OrgTicketType = {
   capacity: number;
   sold: number;
   maxPerOrder: number;
+  /** its sale window (instants; null = from when the event is on sale, until it starts) */
+  salesStart?: string | null;
+  salesEnd?: string | null;
   sortOrder: number;
   perks?: string[];
   badge?: string | null;
@@ -118,6 +121,11 @@ export type OrgEventDetail = DonationSettings & {
   /** postponed: new date to be announced */
   postponedAt?: string | null;
   postponeReason?: string | null;
+  /** presale code and when it opens; the age limit; the questions asked at checkout */
+  presaleCode?: string | null;
+  presaleStartsAt?: string | null;
+  minAge?: number | null;
+  questions?: import('./types').CheckoutQuestion[] | null;
   id: string;
   orgId: string;
   slug: string;

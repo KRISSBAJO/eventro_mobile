@@ -29,7 +29,7 @@ export const answerList = (answers: Answers) =>
       return { questionId, value: v.trim(), ...(n ? { ticket: Number(n) } : {}) };
     });
 
-export function CheckoutQuestions({ questions, qty, tierName, answers, onChange, showErrors, disabled }: { questions: CheckoutQuestion[]; qty: number; tierName: string; answers: Answers; onChange: (key: string, value: string) => void; showErrors: boolean; disabled?: boolean }) {
+export function CheckoutQuestions({ questions, qty, tierName, ticketNames, answers, onChange, showErrors, disabled }: { questions: CheckoutQuestion[]; qty: number; tierName: string; /** a cart: each ticket's type, in order */ ticketNames?: string[]; answers: Answers; onChange: (key: string, value: string) => void; showErrors: boolean; disabled?: boolean }) {
   const once = questions.filter((q) => q.per !== 'TICKET');
   const each = questions.filter((q) => q.per === 'TICKET');
   const input = (q: CheckoutQuestion, key: string) => {
@@ -66,7 +66,7 @@ export function CheckoutQuestions({ questions, qty, tierName, answers, onChange,
         ? Array.from({ length: qty }, (_, i) => (
             <View key={i} style={{ gap: space.md }}>
               <Txt variant="small" color={colors.dim}>
-                {`Ticket ${i + 1}${qty > 1 ? ` of ${qty}` : ''} · ${tierName}`}
+                {`Ticket ${i + 1}${qty > 1 ? ` of ${qty}` : ''} · ${ticketNames?.[i] ?? tierName}`}
               </Txt>
               {each.map((q) => input(q, `${q.id}:${i}`))}
             </View>

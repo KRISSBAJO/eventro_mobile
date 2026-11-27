@@ -173,7 +173,7 @@ export type EventDetail = {
   preview?: boolean;
   presentedBy: string;
   /** The organizer's page (GET /organizers/:slug); slug is null only on old organizers before pages existed */
-  organizer?: { slug: string | null; name: string; verified: boolean; logoUrl?: string | null };
+  organizer?: { slug: string | null; name: string; verified: boolean; logoUrl?: string | null; /** their rating across events (null until reviewed) */ rating?: { average: number; count: number } | null };
   venue: Venue | null;
   ticketTypes: TicketType[];
   media: MediaItem[];

@@ -312,7 +312,11 @@ function TicketCard({ t, offline, feePermille, userId }: { t: Ticket; offline: b
       </View>
       {t.dateChange && t.event.status !== 'CANCELLED' && t.status !== 'VOID' ? <DateChangeBox t={t} change={t.dateChange} offline={offline} /> : null}
       {t.updates?.length ? <UpdatesBox updates={t.updates} /> : null}
-      {t.event.status !== 'CANCELLED' && t.status !== 'VOID' ? (
+      {/* After the event: rate it (the review screen says if this account can). */}
+      {t.event.status !== 'CANCELLED' && t.status !== 'VOID' && isPast(t.date?.startsAt ?? t.event.startsAt, 3) ? (
+        <Button label="Rate this event" icon="star" variant="ghost" size="md" onPress={() => router.push({ pathname: '/reviews/[slug]', params: { slug: t.event.slug, title: t.event.title } })} />
+      ) : null}
+      {t.event.status !== 'CANCELLED' && t.status !== 'VOID' && !isPast(t.date?.startsAt ?? t.event.startsAt, 3) ? (
         <Button
           label="Add to calendar"
           icon="calendar"

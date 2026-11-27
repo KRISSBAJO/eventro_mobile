@@ -34,6 +34,7 @@ import { Icon } from '@/components/icons';
 import { PriceAlert } from '@/components/price-alert';
 import { Waitlist } from '@/components/waitlist';
 import { PresaleBox } from '@/components/presale';
+import { Stars } from '@/components/stars';
 import { ScheduleList } from '@/components/schedule';
 import { TierBadge, TierGlyph, TierSurface } from '@/components/tier-look';
 import { Badge, Button, EmptyState, ErrorState, FadeIn, IconButton, Notice, Skeleton, Stepper, Txt } from '@/components/ui';
@@ -149,6 +150,14 @@ function EventBody({ e, topBar, refetch, jumpToResale, dateParam }: { e: EventDe
   const max = Math.max(1, Math.min(8, tier?.maxPerOrder ?? 8, tier?.available || 1));
   const [qtyRaw, setQty] = useState(2);
   const qty = Math.min(qtyRaw, max);
+  // A cart: ticket types already added to the order, besides the one picked now (no seat maps: those pick one section).
+  const [added, setAdded] = useState<{ tierId: string; qty: number; amount: number | null }[]>([]);
+  const lines = added
+    .map((l) => ({ ...l, t: types.find((t) => t.id === l.tierId && t.available > 0) }))
+    .filter((l): l is typeof l & { t: TicketType } => !!l.t && l.tierId !== tier?.id)
+    .map((l) => ({ ...l, qty: Math.min(l.qty, l.t.available, l.t.maxPerOrder), unit: isPwyw(l.t) && l.t.pwyw && l.amount !== null ? allInOf(l.amount, l.t.pwyw.feePermille) : l.t.priceCents }));
+  const linesTotal = lines.reduce((n, l) => n + l.unit * l.qty, 0);
+  const linesCount = lines.reduce((n, l) => n + l.qty, 0);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [aboutOpen, setAboutOpen] = useState(false);
@@ -214,6 +223,15 @@ function EventBody({ e, topBar, refetch, jumpToResale, dateParam }: { e: EventDe
     setBusy(true);
     setError('');
     try {
+      // Several ticket types: a cart, held together or not at all, with its own checkout.
+      if (lines.length) {
+        const items = [...lines.map((l) => ({ ticketTypeId: l.tierId, quantity: l.qty, ...(l.amount !== null && isPwyw(l.t) ? { amountCents: l.amount } : {}) })), { ticketTypeId: tier.id, quantity: qty, ...(pw && amount !== null ? { amountCents: amount } : {}) }];
+        const needsCode = presale && [tier, ...lines.map((l) => l.t)].some((t) => t.saleState === 'SOON');
+        const made = await api<{ holds: HoldCreated[] }>('/holds/cart', { body: { items, ...(needsCode ? { accessCode: presale.code } : {}) } });
+        haptic.success();
+        router.push({ pathname: '/checkout/cart', params: { holds: made.holds.map((x) => x.id).join(',') } });
+        return;
+      }
       const h = await api<HoldCreated>('/holds', { body: { ticketTypeId: tier.id, quantity: qty, ...(pw && amount !== null ? { amountCents: amount } : {}), ...(presale && tier.saleState === 'SOON' ? { accessCode: presale.code } : {}) } });
       haptic.success();
       router.push({ pathname: '/checkout/[holdId]', params: { holdId: h.id } });
@@ -357,6 +375,16 @@ function EventBody({ e, topBar, refetch, jumpToResale, dateParam }: { e: EventDe
               Presented by {e.presentedBy}
             </Txt>
           )}
+          {/* The organizer's rating across their events, and this event's reviews (after it's over, ticket holders can add one). */}
+          {e.organizer?.rating || ended ? (
+            <Pressable accessibilityRole="link" onPress={() => router.push({ pathname: '/reviews/[slug]', params: { slug: e.slug, title: e.title } })} style={({ pressed }) => [{ flexDirection: 'row', alignItems: 'center', gap: space.sm, marginTop: space.md }, pressed && { opacity: 0.7 }]}>
+              {e.organizer?.rating ? <Stars value={e.organizer.rating.average} size={15} /> : null}
+              <Txt variant="small" color={colors.muted} style={{ flex: 1 }}>
+                {e.organizer?.rating ? `${e.organizer.rating.average.toFixed(1)} · ${e.organizer.rating.count} ${e.organizer.rating.count === 1 ? 'review' : 'reviews'} of this organizer` : 'Had a ticket? Rate this event'}
+              </Txt>
+              <Icon name="chevronRight" size={16} color={colors.dim} />
+            </Pressable>
+          ) : null}
         </View>
 
         {e.media.length ? (
@@ -393,7 +421,7 @@ function EventBody({ e, topBar, refetch, jumpToResale, dateParam }: { e: EventDe
               </View>
             ) : null}
             {types.map((t) => (
-              <TierCard key={t.id} t={t} currency={e.currency} on={t.id === tier?.id} disabled={e.salesPaused} onPress={() => setTierId(t.id)} days={mode === 'DAYS' ? coverLine(t.validDateIds ?? [], e.dates ?? []) : undefined} />
+              <TierCard key={t.id} t={t} currency={e.currency} on={t.id === tier?.id} disabled={e.salesPaused || lines.some((l) => l.tierId === t.id)} onPress={() => setTierId(t.id)} days={mode === 'DAYS' ? coverLine(t.validDateIds ?? [], e.dates ?? []) : undefined} />
             ))}
             {onSale && tier && pw && tier.available > 0 ? (
               <View style={styles.pwyw}>
@@ -435,6 +463,38 @@ function EventBody({ e, topBar, refetch, jumpToResale, dateParam }: { e: EventDe
                 </View>
                 <Stepper value={qty} max={max} onChange={setQty} label="Number of tickets" />
               </View>
+            ) : null}
+            {/* The cart: other ticket types already in this order, and a way to add one more. */}
+            {onSale && lines.length ? (
+              <View style={styles.cart}>
+                <Txt variant="smallStrong">Also in your order</Txt>
+                {lines.map((l) => (
+                  <View key={l.tierId} style={{ flexDirection: 'row', alignItems: 'center', gap: space.md }}>
+                    <Txt style={{ flex: 1 }} numberOfLines={1}>{`${l.qty} × ${l.t.name}`}</Txt>
+                    <Txt variant="smallStrong">{money(l.unit * l.qty, e.currency)}</Txt>
+                    <Pressable accessibilityRole="button" accessibilityLabel={`Remove ${l.t.name}`} hitSlop={10} onPress={() => setAdded((a) => a.filter((x) => x.tierId !== l.tierId))}>
+                      <Txt variant="smallStrong" color={colors.accent}>
+                        Remove
+                      </Txt>
+                    </Pressable>
+                  </View>
+                ))}
+              </View>
+            ) : null}
+            {onSale && tier && tier.available > 0 && !seatMap && !amountErr && lines.length < 5 && types.some((t) => t.available > 0 && t.id !== tier.id && !lines.some((l) => l.tierId === t.id)) ? (
+              <Button
+                label="Add another ticket type"
+                icon="plus"
+                variant="ghost"
+                size="md"
+                onPress={() => {
+                  haptic.select();
+                  const next = types.find((t) => t.available > 0 && t.id !== tier.id && !lines.some((l) => l.tierId === t.id));
+                  setAdded((a) => [...a.filter((x) => x.tierId !== tier.id), { tierId: tier.id, qty, amount: pw ? amount : null }]);
+                  setTierId(next?.id ?? null);
+                  setQty(1);
+                }}
+              />
             ) : null}
             {onSale && seatMap && tier ? (
               <Pressable accessibilityRole="button" onPress={getTickets} disabled={busy} hitSlop={8} style={{ alignSelf: 'flex-start' }}>
@@ -535,11 +595,12 @@ function EventBody({ e, topBar, refetch, jumpToResale, dateParam }: { e: EventDe
             <View style={{ flex: 1 }}>
               <Txt variant="small" color={colors.dim} numberOfLines={1}>
                 {qty} × {tier.name}
+                {linesCount ? ` + ${linesCount} more` : ''}
                 {pickedWhen ? ` · ${pickedWhen.short}` : ''}
                 {pw && !amountErr ? ` at ${money(unit, e.currency)}` : ''}
               </Txt>
-              <Txt variant="priceLg" style={{ fontSize: 26, lineHeight: 30 }} accessibilityLabel={amountErr ? 'Choose your price first' : `Total ${money(total, e.currency)}, fees included`} numberOfLines={1}>
-                {amountErr ? '—' : money(total, e.currency)}
+              <Txt variant="priceLg" style={{ fontSize: 26, lineHeight: 30 }} accessibilityLabel={amountErr ? 'Choose your price first' : `Total ${money(total + linesTotal, e.currency)}, fees included`} numberOfLines={1}>
+                {amountErr ? '—' : money(total + linesTotal, e.currency)}
                 <Txt variant="small" color={colors.dim}>
                   {'  '}all-in
                 </Txt>
@@ -814,6 +875,7 @@ function TierCard({ t, currency, on, disabled, onPress, days }: { t: TicketType;
 }
 
 const styles = StyleSheet.create({
+  cart: { gap: space.sm, padding: space.md, borderRadius: radius.md, borderWidth: 1, borderColor: colors.line2, backgroundColor: colors.surface },
   presenter: { flexDirection: 'row', alignItems: 'center', gap: space.md, marginTop: space.lg, padding: space.md, borderRadius: radius.card, borderWidth: 1, borderColor: colors.line, backgroundColor: colors.surface },
   presenterMark: { width: 44, height: 44, borderRadius: 14, overflow: 'hidden', alignItems: 'center', justifyContent: 'center', backgroundColor: colors.bg2, borderWidth: 1, borderColor: colors.line2 },
   topBar: { position: 'absolute', left: gutter - 4, right: gutter - 4, flexDirection: 'row', justifyContent: 'space-between' },

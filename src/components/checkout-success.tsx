@@ -77,7 +77,7 @@ function PushOffer() {
   );
 }
 
-export function CheckoutSuccess({ order, eventSlug, testMode, signedIn, resale }: { order: Order; eventSlug: string; testMode: boolean; signedIn: boolean; resale?: boolean }) {
+export function CheckoutSuccess({ order, eventSlug, testMode, signedIn, resale, lines }: { order: Order; eventSlug: string; testMode: boolean; signedIn: boolean; resale?: boolean; /** a cart: its ticket types */ lines?: { name: string; quantity: number }[] }) {
   const insets = useSafeAreaInsets();
   // The tickets' own date (DATES) or the event's start; DAYS tickets list their days.
   const d = when(order.date?.startsAt ?? order.event.startsAt);
@@ -123,7 +123,7 @@ export function CheckoutSuccess({ order, eventSlug, testMode, signedIn, resale }
           </Txt>
         </View>
         <Txt variant="title">{order.event.title}</Txt>
-        <TierChip tier={order.ticketType} label={`${order.quantity} × ${order.ticketType.name}`} />
+        {lines && lines.length > 1 ? <Txt variant="smallStrong">{lines.map((l) => `${l.quantity} × ${l.name}`).join(' · ')}</Txt> : <TierChip tier={order.ticketType} label={`${order.quantity} × ${order.ticketType.name}`} />}
         <Txt variant="small" color={colors.muted}>
           {whenText}
           {order.event.venue ? `\n${[order.event.venue.name, order.event.venue.city].filter(Boolean).join(', ')}` : ''}
@@ -132,7 +132,7 @@ export function CheckoutSuccess({ order, eventSlug, testMode, signedIn, resale }
           {order.tickets.map((t, i) => (
             <View key={t.id} style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
               <Txt variant="small" color={colors.muted}>
-                Ticket {i + 1} · {order.ticketType.name}
+                {lines && lines.length > 1 ? `Ticket ${i + 1}` : `Ticket ${i + 1} · ${order.ticketType.name}`}
               </Txt>
               <Txt variant="smallStrong">{t.row && t.seat ? `${t.section ?? ''} ${t.row}${t.seat}`.trim() : 'GA'}</Txt>
             </View>
