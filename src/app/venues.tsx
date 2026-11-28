@@ -79,7 +79,7 @@ export default function Venues() {
         )}
         ItemSeparatorComponent={() => <View style={{ height: space.xl }} />}
         contentContainerStyle={{ paddingHorizontal: gutter, paddingBottom: insets.bottom + space.huge }}
-        keyboardShouldPersistTaps="handled"
+        automaticallyAdjustKeyboardInsets keyboardShouldPersistTaps="handled"
         refreshControl={
           <RefreshControl
             refreshing={pulling}
