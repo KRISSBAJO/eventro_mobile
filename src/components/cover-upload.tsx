@@ -12,7 +12,7 @@ import { colors, space } from '@/theme';
 import { Progress } from './org-ui';
 import { Button, Notice, Txt } from './ui';
 
-export function CoverUpload({ onUploaded, full }: { onUploaded: (c: UploadedCover) => void; full?: string }) {
+export function CoverUpload({ onUploaded, full, onBusy }: { onUploaded: (c: UploadedCover) => void; full?: string; onBusy?: (busy: boolean) => void }) {
   const cfg = useMediaConfig();
   const [pct, setPct] = useState<number | null>(null);
   const [error, setError] = useState<PickError | null>(null);
@@ -21,14 +21,16 @@ export function CoverUpload({ onUploaded, full }: { onUploaded: (c: UploadedCove
   if (cfg.isPending) return <Button label="Upload a photo" variant="subtle" size="md" icon="plus" disabled loading />;
   if (!cfg.data?.enabled) {
     return (
-      <Txt variant="small" color={colors.dim}>
-        {cfg.data ? 'Uploading your own photos isn’t switched on yet. Pick one of ours for now.' : 'We couldn’t check whether uploads are on. Pick one of ours for now, or try again later.'}
-      </Txt>
+      <Notice icon="alert" title="Photo uploads unavailable" action="Check again" onAction={() => void cfg.refetch()}>Choose a stock cover or try again.</Notice>
     );
   }
   const limits = cfg.data;
 
   const start = async () => {
+    if (abort.current) return;
+    const ctrl = new AbortController();
+    abort.current = ctrl;
+    onBusy?.(true);
     setError(null);
     haptic.select();
     let picked;
@@ -40,10 +42,10 @@ export function CoverUpload({ onUploaded, full }: { onUploaded: (c: UploadedCove
         haptic.warning();
         setError(pe);
       }
+      abort.current = null;
+      onBusy?.(false);
       return;
     }
-    const ctrl = new AbortController();
-    abort.current = ctrl;
     setPct(0);
     try {
       const up = await uploadPhoto(picked, setPct, ctrl.signal);
@@ -57,6 +59,7 @@ export function CoverUpload({ onUploaded, full }: { onUploaded: (c: UploadedCove
     } finally {
       abort.current = null;
       setPct(null);
+      onBusy?.(false);
     }
   };
 
@@ -75,7 +78,7 @@ export function CoverUpload({ onUploaded, full }: { onUploaded: (c: UploadedCove
           <Progress value={pct} max={100} />
         </View>
       ) : (
-        <Button label={full ?? 'Upload a photo'} variant="subtle" size="md" icon="plus" onPress={() => void start()} />
+        <Button label={full ?? 'Upload a photo'} variant="primary" icon="plus" onPress={() => void start()} />
       )}
       {error ? (
         <Notice

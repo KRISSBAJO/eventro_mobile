@@ -53,7 +53,7 @@ export function CancelDateSheet({ eventId, dateId, onClose, onDone }: { eventId:
       <Pressable accessibilityLabel="Close" style={styles.scrim} onPress={onClose} />
       <View style={[styles.sheet, { paddingBottom: insets.bottom + space.lg }]} accessibilityViewIsModal>
         <View style={styles.grip} />
-        <ScrollView contentContainerStyle={{ gap: space.md }} keyboardShouldPersistTaps="handled">
+        <ScrollView contentContainerStyle={{ gap: space.md }} automaticallyAdjustKeyboardInsets keyboardShouldPersistTaps="handled">
           <Txt variant="h3" accessibilityRole="header">
             {p ? `Cancel ${dateLine(p.date)}?` : 'Cancel this date?'}
           </Txt>

@@ -38,7 +38,7 @@ export function OrgScreen({
     <View style={{ flex: 1, backgroundColor: colors.bg }}>
       <ScrollView
         style={{ flex: 1 }}
-        keyboardShouldPersistTaps="handled"
+        automaticallyAdjustKeyboardInsets keyboardShouldPersistTaps="handled"
         contentContainerStyle={{ paddingTop: insets.top + space.sm, paddingHorizontal: gutter, paddingBottom: footer ? space.xl : insets.bottom + space.huge, gap: space.lg }}
         refreshControl={
           onRefresh ? (

@@ -18,6 +18,9 @@ const PAGE = 6;
 export function StockPicker({ category, value, onPick }: { category: string; value: string; onPick: (url: string) => void }) {
   const first = STOCK_CATEGORIES.includes(category) ? category : 'Concerts';
   const [tab, setTab] = useState(first);
+  const [gridWidth, setGridWidth] = useState(0);
+  const [failed, setFailed] = useState<Record<string, boolean>>({});
+  const tileWidth = Math.max(1, Math.floor((gridWidth - space.sm) / 2));
   const [shown, setShown] = useState(PAGE);
   const covers = useMemo(() => stockCovers(tab), [tab]);
   const tabs = [first, ...STOCK_CATEGORIES.filter((c) => c !== first)];
@@ -40,21 +43,29 @@ export function StockPicker({ category, value, onPick }: { category: string; val
       <Txt variant="small" color={colors.dim}>
         {covers.length} free photos for {tab.toLowerCase()}
       </Txt>
-      <View style={styles.grid}>
-        {covers.slice(0, shown).map((c, i) => {
+      <View style={styles.grid} onLayout={({ nativeEvent }) => setGridWidth(nativeEvent.layout.width)}>
+        {gridWidth > 0 && covers.slice(0, shown).map((c, i) => {
           const on = value === c;
           return (
             <Pressable
               key={c}
               accessibilityRole="button"
-              accessibilityLabel={`${tab} photo ${i + 1}`}
+              accessibilityLabel={`${failed[c] ? 'Retry ' : ''}${tab} photo ${i + 1}`}
               accessibilityState={{ selected: on }}
               onPress={() => {
+                if (failed[c]) {
+                  setFailed((previous) => ({ ...previous, [c]: false }));
+                  return;
+                }
                 haptic.select();
                 onPick(c);
               }}
-              style={({ pressed }) => [styles.photo, on && styles.photoOn, pressed && { opacity: 0.85 }]}>
-              <Image source={{ uri: stockThumb(c) }} style={StyleSheet.absoluteFill} contentFit="cover" transition={200} recyclingKey={c} />
+              style={({ pressed }) => [styles.photo, { width: tileWidth, height: Math.round(tileWidth * 0.75) }, on && styles.photoOn, pressed && { opacity: 0.85 }]}>
+              {failed[c] ? (
+                <Txt variant="smallStrong" color={colors.muted}>Retry photo</Txt>
+              ) : (
+                <Image source={{ uri: stockThumb(c) }} style={StyleSheet.absoluteFill} contentFit="cover" transition={200} recyclingKey={c} onError={() => setFailed((previous) => ({ ...previous, [c]: true }))} />
+              )}
               {on ? (
                 <View style={styles.check}>
                   <Icon name="check" size={14} color={colors.accentInk} strokeWidth={3} />
@@ -77,7 +88,7 @@ export function StockPicker({ category, value, onPick }: { category: string; val
 const styles = StyleSheet.create({
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: space.sm },
   grid: { flexDirection: 'row', flexWrap: 'wrap', gap: space.sm },
-  photo: { width: '48.5%', aspectRatio: 4 / 3, borderRadius: radius.md, overflow: 'hidden', borderWidth: 2, borderColor: 'transparent', backgroundColor: colors.surface2 },
+  photo: { alignItems: 'center', justifyContent: 'center', borderRadius: radius.md, overflow: 'hidden', borderWidth: 2, borderColor: 'transparent', backgroundColor: colors.surface2 },
   photoOn: { borderColor: colors.accent },
   check: { position: 'absolute', top: 8, right: 8, width: 24, height: 24, borderRadius: 12, backgroundColor: colors.accent, alignItems: 'center', justifyContent: 'center' },
 });
