@@ -578,7 +578,7 @@ export default function Door() {
   return (
     <View style={{ flex: 1, backgroundColor: colors.bg }}>
       <KeepAwake />
-      <ScrollView contentContainerStyle={{ paddingTop: insets.top + space.sm, paddingHorizontal: gutter, paddingBottom: insets.bottom + space.huge, gap: space.lg }} keyboardShouldPersistTaps="handled">
+      <ScrollView contentContainerStyle={{ paddingTop: insets.top + space.sm, paddingHorizontal: gutter, paddingBottom: insets.bottom + space.huge, gap: space.lg }} automaticallyAdjustKeyboardInsets keyboardShouldPersistTaps="handled">
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.md }}>
           <IconButton icon="back" label="Back" onPress={() => (router.canGoBack() ? router.back() : router.replace('/organizer'))} />
           <View style={{ flex: 1 }}>

@@ -69,7 +69,7 @@ import {
 import { isLiveBooking, rangeLabel, useBooking, useOrgBookings, type Booking, type ListingResult } from '@/lib/bookings';
 import { NO_PWYW, pwywBody, pwywErrors, type PwywDraft } from '@/lib/pwyw';
 import { useMyOrgs } from '@/lib/queries';
-import type { UploadedCover } from '@/lib/media-upload';
+import { useMediaConfig, type UploadedCover } from '@/lib/media-upload';
 import { defaultCover } from '@/lib/stock-covers';
 import { cleanPerks, presetIndex, type TierLook, type TierPreset } from '@/lib/tiers';
 import type { Category } from '@/lib/types';
@@ -273,7 +273,10 @@ export default function CreateEvent() {
   const [error, setError] = useState('');
   const [created, setCreated] = useState<string | null>(null);
   /** A photo uploaded from the phone; it's the cover while `d.cover` is its address. */
-  const [upload, setUpload] = useState<UploadedCover | null>(null);
+  const [photos, setPhotos] = useState<UploadedCover[]>([]);
+  const [stockOpen, setStockOpen] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const photoLimit = useMediaConfig().data?.images ?? 10;
   /** The uploaded cover was attached to the created event (PUT …/media), so a retry doesn't send it again. */
   const [coverSet, setCoverSet] = useState(false);
   const today = todayYmd();
@@ -429,8 +432,8 @@ export default function CreateEvent() {
         setCreated(id);
       }
       // A photo uploaded from the phone becomes the cover the website's way: the event's first media item.
-      if (upload && d.cover === upload.url && !coverSet) {
-        await api(`/organizer/events/${encodeURIComponent(id)}/media`, { method: 'PUT', body: { items: [{ id: upload.id, kind: 'image' }] } });
+      if (photos.length && !coverSet) {
+        await api(`/organizer/events/${encodeURIComponent(id)}/media`, { method: 'PUT', body: { items: photos.map(({ id }) => ({ id, kind: 'image' })) } });
         setCoverSet(true);
       }
       // Waiting for a booked venue: saved as a draft; it's submitted once the venue confirms.
@@ -462,9 +465,9 @@ export default function CreateEvent() {
 
   const footer = (
     <View style={{ flexDirection: 'row', gap: space.md }}>
-      <Button label="Back" variant="ghost" style={{ width: 96 }} onPress={back} disabled={!!busy} />
+      <Button label="Back" variant="ghost" style={{ width: 96 }} onPress={back} disabled={!!busy || uploading} />
       {step < STEPS.length - 1 ? (
-        <GradientButton label={`Next: ${SHORT[step + 1]}`} onPress={next} />
+        <GradientButton label={`Next: ${SHORT[step + 1]}`} onPress={next} disabled={uploading} />
       ) : (
         <GradientButton label={waiting ? 'Save and wait for the venue' : 'Submit for review'} icon={waiting ? 'clock' : 'send'} loading={busy === 'submit'} disabled={!!busy} onPress={() => void save(true)} />
       )}
@@ -511,7 +514,7 @@ export default function CreateEvent() {
             accessibilityRole="tab"
             accessibilityLabel={`${STEPS[i]}${i < step ? ', done. Go back to it' : i === step ? ', current step' : ''}`}
             accessibilityState={{ selected: i === step, disabled: i > step }}
-            disabled={i >= step}
+            disabled={i >= step || uploading}
             hitSlop={{ top: 12, bottom: 12 }}
             onPress={() => jump(i)}
             style={styles.segHit}>
@@ -541,7 +544,7 @@ export default function CreateEvent() {
           </Section>
 
           <Section icon="tag" title="Category" sub="Where fans will find it when they browse.">
-            <CategoryGrid value={d.category} onPick={(c) => setD((p) => ({ ...p, category: c, cover: '' }))} />
+            <CategoryGrid value={d.category} onPick={(c) => setD((p) => ({ ...p, category: c, cover: photos[0]?.url ?? '' }))} />
             {errors.category ? (
               <Txt variant="small" color={colors.accentHi}>
                 {errors.category}
@@ -844,28 +847,40 @@ export default function CreateEvent() {
 
       {step === 4 ? (
         <>
-          <CardPreview {...preview} />
-          {errors.cover ? (
-            <Txt variant="small" color={colors.accentHi}>
-              {errors.cover}
-            </Txt>
-          ) : null}
-          <Section icon="download" title="Your own photo" sub="From your phone’s photos. It replaces the cover on the card above.">
-            <CoverUpload
-              full={upload && d.cover === upload.url ? 'Upload a different photo' : undefined}
-              onUploaded={(c) => {
-                setUpload(c);
+          <View style={{ gap: space.md }}>
+            <Txt variant="h3">Event photos</Txt>
+            {d.cover ? <Image source={{ uri: d.cover }} contentFit="cover" accessibilityLabel="Event cover" style={{ width: '100%', aspectRatio: 16 / 9, borderRadius: radius.md, backgroundColor: colors.field }} /> : null}
+            {photos.length < photoLimit ? (
+              <CoverUpload full={photos.length ? 'Add another photo' : 'Choose from photos'} onBusy={setUploading} onUploaded={(photo) => {
+                setPhotos([...photos, photo]);
+                if (!photos.length) set('cover', photo.url);
+                setStockOpen(false);
                 setCoverSet(false);
-                set('cover', c.url);
-              }}
-            />
-          </Section>
-          <Section icon="sparkle" title="Or pick one of ours" sub="Free photos, sorted by category. Tap one to try it on the card above.">
-            <StockPicker category={d.category ? CATEGORY_NAME[d.category] : 'Concerts'} value={d.cover} onPick={(c) => set('cover', c)} />
-          </Section>
-          <Txt variant="small" color={colors.dim}>
-            More photos and videos can be added from the event’s page on the website.
-          </Txt>
+              }} />
+            ) : null}
+            {photos.map((photo, index) => (
+              <View key={photo.id} style={{ flexDirection: 'row', alignItems: 'center', gap: space.sm }}>
+                <Image source={{ uri: photo.thumbUrl || photo.url }} style={{ width: 48, height: 48, borderRadius: radius.sm }} />
+                <View style={{ flex: 1 }}>
+                  <Txt variant="smallStrong" numberOfLines={1}>{index === 0 ? 'Cover' : photo.fileName}</Txt>
+                  {index > 0 ? <Button size="md" variant="subtle" label="Make cover" disabled={uploading} onPress={() => {
+                    setPhotos([photo, ...photos.filter((item) => item.id !== photo.id)]);
+                    set('cover', photo.url);
+                    setCoverSet(false);
+                  }} /> : null}
+                </View>
+                <Button size="md" variant="ghost" label="Remove" accessibilityLabel={'Remove ' + photo.fileName} disabled={uploading} onPress={() => {
+                  const remaining = photos.filter((item) => item.id !== photo.id);
+                  setPhotos(remaining);
+                  set('cover', remaining[0]?.url ?? '');
+                  setCoverSet(false);
+                }} />
+              </View>
+            ))}
+            {errors.cover ? <Txt variant="small" color={colors.accentHi}>{errors.cover}</Txt> : null}
+            {!photos.length ? <Button variant="ghost" label={stockOpen ? 'Hide stock photos' : 'Browse stock photos'} disabled={uploading} onPress={() => setStockOpen(!stockOpen)} /> : null}
+            {stockOpen && !photos.length ? <StockPicker category={d.category ? CATEGORY_NAME[d.category] : 'Concerts'} value={d.cover} onPick={(url) => { set('cover', url); setStockOpen(false); }} /> : null}
+          </View>
         </>
       ) : null}
 

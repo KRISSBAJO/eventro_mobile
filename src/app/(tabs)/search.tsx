@@ -144,8 +144,7 @@ export default function Search() {
         <Txt variant="h1" accessibilityRole="header">
           Search
         </Txt>
-        {/* collapsable={false}: keeps the keyboard open when the focus glow appears (see focusRing). */}
-        <View collapsable={false} style={[styles.searchBox, typing && focusRing]}>
+        <View style={[styles.searchBox, typing && focusRing]}>
           <Icon name="search" size={19} color={colors.muted} />
           <TextInput
             ref={input}
